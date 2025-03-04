@@ -1,0 +1,36 @@
+{
+  "name": "satoshibits-cli",
+  "version": "1.0.0",
+  "scripts": {
+    "commit:cz": "cz",
+    "commit:publish": "pnpm exec changeset && git add ./.changeset && pnpm run commit:cz",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "prepare": "husky",
+    "pre-commit": "turbo pre-commit",
+    "test": "turbo test",
+    "ci:release": "turbo run build lint test && pnpm exec changeset version && pnpm exec changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.9",
+    "@ianvs/prettier-plugin-sort-imports": "^4.3.1",
+    "commitizen": "^4.3.1",
+    "cz-conventional-changelog": "^3.3.0",
+    "husky": "^9.1.6",
+    "prettier": "^3.2.5",
+    "turbo": "^2.1.3",
+    "typescript": "^5.4.5",
+    "vitest": "^3.0.6"
+  },
+  "keywords": [],
+  "author": {
+    "name": "Abe M. Caymo",
+    "email": "caymo.abesuni@gmail.com",
+    "url": "https://github.com/abetoots"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "packageManager": "pnpm@10.4.1+sha512.c753b6c3ad7afa13af388fa6d808035a008e30ea9993f58c6663e2bc5ff21679aa834db094987129aa4d488b86df57f7b634981b2f827cdcacc698cc0cfb88af"
+}
