@@ -55,6 +55,8 @@ jobs:
       - name: 📥 Download deps
         run: pnpm install --prefer-offline
 
+      # Make sure you permit Github Actions to create or approve pull requests
+      # https://stackoverflow.com/questions/72376229/github-actions-is-not-permitted-to-create-or-approve-pull-requests-createpullre
       - name: Create Release Pull Request or Publish to npm
         id: changesets
         uses: changesets/action@v1
