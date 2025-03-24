@@ -1,6 +1,6 @@
 {
   "name": "create-react-swc-ts-extended",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "CLI to create a React boilerplate with Vite + SWC, React 19, TypeScript, Vitest, Testing Library, TailwindCSS 4, Eslint and Prettier, Husky and lint-staged",
   "type": "module",
   "bin": {
