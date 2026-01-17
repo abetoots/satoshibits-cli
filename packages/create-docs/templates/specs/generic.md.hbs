@@ -1,0 +1,79 @@
+---
+id: TSD-{{uppercase specName}}
+title: "{{title}}"
+type: technical-spec
+status: Draft
+version: "1.0.0"
+created_date: "{{currentDate}}"
+last_updated: "{{currentDate}}"
+owner: "{{owner}}"
+---
+
+# {{title}}
+
+**Project:** {{projectName}}
+
+## 1. Overview
+
+<!-- Brief description of what this specification covers -->
+
+*Describe the purpose and scope of this technical specification.*
+
+## 2. Architecture
+
+### 2.1 Component Diagram
+
+```mermaid
+flowchart TB
+    A[Component A] --> B[Component B]
+    B --> C[Component C]
+```
+
+### 2.2 Technology Stack
+
+| Component | Technology | Purpose |
+|-----------|------------|---------|
+| *Component* | *Technology* | *Why used* |
+
+## 3. Specification
+
+### 3.1 Data Structures
+
+```typescript
+interface ExampleInterface {
+  id: string;
+  name: string;
+  createdAt: Date;
+}
+```
+
+### 3.2 API/Interface
+
+*Define the public interface*
+
+### 3.3 Configuration
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| *setting* | *type* | *value* | *description* |
+
+## 4. Implementation Notes
+
+*Any specific implementation guidance*
+
+## 5. Error Handling
+
+| Error | Cause | Resolution |
+|-------|-------|------------|
+| *Error type* | *What causes it* | *How to handle* |
+
+---
+
+## Related Documents
+
+- [TSD Index](./index.md)
+- [ADD](../03-architecture/add.md)
+
+---
+
+*[← Back to TSD Index](./index.md)*

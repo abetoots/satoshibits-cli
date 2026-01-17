@@ -1,0 +1,277 @@
+---
+id: GUIDE-CODING
+title: "{{title}}"
+type: guideline
+status: Draft
+version: "1.0.0"
+created_date: "{{currentDate}}"
+last_updated: "{{currentDate}}"
+owner: "{{owner}}"
+---
+
+# Coding Guidelines
+
+**Project:** {{projectName}}
+
+## 1. Philosophy
+
+- **Readability over cleverness** - Code is read more than written
+- **Explicit over implicit** - Make intentions clear
+- **Fail fast** - Validate early, fail immediately on invalid state
+- **Type safety** - Let the compiler catch errors
+
+## 2. TypeScript Standards
+
+### 2.1 Strict Mode
+
+All TypeScript files must use strict mode:
+
+```json
+{
+  "compilerOptions": {
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true
+  }
+}
+```
+
+### 2.2 Type Annotations
+
+```typescript
+// prefer explicit return types for public functions
+function getUserById(id: string): Promise<User | null> {
+  // ...
+}
+
+// use const assertions for literals
+const STATUS = {
+  ACTIVE: 'active',
+  INACTIVE: 'inactive',
+} as const;
+```
+
+### 2.3 Avoid `any`
+
+```typescript
+// bad
+function process(data: any) { ... }
+
+// good
+function process(data: unknown) {
+  if (isValidData(data)) {
+    // data is now typed
+  }
+}
+```
+
+## 3. Naming Conventions
+
+| Element | Convention | Example |
+|---------|------------|---------|
+| Files | kebab-case | `user-service.ts` |
+| Classes | PascalCase | `UserService` |
+| Interfaces | PascalCase | `UserRepository` |
+| Functions | camelCase | `getUserById` |
+| Constants | SCREAMING_SNAKE | `MAX_RETRIES` |
+| Private fields | prefix `_` | `_cache` |
+
+## 4. Code Organization
+
+### 4.1 File Structure
+
+```typescript
+// 1. imports (external first, then internal)
+import { Injectable } from '@nestjs/common';
+import { UserRepository } from './user.repository';
+
+// 2. types/interfaces (if not in separate file)
+interface CreateUserDto { ... }
+
+// 3. constants
+const MAX_RETRIES = 3;
+
+// 4. main export
+export class UserService { ... }
+
+// 5. helper functions (private)
+function validateEmail(email: string): boolean { ... }
+```
+
+### 4.2 Function Length
+
+- Functions should do one thing
+- Target: < 30 lines
+- If longer, consider extracting helper functions
+
+## 5. Architecture: Functional Core, Imperative Shell
+
+This project follows the **Pragmatic FC/IS** pattern - a practical approach to functional programming that keeps domain logic pure while using familiar patterns in infrastructure code.
+
+### 5.1 The Pattern
+
+```
+┌─────────────────────────────────────────────┐
+│         Imperative Shell                    │
+│   Controllers, HTTP handlers, DB clients    │
+│   - Side effects allowed                    │
+│   - async/await, I/O operations             │
+│   - Dependency injection via constructors   │
+├─────────────────────────────────────────────┤
+│         Functional Core                     │
+│   Domain logic, business rules              │
+│   - Pure functions only                     │
+│   - No side effects, no I/O                 │
+│   - Returns Result<T, E> for errors         │
+│   - Immutable data structures               │
+└─────────────────────────────────────────────┘
+```
+
+### 5.2 Domain Layer (Pure)
+
+```typescript
+// domain functions are pure - no side effects
+function calculateDiscount(
+  order: Order,
+  customer: Customer
+): Result<number, DiscountError> {
+  if (order.items.length === 0) {
+    return err(new DiscountError('Empty order'));
+  }
+
+  const discount = customer.tier === 'premium' ? 0.2 : 0.1;
+  return ok(order.total * discount);
+}
+
+// domain types are immutable
+type Order = Readonly<{
+  id: string;
+  items: ReadonlyArray<OrderItem>;
+  total: number;
+}>;
+```
+
+### 5.3 Shell Layer (Imperative)
+
+```typescript
+// controllers handle I/O and orchestration
+@Controller('orders')
+export class OrderController {
+  constructor(
+    private readonly orderRepo: OrderRepository,
+    private readonly customerRepo: CustomerRepository,
+  ) {}
+
+  @Post(':id/discount')
+  async applyDiscount(@Param('id') id: string): Promise<DiscountResponse> {
+    // fetch data (side effect)
+    const order = await this.orderRepo.findById(id);
+    const customer = await this.customerRepo.findByOrderId(id);
+
+    // call pure domain function
+    const result = calculateDiscount(order, customer);
+
+    // handle result
+    if (!result.success) {
+      throw new BadRequestException(result.error.message);
+    }
+
+    // persist (side effect)
+    await this.orderRepo.updateDiscount(id, result.data);
+
+    return { discount: result.data };
+  }
+}
+```
+
+### 5.4 Benefits
+
+| Benefit | How FC/IS Achieves It |
+|---------|----------------------|
+| **Testability** | Domain functions are trivial to unit test (no mocks needed) |
+| **Predictability** | Pure functions always return same output for same input |
+| **Maintainability** | Clear separation makes code easier to reason about |
+| **Onboarding** | Standard DI patterns familiar to most developers |
+
+### 5.5 Advanced FP Patterns (Opt-In)
+
+The following patterns are **not included by default** but can be adopted by teams with FP experience:
+
+| Pattern | Default | Opt-In When | Trade-off |
+|---------|---------|-------------|-----------|
+| **ReaderResult / ReaderTaskEither** | ❌ | Team has Haskell/Scala background, complex DI needs | Powerful composition vs. steep learning curve |
+| **fp-ts / Effect-TS** | ❌ | Building highly concurrent systems, need algebraic effects | Type-safe effects vs. cognitive overhead |
+| **Full immutability (Immer/Immutable.js)** | ❌ | Complex state management, time-travel debugging needed | Predictability vs. performance overhead |
+
+<!-- DECISION POINT: If your team has strong FP experience, consider adopting ReaderResult for dependency injection.
+     This enables pure functions throughout the stack but requires team-wide buy-in.
+     See: https://gcanti.github.io/fp-ts/modules/ReaderTaskEither.ts.html -->
+
+## 6. Error Handling
+
+### 6.1 Result Type Pattern
+
+```typescript
+// define result type
+type Result<T, E = Error> =
+  | { success: true; data: T }
+  | { success: false; error: E };
+
+// usage
+function divide(a: number, b: number): Result<number, string> {
+  if (b === 0) {
+    return { success: false, error: 'Division by zero' };
+  }
+  return { success: true, data: a / b };
+}
+```
+
+### 6.2 When to Throw
+
+| Situation | Action |
+|-----------|--------|
+| Invalid arguments (programmer error) | Throw |
+| Expected failure (user input) | Return Result |
+| External service failure | Return Result or Throw (depending on context) |
+
+## 7. Comments
+
+```typescript
+// use lowercase for short inline comments
+const count = 0; // initialize counter
+
+/**
+ * Use JSDoc for public APIs.
+ *
+ * @param id - The user identifier
+ * @returns The user or null if not found
+ */
+export async function getUser(id: string): Promise<User | null> {
+  // ...
+}
+```
+
+## 8. Testing
+
+- Write tests alongside implementation
+- Follow AAA pattern: Arrange, Act, Assert
+- Mock external dependencies only (not domain logic)
+- See: [Testing Strategy](./testing.md)
+
+## 9. Security
+
+- Never log sensitive data (passwords, tokens, PII)
+- Validate all external input
+- Use parameterized queries
+- See: [Security Guidelines](../06-operations/security.md)
+
+---
+
+## Related Documents
+
+- [Testing Strategy](./testing.md)
+- [TSD Index](../04-specs/index.md)
+
+---
+
+*[← Back to Guidelines](./)*

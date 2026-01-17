@@ -1,0 +1,319 @@
+---
+id: ADD-001
+title: "{{title}}"
+type: architecture
+status: Draft
+version: "1.0.0"
+created_date: "{{currentDate}}"
+last_updated: "{{currentDate}}"
+owner: "{{owner}}"
+audience: "{{audience}}"
+reviewers: []
+related_frd: "FRD-001"
+---
+
+# Application Design Document (ADD)
+
+**Project:** {{projectName}}
+
+## 1. Architecture Overview
+
+### 1.1 System Context (C4 Level 1)
+
+> High-level view of the system and its interactions with external entities.
+
+```mermaid
+C4Context
+    title System Context Diagram
+    Person(user, "User", "A user of the system")
+    System(system, "{{projectName}}", "The system being designed")
+    System_Ext(external, "External System", "Third-party integration")
+
+    Rel(user, system, "Uses")
+    Rel(system, external, "Integrates with")
+```
+
+### 1.2 Architecture Principles
+
+| Principle | Description | Rationale |
+|-----------|-------------|-----------|
+| Separation of Concerns | Distinct layers for presentation, business logic, data | Maintainability |
+| Fail Fast | Validate early, fail immediately on invalid state | Reliability |
+| Defense in Depth | Multiple security layers | Security |
+
+### 1.3 Code Organization: Vertical Slices
+
+This project follows **Vertical Slice Architecture** (feature-based organization) rather than traditional horizontal layers.
+
+```
+src/
+├── features/              # Organized by business capability
+│   ├── users/
+│   │   ├── create-user.ts         # Command handler
+│   │   ├── get-user.ts            # Query handler
+│   │   ├── user.repository.ts     # Data access
+│   │   ├── user.types.ts          # Domain types
+│   │   └── user.test.ts           # Tests co-located
+│   ├── orders/
+│   │   ├── create-order.ts
+│   │   ├── order.repository.ts
+│   │   └── ...
+│   └── ...
+├── shared/                # Cross-cutting concerns only
+│   ├── database/
+│   ├── auth/
+│   └── errors/
+└── main.ts
+```
+
+**Benefits:**
+- **Cohesion:** Related code lives together
+- **Independence:** Features can be developed/deployed independently
+- **Onboarding:** New developers understand one slice at a time
+- **Refactoring:** Changes contained within feature boundaries
+
+**Contrast with Horizontal Layers:**
+```
+# Traditional (avoid)          # Vertical Slice (preferred)
+src/                           src/features/users/
+├── controllers/               ├── create-user.ts
+├── services/                  ├── get-user.ts
+├── repositories/              ├── user.repository.ts
+└── models/                    └── user.types.ts
+```
+
+## 2. Technology Stack
+
+> **Note:** Technology choices below reflect decisions made during project initialization.
+> See [Architecture Decision Records](./decisions/) for detailed rationale.
+
+| Layer | Technology | Rationale | Alternatives Considered |
+|-------|------------|-----------|------------------------|
+{{#if variance.hasFrontend}}
+{{#if (eq variance.frontendFramework "react")}}
+| **Frontend** | React + {{#if (eq variance.stylingApproach "tailwind")}}Tailwind CSS{{else if (eq variance.stylingApproach "css-modules")}}CSS Modules{{else}}Styled Components{{/if}} | Largest ecosystem, component-based | Vue, Svelte, Angular |
+{{else if (eq variance.frontendFramework "vue")}}
+| **Frontend** | Vue + {{#if (eq variance.stylingApproach "tailwind")}}Tailwind CSS{{else}}CSS Modules{{/if}} | Approachable, excellent docs | React, Svelte |
+{{else if (eq variance.frontendFramework "svelte")}}
+| **Frontend** | Svelte + {{#if (eq variance.stylingApproach "tailwind")}}Tailwind CSS{{else}}CSS Modules{{/if}} | Compiled, excellent performance | React, Vue |
+{{/if}}
+{{/if}}
+| **Backend** | *Language/Framework* | *Define based on team expertise* | *Other options* |
+{{#if variance.hasDatabase}}
+{{#if (eq variance.databaseEngine "postgres")}}
+| **Database** | PostgreSQL | ACID-compliant, JSONB support, extensible | MySQL, MongoDB |
+{{else if (eq variance.databaseEngine "mysql")}}
+| **Database** | MySQL | Popular, well-supported | PostgreSQL, MongoDB |
+{{else if (eq variance.databaseEngine "mongodb")}}
+| **Database** | MongoDB | Document store, flexible schema | PostgreSQL, MySQL |
+{{/if}}
+{{#if (eq variance.ormStrategy "prisma")}}
+| **ORM** | Prisma | Type-safe, migrations included | Drizzle, TypeORM, Raw SQL |
+{{else if (eq variance.ormStrategy "query-builder")}}
+| **Query Layer** | Kysely/Drizzle | Type-safe queries, avoids N+1 | Prisma, Raw SQL |
+{{else}}
+| **Query Layer** | Raw SQL | Maximum control and performance | Prisma, Query Builder |
+{{/if}}
+{{/if}}
+{{#if (eq variance.cacheLayer "redis")}}
+| **Caching** | Redis | Versatile, pub/sub support | Memcached |
+{{else if (eq variance.cacheLayer "memcached")}}
+| **Caching** | Memcached | Simple key-value caching | Redis |
+{{/if}}
+{{#if (eq variance.cloudProvider "aws")}}
+| **Cloud** | AWS | Largest ecosystem, mature services | GCP, Azure |
+{{else if (eq variance.cloudProvider "gcp")}}
+| **Cloud** | GCP | Strong K8s, ML/AI services | AWS, Azure |
+{{else if (eq variance.cloudProvider "azure")}}
+| **Cloud** | Azure | Microsoft ecosystem integration | AWS, GCP |
+{{else}}
+| **Cloud** | Self-hosted/Multi-cloud | Data sovereignty, vendor independence | AWS, GCP, Azure |
+{{/if}}
+
+## 3. Component Design (C4 Level 2)
+
+### 3.1 Container Diagram
+
+```mermaid
+C4Container
+    title Container Diagram
+    Container(web, "Web Application", "Frontend", "User interface")
+    Container(api, "API Server", "Backend", "Business logic")
+    {{#if variance.hasDatabase}}
+    ContainerDb(db, "Database", "Storage", "Persistent data")
+    {{/if}}
+
+    Rel(web, api, "HTTPS/JSON")
+    {{#if variance.hasDatabase}}
+    Rel(api, db, "TCP/SQL")
+    {{/if}}
+```
+
+### 3.2 Component Responsibilities
+
+| Component | Responsibility | Technology |
+|-----------|----------------|------------|
+| *Component 1* | *What it does* | *Tech used* |
+| *Component 2* | *What it does* | *Tech used* |
+
+## 4. Data Model Overview
+
+### 4.1 Core Entities
+
+```mermaid
+erDiagram
+    USER ||--o{ SESSION : has
+    USER {
+        uuid id PK
+        string email
+        timestamp created_at
+    }
+    SESSION {
+        uuid id PK
+        uuid user_id FK
+        timestamp expires_at
+    }
+```
+
+### 4.2 Data Flow
+
+*Describe how data flows through the system*
+
+## 5. Integration Architecture
+
+### 5.1 Internal Communication
+
+| From | To | Protocol | Pattern |
+|------|-----|----------|---------|
+| Frontend | Backend | HTTPS | REST/JSON |
+{{#if variance.hasAsyncProcessing}}
+| Backend | Worker | {{#if (eq variance.messagingPattern "pubsub")}}Pub/Sub{{else}}Message Queue{{/if}} | Async |
+{{/if}}
+
+### 5.2 External Integrations
+
+| System | Purpose | Protocol | Auth |
+|--------|---------|----------|------|
+| *External API* | *Purpose* | *REST/GraphQL* | *OAuth/API Key* |
+
+## 6. Security Architecture
+
+### 6.1 Authentication & Authorization
+
+{{#if (eq variance.identityProvider "auth0")}}
+- **Identity Provider:** Auth0 (Managed SaaS)
+{{else if (eq variance.identityProvider "keycloak")}}
+- **Identity Provider:** Keycloak (Self-hosted)
+{{else if (eq variance.identityProvider "cognito")}}
+- **Identity Provider:** AWS Cognito
+{{else if (eq variance.identityProvider "custom")}}
+- **Identity Provider:** Custom implementation (⚠️ requires security review)
+{{else}}
+- **Identity Provider:** None (public access)
+{{/if}}
+{{#if (eq variance.authStrategy "jwt")}}
+- **Token Strategy:** JWT (stateless, scalable)
+{{else}}
+- **Token Strategy:** Server-side sessions (stateful)
+{{/if}}
+- **Authorization:** RBAC (Role-Based Access Control)
+
+### 6.2 Security Layers
+
+| Layer | Control | Implementation |
+|-------|---------|----------------|
+| Edge | Rate limiting, WAF | *Platform/Service* |
+| Transport | TLS 1.3 | Certificate management |
+| Application | Input validation, RBAC | Middleware |
+| Data | Encryption at rest | *Database feature* |
+
+{{#if variance.isRegulated}}
+### 6.3 Compliance Controls
+
+| Requirement | Control | Implementation |
+|-------------|---------|----------------|
+| Audit Logging | All data access logged | Centralized logging |
+| Data Retention | 7-year retention | Archive policy |
+{{/if}}
+
+## 7. Cross-Cutting Concerns
+
+### 7.1 Observability
+
+{{#if (eq variance.observabilityStack "cloud-native")}}
+> Using cloud-native observability (CloudWatch/Cloud Logging)
+
+| Concern | Approach | Tools |
+|---------|----------|-------|
+| Logging | Structured JSON logs | {{#if (eq variance.cloudProvider "aws")}}CloudWatch Logs{{else if (eq variance.cloudProvider "gcp")}}Cloud Logging{{else if (eq variance.cloudProvider "azure")}}Azure Monitor{{else}}Cloud-native logging{{/if}} |
+| Metrics | Application + infrastructure | {{#if (eq variance.cloudProvider "aws")}}CloudWatch Metrics{{else if (eq variance.cloudProvider "gcp")}}Cloud Monitoring{{else}}Prometheus{{/if}} |
+| Tracing | Distributed tracing | OpenTelemetry + {{#if (eq variance.cloudProvider "aws")}}X-Ray{{else}}Jaeger{{/if}} |
+{{else if (eq variance.observabilityStack "lgtm")}}
+> Using LGTM Stack (Loki/Grafana/Tempo/Mimir) - vendor-neutral
+
+| Concern | Approach | Tools |
+|---------|----------|-------|
+| Logging | Structured JSON logs | Loki |
+| Metrics | Application + infrastructure | Prometheus/Mimir |
+| Tracing | Distributed tracing | Tempo |
+| Dashboards | Visualization | Grafana |
+{{else if (eq variance.observabilityStack "elk")}}
+> Using ELK Stack (Elasticsearch/Logstash/Kibana)
+
+| Concern | Approach | Tools |
+|---------|----------|-------|
+| Logging | Structured JSON logs | Elasticsearch + Logstash |
+| Metrics | Application + infrastructure | Metricbeat |
+| Tracing | Distributed tracing | APM Server |
+| Dashboards | Visualization | Kibana |
+{{else}}
+| Concern | Approach | Tools |
+|---------|----------|-------|
+| Logging | Structured JSON logs | *Define logging stack* |
+| Metrics | Application + infrastructure | *Define metrics stack* |
+| Tracing | Distributed tracing | *Define tracing tool* |
+{{/if}}
+{{#if (eq variance.errorTracking "sentry")}}
+
+**Error Tracking:** Sentry (rich context, excellent SDKs)
+{{else if (eq variance.errorTracking "rollbar")}}
+
+**Error Tracking:** Rollbar
+{{/if}}
+
+### 7.2 Error Handling
+
+- **Expected Errors:** Return typed error responses
+- **Unexpected Errors:** Log, alert, fail gracefully
+
+## 8. Architecture Decision Records
+
+For detailed rationale on specific architectural choices, see:
+
+- [decisions/](./decisions/) - ADR directory
+
+Key decisions to document:
+- [ ] Database selection
+- [ ] Authentication approach
+- [ ] API design (REST vs GraphQL)
+
+---
+
+## Appendices
+
+### A. Related Documents
+
+- [Functional Requirements](../02-requirements/frd.md)
+- [Technical Specifications](../04-specs/)
+- [ADR Directory](./decisions/)
+
+### B. Revision History
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | {{currentDate}} | {{owner}} | Initial draft |
+
+---
+
+*Previous Document: [FRD](../02-requirements/frd.md)*
+*Next Document: [Technical Specifications](../04-specs/)*

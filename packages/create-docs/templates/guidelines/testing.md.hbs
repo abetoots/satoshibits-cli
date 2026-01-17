@@ -1,0 +1,297 @@
+---
+id: GUIDE-TESTING
+title: "{{title}}"
+type: guideline
+status: Draft
+version: "1.0.0"
+created_date: "{{currentDate}}"
+last_updated: "{{currentDate}}"
+owner: "{{owner}}"
+---
+
+# Testing Strategy
+
+**Project:** {{projectName}}
+
+## 1. Philosophy
+
+- **Test behavior, not implementation** - Tests should verify outcomes
+- **Fast feedback** - Unit tests run in milliseconds
+- **Confidence over coverage** - Focus on critical paths
+- **Isolate external dependencies** - Mock APIs, databases, services
+
+## 2. Test Pyramid
+
+```
+        /\
+       /  \        E2E (~10%)
+      /----\
+     /      \      Integration (~20%)
+    /--------\
+   /          \    Unit (~70%)
+  --------------
+```
+
+### 2.1 Distribution Target
+
+| Level | Proportion | Purpose | Speed |
+|-------|------------|---------|-------|
+| **Unit** | 70% | Individual functions/classes | Fast (<10ms) |
+| **Integration** | 20% | Component interactions, API contracts | Medium (<1s) |
+| **E2E** | 10% | Critical user workflows | Slow (<30s) |
+
+### 2.2 Coverage Targets by Layer
+
+| Layer | Target | Rationale |
+|-------|--------|-----------|
+| **Domain** (business logic) | 100% | Pure functions, easy to test, high value |
+| **Application** (services) | 80% | Orchestration logic, some I/O |
+| **Interface** (controllers, repos) | 60% | Integration-heavy, tested via integration tests |
+
+### 2.3 What NOT to Mock
+
+Following the FC/IS pattern:
+- **Don't mock domain functions** - They're pure, test them directly
+- **Don't mock internal modules** in monorepos - Use real implementations
+- **Do mock** external APIs, databases, third-party services
+
+## 3. Unit Testing
+
+### 3.1 Framework
+
+- **Test Runner:** Vitest
+- **Assertions:** Built-in expect
+- **Mocking:** vi.mock, vi.fn
+
+### 3.2 Naming Convention
+
+```typescript
+describe('UserService', () => {
+  describe('getUserById', () => {
+    it('should return user when found', async () => {
+      // ...
+    });
+
+    it('should return null when user not found', async () => {
+      // ...
+    });
+
+    it('should throw when id is invalid', async () => {
+      // ...
+    });
+  });
+});
+```
+
+### 3.3 AAA Pattern
+
+```typescript
+it('should calculate total with discount', () => {
+  // arrange
+  const items = [{ price: 100 }, { price: 50 }];
+  const discount = 0.1;
+
+  // act
+  const result = calculateTotal(items, discount);
+
+  // assert
+  expect(result).toBe(135);
+});
+```
+
+### 3.4 Mocking Best Practices
+
+```typescript
+// mock external dependencies, not internal logic
+vi.mock('./user.repository');
+
+// use mockReturnValue for simple cases
+const mockRepo = vi.mocked(UserRepository);
+mockRepo.findById.mockResolvedValue({ id: '1', name: 'Test' });
+
+// use mockImplementation for complex logic
+mockRepo.findById.mockImplementation(async (id) => {
+  if (id === 'invalid') return null;
+  return { id, name: 'Test' };
+});
+```
+
+## 4. Integration Testing
+
+### 4.1 Database Tests
+
+```typescript
+describe('UserRepository', () => {
+  beforeAll(async () => {
+    await db.migrate.latest();
+  });
+
+  beforeEach(async () => {
+    await db('users').truncate();
+  });
+
+  afterAll(async () => {
+    await db.destroy();
+  });
+
+  it('should create and retrieve user', async () => {
+    const created = await repo.create({ email: 'test@example.com' });
+    const found = await repo.findById(created.id);
+    expect(found?.email).toBe('test@example.com');
+  });
+});
+```
+
+### 4.2 API Tests
+
+```typescript
+describe('POST /api/users', () => {
+  it('should create user with valid data', async () => {
+    const response = await request(app)
+      .post('/api/users')
+      .send({ email: 'test@example.com', password: 'secure123' })
+      .expect(201);
+
+    expect(response.body).toHaveProperty('id');
+    expect(response.body.email).toBe('test@example.com');
+  });
+
+  it('should return 400 for invalid email', async () => {
+    await request(app)
+      .post('/api/users')
+      .send({ email: 'invalid', password: 'secure123' })
+      .expect(400);
+  });
+});
+```
+
+## 5. E2E Testing
+
+### 5.1 Framework
+
+- **Browser:** Playwright
+- **Selectors:** data-testid attributes
+
+### 5.2 Page Objects
+
+```typescript
+// pages/login.page.ts
+export class LoginPage {
+  constructor(private page: Page) {}
+
+  async goto() {
+    await this.page.goto('/login');
+  }
+
+  async login(email: string, password: string) {
+    await this.page.fill('[data-testid="email"]', email);
+    await this.page.fill('[data-testid="password"]', password);
+    await this.page.click('[data-testid="submit"]');
+  }
+}
+```
+
+### 5.3 Test Structure
+
+```typescript
+test.describe('Authentication', () => {
+  test('should allow user to log in', async ({ page }) => {
+    const loginPage = new LoginPage(page);
+    await loginPage.goto();
+    await loginPage.login('test@example.com', 'password123');
+
+    await expect(page).toHaveURL('/dashboard');
+  });
+});
+```
+
+## 6. Test Data Management
+
+### 6.1 Factories
+
+```typescript
+// factories/user.factory.ts
+export const createUser = (overrides = {}) => ({
+  id: randomUUID(),
+  email: `test-${Date.now()}@example.com`,
+  name: 'Test User',
+  createdAt: new Date(),
+  ...overrides,
+});
+```
+
+### 6.2 Fixtures
+
+```typescript
+// fixtures/users.json
+{
+  "adminUser": {
+    "email": "admin@example.com",
+    "role": "admin"
+  },
+  "regularUser": {
+    "email": "user@example.com",
+    "role": "user"
+  }
+}
+```
+
+## 7. Running Tests
+
+```bash
+# run all tests
+npm test
+
+# run with coverage
+npm run test:coverage
+
+# run specific file
+npm test -- user.service.test.ts
+
+# run in watch mode
+npm run test:watch
+
+# run e2e tests
+npm run test:e2e
+```
+
+## 8. CI/CD Integration
+
+```yaml
+# github actions example
+test:
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+    - run: npm ci
+    - run: npm test -- --coverage
+    - uses: codecov/codecov-action@v4
+```
+
+{{#if variance.isRegulated}}
+## 9. Compliance Testing
+
+### 9.1 Security Tests
+
+- Run OWASP ZAP scans in CI
+- Validate input sanitization
+- Test authentication edge cases
+
+### 9.2 Audit Trail Tests
+
+- Verify all mutations create audit logs
+- Test audit log integrity
+- Validate retention policies
+{{/if}}
+
+---
+
+## Related Documents
+
+- [Coding Guidelines](./coding.md)
+- [TSD Index](../04-specs/index.md)
+
+---
+
+*[← Back to Guidelines](./)*

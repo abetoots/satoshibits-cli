@@ -1,0 +1,138 @@
+---
+id: TSD-ROOT
+title: "{{title}}"
+type: technical-spec
+status: Draft
+version: "1.0.0"
+created_date: "{{currentDate}}"
+last_updated: "{{currentDate}}"
+owner: "{{owner}}"
+---
+
+# Technical Specifications (TSD)
+
+**Project:** {{projectName}}
+
+## 1. Overview
+
+This directory contains detailed technical specifications for {{projectName}}. Unlike the high-level [ADD](../03-architecture/add.md), these documents provide implementation details, schemas, and code patterns.
+
+## 2. Specification Index
+
+| Specification | Description | Status |
+|---------------|-------------|--------|
+{{#if variance.hasApi}}
+| [API Specification](./api.md) | REST endpoints, request/response contracts | Draft |
+| [Authentication](./authentication.md) | Auth flows, token management, RBAC | Draft |
+{{/if}}
+{{#if variance.hasDatabase}}
+| [Database](./database.md) | Schema definitions, migrations, queries | Draft |
+{{/if}}
+{{#if variance.hasAsyncProcessing}}
+| [Background Jobs](./background-jobs.md) | Queue configuration, job handlers | Draft |
+{{/if}}
+<!-- Add common-patterns.md via: create-docs new spec "Common Patterns" -->
+
+## 3. Technology Stack Summary
+
+| Category | Technology | Version |
+|----------|------------|---------|
+| Language | *TypeScript/Go/etc* | *X.Y.Z* |
+| Runtime | *Node.js/etc* | *X.Y.Z* |
+{{#if variance.hasDatabase}}
+| Database | *PostgreSQL/etc* | *X.Y* |
+{{/if}}
+| Container | Docker | Latest |
+
+## 4. Getting Started
+
+### 4.1 Prerequisites
+
+- Docker & Docker Compose
+- *Language runtime* (version X.Y+)
+
+### 4.2 Local Development Setup
+
+```bash
+# clone the repository
+git clone <repo-url>
+cd {{projectName}}
+
+# install dependencies
+npm install  # or equivalent
+
+# start local environment
+docker-compose up -d
+
+# run the application
+npm run dev
+```
+
+### 4.3 Environment Variables
+
+<!-- Document required environment variables below or add a configuration spec -->
+
+## 5. Architecture Principles
+
+These principles guide all implementation decisions:
+
+| Principle | Application |
+|-----------|-------------|
+| Type Safety | All code must be strictly typed |
+| Immutability | Prefer immutable data structures |
+| Explicit Errors | Use Result types for expected errors |
+| Observability | All operations must be traceable |
+
+## 6. Standard Conventions
+
+### 6.1 Naming Conventions
+
+| Context | Convention | Example |
+|---------|------------|---------|
+| Files | kebab-case | `user-service.ts` |
+| Classes | PascalCase | `UserService` |
+| Functions | camelCase | `getUserById` |
+| Constants | SCREAMING_SNAKE | `MAX_RETRIES` |
+{{#if variance.hasDatabase}}
+| DB Tables | snake_case | `user_sessions` |
+| DB Columns | snake_case | `created_at` |
+{{/if}}
+
+### 6.2 Code Organization
+
+```
+src/
+├── domain/         # Business logic, entities
+├── application/    # Use cases, services
+├── infrastructure/ # External adapters (DB, API clients)
+├── presentation/   # Controllers, routes
+└── shared/         # Utilities, types
+```
+
+## 7. Quick Reference
+
+### Common Commands
+
+```bash
+# development
+npm run dev           # start dev server
+npm run build         # build for production
+npm run test          # run tests
+npm run lint          # run linter
+
+# database
+npm run db:migrate    # run migrations
+npm run db:seed       # seed test data
+```
+
+---
+
+## Related Documents
+
+- [Application Design](../03-architecture/add.md) - High-level architecture
+- [Coding Guidelines](../05-guidelines/coding.md) - Code standards
+- [Testing Strategy](../05-guidelines/testing.md) - Testing approach
+
+---
+
+*Previous Document: [ADD](../03-architecture/add.md)*

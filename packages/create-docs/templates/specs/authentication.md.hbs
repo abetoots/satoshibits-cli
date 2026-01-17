@@ -1,0 +1,198 @@
+---
+id: TSD-AUTH
+title: "{{title}}"
+type: technical-spec
+status: Draft
+version: "1.0.0"
+created_date: "{{currentDate}}"
+last_updated: "{{currentDate}}"
+owner: "{{owner}}"
+---
+
+# Authentication Specification
+
+**Project:** {{projectName}}
+
+## 1. Overview
+
+This document specifies the authentication and authorization implementation for {{projectName}}.
+
+## 2. Authentication Flow
+
+### 2.1 Login Flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant F as Frontend
+    participant A as API
+    participant D as Database
+
+    U->>F: Enter credentials
+    F->>A: POST /auth/login
+    A->>D: Verify credentials
+    D-->>A: User data
+    A->>A: Generate tokens
+    A-->>F: Access + Refresh tokens
+    F->>F: Store tokens
+    F-->>U: Redirect to dashboard
+```
+
+### 2.2 Token Refresh Flow
+
+```mermaid
+sequenceDiagram
+    participant F as Frontend
+    participant A as API
+
+    F->>A: Request with expired access token
+    A-->>F: 401 Unauthorized
+    F->>A: POST /auth/refresh (refresh token)
+    A->>A: Validate refresh token
+    A-->>F: New access token
+    F->>A: Retry original request
+```
+
+## 3. Token Specification
+
+### 3.1 Access Token (JWT)
+
+**Header:**
+```json
+{
+  "alg": "RS256",
+  "typ": "JWT"
+}
+```
+
+**Payload:**
+```json
+{
+  "sub": "user-uuid",
+  "email": "user@example.com",
+  "roles": ["user"],
+  "iat": 1704067200,
+  "exp": 1704070800,
+  "iss": "{{projectName}}"
+}
+```
+
+| Field | Description | Value |
+|-------|-------------|-------|
+| sub | User ID | UUID |
+| exp | Expiration | 1 hour |
+| iss | Issuer | {{projectName}} |
+
+### 3.2 Refresh Token
+
+- **Format:** Opaque token (UUID)
+- **Storage:** Database (hashed)
+- **Expiration:** 7 days
+- **Rotation:** New token on each use
+
+## 4. Authorization (RBAC)
+
+### 4.1 Roles
+
+| Role | Description | Permissions |
+|------|-------------|-------------|
+| admin | System administrator | All permissions |
+| user | Standard user | Read own data, limited write |
+| viewer | Read-only access | Read only |
+
+### 4.2 Permission Matrix
+
+| Resource | admin | user | viewer |
+|----------|-------|------|--------|
+| users:read | ✓ | Own only | ✗ |
+| users:write | ✓ | Own only | ✗ |
+| resources:read | ✓ | ✓ | ✓ |
+| resources:write | ✓ | ✓ | ✗ |
+| settings:manage | ✓ | ✗ | ✗ |
+
+## 5. Security Measures
+
+### 5.1 Password Requirements
+
+- Minimum 12 characters
+- At least 1 uppercase, 1 lowercase, 1 number
+- Hashing: bcrypt (cost factor 12)
+
+### 5.2 Rate Limiting
+
+| Endpoint | Limit | Window | Action |
+|----------|-------|--------|--------|
+| /auth/login | 5 | 15 min | Block IP |
+| /auth/refresh | 10 | 1 min | Delay |
+| /auth/password-reset | 3 | 1 hour | Block email |
+
+### 5.3 Session Management
+
+- Single session per device (optional)
+- Session invalidation on password change
+- Automatic cleanup of expired sessions
+
+{{#if variance.isRegulated}}
+## 6. Compliance
+
+### 6.1 Audit Logging
+
+All authentication events are logged:
+
+| Event | Data Captured |
+|-------|---------------|
+| Login success | User ID, IP, timestamp |
+| Login failure | Email, IP, timestamp, reason |
+| Logout | User ID, timestamp |
+| Token refresh | User ID, timestamp |
+| Password change | User ID, timestamp |
+
+### 6.2 MFA (Multi-Factor Authentication)
+
+- **Method:** TOTP (RFC 6238)
+- **App:** Any TOTP-compatible app
+- **Recovery:** 10 backup codes
+{{/if}}
+
+## 7. Implementation
+
+### 7.1 Middleware
+
+```typescript
+// authentication middleware
+export const authenticate = async (req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'No token' });
+
+  try {
+    const payload = verifyToken(token);
+    req.user = payload;
+    next();
+  } catch {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+};
+```
+
+### 7.2 Authorization Check
+
+```typescript
+// authorization middleware
+export const authorize = (...roles) => (req, res, next) => {
+  if (!roles.some(role => req.user.roles.includes(role))) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  next();
+};
+```
+
+---
+
+## Related Documents
+
+- [API Specification](./api.md)
+- [Security Guidelines](../06-operations/security.md)
+
+---
+
+*[← Back to TSD Index](./index.md)*

@@ -1,0 +1,198 @@
+---
+id: TSD-API
+title: "{{title}}"
+type: technical-spec
+status: Draft
+version: "1.0.0"
+created_date: "{{currentDate}}"
+last_updated: "{{currentDate}}"
+owner: "{{owner}}"
+---
+
+# API Specification
+
+**Project:** {{projectName}}
+
+## 1. Overview
+
+This document defines the REST API contracts for {{projectName}}.
+
+## 2. API Conventions
+
+### 2.1 Base URL
+
+```
+Production: https://api.example.com/v1
+Staging:    https://api-staging.example.com/v1
+Local:      http://localhost:3000/v1
+```
+
+### 2.2 Authentication
+
+All endpoints (except public ones) require authentication via Bearer token:
+
+```http
+Authorization: Bearer <token>
+```
+
+### 2.3 Response Format
+
+**Success Response:**
+```json
+{
+  "data": { ... },
+  "meta": {
+    "timestamp": "2024-01-01T00:00:00Z"
+  }
+}
+```
+
+**Error Response (RFC 7807):**
+```json
+{
+  "type": "https://api.example.com/errors/validation",
+  "title": "Validation Error",
+  "status": 400,
+  "detail": "The request body contains invalid fields",
+  "instance": "/users/123",
+  "errors": [
+    { "field": "email", "message": "Invalid email format" }
+  ]
+}
+```
+
+### 2.4 Status Codes
+
+| Code | Meaning | Usage |
+|------|---------|-------|
+| 200 | OK | Successful GET, PUT, PATCH |
+| 201 | Created | Successful POST |
+| 204 | No Content | Successful DELETE |
+| 400 | Bad Request | Validation errors |
+| 401 | Unauthorized | Missing/invalid auth |
+| 403 | Forbidden | Insufficient permissions |
+| 404 | Not Found | Resource doesn't exist |
+| 409 | Conflict | Duplicate/conflict |
+| 500 | Server Error | Unexpected error |
+
+## 3. Endpoints
+
+### 3.1 Health Check
+
+```http
+GET /health
+```
+
+**Response:** `200 OK`
+```json
+{
+  "status": "healthy",
+  "version": "1.0.0",
+  "timestamp": "2024-01-01T00:00:00Z"
+}
+```
+
+### 3.2 Authentication
+
+#### POST /auth/login
+
+**Request:**
+```json
+{
+  "email": "user@example.com",
+  "password": "********"
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "data": {
+    "accessToken": "eyJ...",
+    "refreshToken": "eyJ...",
+    "expiresIn": 3600
+  }
+}
+```
+
+### 3.3 Resources
+
+#### GET /resources
+
+**Query Parameters:**
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| page | integer | No | Page number (default: 1) |
+| limit | integer | No | Items per page (default: 20, max: 100) |
+| sort | string | No | Sort field |
+| order | string | No | Sort order (asc/desc) |
+
+**Response:** `200 OK`
+```json
+{
+  "data": [...],
+  "meta": {
+    "page": 1,
+    "limit": 20,
+    "total": 100,
+    "totalPages": 5
+  }
+}
+```
+
+#### POST /resources
+
+**Request:**
+```json
+{
+  "name": "Resource Name",
+  "description": "Description"
+}
+```
+
+**Response:** `201 Created`
+
+#### GET /resources/:id
+
+**Response:** `200 OK`
+
+#### PUT /resources/:id
+
+**Request:** Full resource object
+
+**Response:** `200 OK`
+
+#### DELETE /resources/:id
+
+**Response:** `204 No Content`
+
+## 4. Rate Limiting
+
+| Endpoint | Limit | Window |
+|----------|-------|--------|
+| Authentication | 10 | 1 minute |
+| General API | 100 | 1 minute |
+
+Headers returned:
+```http
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 95
+X-RateLimit-Reset: 1704067200
+```
+
+## 5. Versioning
+
+API version is included in the URL path (`/v1/`, `/v2/`).
+
+Breaking changes will increment the major version.
+
+---
+
+## Related Documents
+
+- [Authentication Specification](./authentication.md)
+- [ADD - API Design](../03-architecture/add.md)
+
+---
+
+*[← Back to TSD Index](./index.md)*

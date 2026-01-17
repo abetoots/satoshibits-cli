@@ -1,0 +1,126 @@
+---
+id: BRD-001
+title: "{{title}}"
+type: strategy
+status: Draft
+version: "1.0.0"
+created_date: "{{currentDate}}"
+last_updated: "{{currentDate}}"
+owner: "{{owner}}"
+audience: "{{audience}}"
+reviewers: []
+---
+
+# Business Requirements Document (BRD)
+
+**Project:** {{projectName}}
+
+## 1. Executive Summary
+
+<!-- Brief high-level summary of the project, its purpose, and the primary problem it solves -->
+
+> *Describe the business problem and proposed solution in 2-3 paragraphs.*
+
+## 2. Business Goals & Success Metrics
+
+| ID | Business Goal | Success Metric (KPI) | Target | Priority |
+|----|---------------|----------------------|--------|----------|
+| BG-001 | *Goal description* | *Measurable metric* | *Target value* | P0 |
+| BG-002 | *Goal description* | *Measurable metric* | *Target value* | P1 |
+
+## 3. Stakeholder Analysis
+
+| Role | Representative | Responsibilities | Communication |
+|------|----------------|------------------|---------------|
+| Project Sponsor | *Name* | Budget approval, strategic alignment | Weekly updates |
+| Product Owner | *Name* | Backlog prioritization, acceptance | Daily standups |
+| Tech Lead | *Name* | Technical feasibility, architecture | Design reviews |
+| End Users | *User group* | Provide feedback, acceptance testing | UAT sessions |
+
+## 4. Scope Definition
+
+### 4.1 In-Scope (Phase 1)
+
+- [ ] *Core capability 1*
+- [ ] *Core capability 2*
+- [ ] *Core capability 3*
+
+### 4.2 Out-of-Scope (Deferred)
+
+<!-- Critical section to prevent scope creep -->
+
+- *Feature/capability deferred to Phase 2*
+- *Feature/capability not included*
+
+{{#if variance.isRegulated}}
+### 4.3 Compliance Requirements
+
+- [ ] *Regulatory requirement 1*
+- [ ] *Regulatory requirement 2*
+{{/if}}
+
+## 5. Constraints & Assumptions
+
+### 5.1 Constraints
+
+| Constraint | Impact | Mitigation |
+|------------|--------|------------|
+| *Budget: $X* | *Limits scope* | *Phased delivery* |
+| *Timeline: X months* | *MVP focus required* | *Feature prioritization* |
+
+### 5.2 Assumptions
+
+- *Assumption 1*
+- *Assumption 2*
+
+## 6. Risk Assessment
+
+| Risk | Impact (H/M/L) | Probability (H/M/L) | Mitigation Strategy |
+|------|----------------|---------------------|---------------------|
+| *Risk description* | High | Medium | *Mitigation approach* |
+
+## 7. Phased Roadmap
+
+```mermaid
+gantt
+    title Project Roadmap
+    dateFormat  YYYY-MM-DD
+    section Phase 1
+    MVP Development    :a1, {{currentDate}}, 90d
+    section Phase 2
+    Feature Expansion  :a2, after a1, 60d
+```
+
+### Phase 1: MVP
+- *Deliverable 1*
+- *Deliverable 2*
+
+### Phase 2: Enhancement
+- *Deliverable 3*
+- *Deliverable 4*
+
+## 8. Open Questions
+
+<!-- Track unresolved items that need stakeholder input -->
+
+- [ ] *Question 1*
+- [ ] *Question 2*
+
+---
+
+## Appendices
+
+### A. Related Documents
+
+- [Functional Requirements Document](../02-requirements/frd.md)
+- [Application Design Document](../03-architecture/add.md)
+
+### B. Revision History
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | {{currentDate}} | {{owner}} | Initial draft |
+
+---
+
+*Next Document: [Functional Requirements Document](../02-requirements/frd.md)*

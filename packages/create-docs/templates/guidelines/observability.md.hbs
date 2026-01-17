@@ -1,0 +1,241 @@
+---
+id: GUIDE-OBSERVABILITY
+title: "{{title}}"
+type: guideline
+status: Draft
+version: "1.0.0"
+created_date: "{{currentDate}}"
+last_updated: "{{currentDate}}"
+owner: "{{owner}}"
+---
+
+# Observability Guidelines
+
+**Project:** {{projectName}}
+
+## 1. Overview
+
+This document defines logging, metrics, and tracing standards for {{projectName}}.
+
+## 2. Three Pillars
+
+| Pillar | Purpose | Tool |
+|--------|---------|------|
+| Logs | Event records | Loki |
+| Metrics | Numerical measurements | Prometheus |
+| Traces | Request flow | Tempo |
+
+## 3. Logging
+
+### 3.1 Log Levels
+
+| Level | Use Case | Example |
+|-------|----------|---------|
+| `error` | Unexpected failures | Database connection failed |
+| `warn` | Recoverable issues | Retry attempt, deprecated usage |
+| `info` | Business events | User created, order placed |
+| `debug` | Development details | Function entry/exit, state |
+
+### 3.2 Structured Logging
+
+```typescript
+// always use structured logs
+logger.info('user created', {
+  userId: user.id,
+  email: user.email,
+  source: 'registration',
+});
+
+// never log sensitive data
+logger.info('login attempt', {
+  email: maskEmail(email), // mask PII
+  // never: password, token, ssn
+});
+```
+
+### 3.3 Log Format
+
+```json
+{
+  "timestamp": "2024-01-15T10:30:00Z",
+  "level": "info",
+  "message": "user created",
+  "service": "{{projectName}}",
+  "traceId": "abc123",
+  "spanId": "def456",
+  "userId": "user-123",
+  "duration": 45
+}
+```
+
+### 3.4 What to Log
+
+| Event | Level | Required Fields |
+|-------|-------|-----------------|
+| Request received | info | path, method, traceId |
+| Request completed | info | path, status, duration |
+| Error occurred | error | message, stack, context |
+| Business event | info | eventType, entityId |
+
+## 4. Metrics
+
+### 4.1 Naming Convention
+
+```
+<namespace>_<name>_<unit>
+```
+
+Examples:
+- `http_requests_total`
+- `http_request_duration_seconds`
+- `db_connections_active`
+
+### 4.2 Standard Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `http_requests_total` | Counter | Total HTTP requests |
+| `http_request_duration_seconds` | Histogram | Request latency |
+| `http_requests_in_flight` | Gauge | Active requests |
+| `db_query_duration_seconds` | Histogram | Database query time |
+
+### 4.3 Labels
+
+```typescript
+// good: low cardinality
+httpRequests.inc({
+  method: 'GET',
+  path: '/api/users',
+  status: '200',
+});
+
+// bad: high cardinality (will explode metrics)
+httpRequests.inc({
+  userId: user.id, // don't use IDs as labels!
+  timestamp: Date.now(),
+});
+```
+
+### 4.4 RED Method
+
+For every service, track:
+- **R**ate: requests per second
+- **E**rrors: failed requests per second
+- **D**uration: latency distribution
+
+## 5. Tracing
+
+### 5.1 Span Naming
+
+```typescript
+// name spans by operation
+tracer.startSpan('db.query.users.findById');
+tracer.startSpan('http.client.payment-service');
+tracer.startSpan('cache.get.user-session');
+```
+
+### 5.2 Span Attributes
+
+```typescript
+span.setAttributes({
+  'http.method': 'POST',
+  'http.url': '/api/orders',
+  'http.status_code': 201,
+  'user.id': userId,
+  'order.id': orderId,
+});
+```
+
+### 5.3 Context Propagation
+
+```typescript
+// always propagate trace context
+const response = await fetch(url, {
+  headers: {
+    ...propagator.inject(context.active()),
+  },
+});
+```
+
+## 6. Alerting
+
+### 6.1 Alert Severity
+
+| Severity | Response | Example |
+|----------|----------|---------|
+| Critical | Page immediately | Service down |
+| Warning | Next business day | Error rate elevated |
+| Info | Review weekly | Disk usage growing |
+
+### 6.2 Alert Rules
+
+```yaml
+# example prometheus alert
+- alert: HighErrorRate
+  expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+  for: 5m
+  labels:
+    severity: critical
+  annotations:
+    summary: "High 5xx error rate"
+```
+
+### 6.3 Runbook Links
+
+Every alert must include a runbook link:
+
+```yaml
+annotations:
+  runbook: "https://docs.example.com/runbooks/high-error-rate"
+```
+
+## 7. Dashboards
+
+### 7.1 Standard Dashboards
+
+| Dashboard | Purpose |
+|-----------|---------|
+| Service Overview | Health at a glance |
+| Request Latency | P50, P95, P99 latencies |
+| Error Analysis | Error rates and types |
+| Resource Usage | CPU, memory, connections |
+
+### 7.2 Dashboard Best Practices
+
+- Use consistent time ranges
+- Show rate, not raw counts
+- Include baseline/threshold lines
+- Group related panels
+
+{{#if variance.isRegulated}}
+## 8. Compliance Logging
+
+### 8.1 Audit Events
+
+All audit events must include:
+- Timestamp (ISO 8601)
+- Actor (user ID, service account)
+- Action (create, read, update, delete)
+- Resource (type and ID)
+- Result (success/failure)
+- IP address (for user actions)
+
+### 8.2 Retention
+
+| Log Type | Retention |
+|----------|-----------|
+| Application logs | 30 days |
+| Audit logs | 7 years |
+| Security events | 1 year |
+{{/if}}
+
+---
+
+## Related Documents
+
+- [Operations Runbook](../06-operations/runbook.md)
+- [Security Guidelines](../06-operations/security.md)
+
+---
+
+*[← Back to Guidelines](./)*

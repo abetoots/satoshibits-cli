@@ -1,0 +1,53 @@
+# {{projectName}} Documentation
+
+Welcome to the {{projectName}} documentation. This directory contains all project documentation organized by purpose.
+
+## Quick Navigation
+
+| Section | Purpose | Audience |
+|---------|---------|----------|
+| [00-meta/](./00-meta/) | Glossary, definitions | Everyone |
+| [01-strategy/](./01-strategy/) | Business requirements (WHY) | Executives, PMs |
+| [02-requirements/](./02-requirements/) | Functional requirements (WHAT) | PMs, Engineers |
+| [03-architecture/](./03-architecture/) | Architecture & decisions (HOW) | Tech Leads |
+| [04-specs/](./04-specs/) | Technical specifications | Engineers |
+| [05-guidelines/](./05-guidelines/) | Engineering standards | Engineers |
+| [06-operations/](./06-operations/) | Operational runbooks | DevOps, SRE |
+
+## Document Hierarchy
+
+```
+BRD (Business Requirements) - WHY we're building this
+  ↓
+FRD (Functional Requirements) - WHAT we're building
+  ↓
+ADD (Application Design) - HOW we're building it (architecture)
+  ↓
+TSD (Technical Specs) - HOW we're building it (implementation)
+```
+
+## Getting Started
+
+1. **New to the project?** Start with the [Business Requirements](./01-strategy/brd.md) to understand the WHY.
+2. **Product/Engineering?** Review the [Functional Requirements](./02-requirements/frd.md) for features.
+3. **Technical Lead?** Check the [Application Design](./03-architecture/add.md) for architecture decisions.
+4. **Developer?** Dive into [Technical Specifications](./04-specs/) for implementation details.
+
+## Document Conventions
+
+- **Requirement IDs**: `FR-<MODULE>-<NNN>` format (e.g., FR-AUTH-001)
+- **Status**: Draft → Review → Approved → Deprecated
+- **Diagrams**: Mermaid.js for version-controlled diagrams
+
+## Contributing
+
+When adding or updating documentation:
+
+1. Follow the templates in each section
+2. Include YAML frontmatter with required metadata
+3. Run `create-docs lint` to validate before committing
+4. Update the traceability matrix if adding new requirements
+
+---
+
+*Generated with [create-docs](https://github.com/your-org/create-docs)*

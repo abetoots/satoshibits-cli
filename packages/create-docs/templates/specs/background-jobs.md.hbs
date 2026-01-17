@@ -1,0 +1,166 @@
+---
+id: TSD-JOBS
+title: "{{title}}"
+type: technical-spec
+status: Draft
+version: "1.0.0"
+created_date: "{{currentDate}}"
+last_updated: "{{currentDate}}"
+owner: "{{owner}}"
+---
+
+# Background Jobs Specification
+
+**Project:** {{projectName}}
+
+## 1. Overview
+
+This document specifies the background job processing system for {{projectName}}.
+
+## 2. Architecture
+
+### 2.1 Job Processing Flow
+
+```mermaid
+flowchart LR
+    A[API] -->|Enqueue| B[Queue]
+    B --> C[Worker]
+    C -->|Process| D[Job Handler]
+    D -->|Success| E[Complete]
+    D -->|Failure| F[Retry/DLQ]
+```
+
+### 2.2 Technology Stack
+
+| Component | Technology | Purpose |
+|-----------|------------|---------|
+| Queue | Redis / BullMQ | Job queue management |
+| Worker | Node.js | Job processing |
+| Monitoring | Bull Board | Queue dashboard |
+
+## 3. Queue Configuration
+
+### 3.1 Queues
+
+| Queue | Purpose | Concurrency | Rate Limit |
+|-------|---------|-------------|------------|
+| email | Email sending | 5 | 100/min |
+| notifications | Push notifications | 10 | 500/min |
+| reports | Report generation | 2 | 10/min |
+| cleanup | Data cleanup | 1 | - |
+
+### 3.2 Default Settings
+
+```typescript
+const defaultJobOptions = {
+  attempts: 3,
+  backoff: {
+    type: 'exponential',
+    delay: 1000,
+  },
+  removeOnComplete: true,
+  removeOnFail: false,
+};
+```
+
+## 4. Job Types
+
+### 4.1 Email Jobs
+
+```typescript
+interface EmailJob {
+  type: 'email';
+  data: {
+    to: string;
+    template: string;
+    variables: Record<string, unknown>;
+  };
+}
+```
+
+**Priority Levels:**
+| Priority | Use Case | Delay |
+|----------|----------|-------|
+| high | Password reset | 0 |
+| normal | Notifications | 0 |
+| low | Marketing | 1 min |
+
+### 4.2 Report Jobs
+
+```typescript
+interface ReportJob {
+  type: 'report';
+  data: {
+    reportType: string;
+    userId: string;
+    parameters: Record<string, unknown>;
+  };
+}
+```
+
+## 5. Error Handling
+
+### 5.1 Retry Strategy
+
+| Attempt | Delay | Action |
+|---------|-------|--------|
+| 1 | 1s | Retry |
+| 2 | 4s | Retry |
+| 3 | 16s | Retry |
+| 4 | - | Move to DLQ |
+
+### 5.2 Dead Letter Queue
+
+Failed jobs after all retries are moved to the DLQ for manual inspection.
+
+```typescript
+// dlq processing
+const dlqProcessor = async (job) => {
+  await alertOps('Job failed permanently', job);
+  await logFailure(job);
+};
+```
+
+## 6. Monitoring
+
+### 6.1 Metrics
+
+| Metric | Description | Alert Threshold |
+|--------|-------------|-----------------|
+| queue_depth | Jobs waiting | > 1000 |
+| processing_time | Job duration | > 30s |
+| failure_rate | Failed jobs % | > 5% |
+| dlq_count | Jobs in DLQ | > 10 |
+
+### 6.2 Dashboard
+
+Bull Board available at: `/admin/queues` (admin only)
+
+## 7. Scheduled Jobs
+
+### 7.1 Cron Jobs
+
+| Job | Schedule | Description |
+|-----|----------|-------------|
+| cleanup | 0 0 * * * | Daily cleanup |
+| reports | 0 8 * * 1 | Weekly reports |
+| health | */5 * * * * | Health check |
+
+### 7.2 Configuration
+
+```typescript
+// scheduled job registration
+scheduler.register('cleanup', '0 0 * * *', cleanupHandler);
+scheduler.register('reports', '0 8 * * 1', reportHandler);
+```
+
+---
+
+## Related Documents
+
+- [ADD - Async Processing](../03-architecture/add.md)
+- [Operations Runbook](../06-operations/runbook.md)
+
+---
+
+*[← Back to TSD Index](./index.md)*

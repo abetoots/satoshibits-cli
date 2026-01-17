@@ -1,0 +1,158 @@
+---
+id: FRD-001
+title: "{{title}}"
+type: requirements
+status: Draft
+version: "1.0.0"
+created_date: "{{currentDate}}"
+last_updated: "{{currentDate}}"
+owner: "{{owner}}"
+audience: "{{audience}}"
+reviewers: []
+related_brd: "BRD-001"
+---
+
+# Functional Requirements Document (FRD)
+
+**Project:** {{projectName}}
+
+## 1. Introduction
+
+This document specifies the functional and non-functional requirements for {{projectName}}. It translates business objectives from the [BRD](../01-strategy/brd.md) into detailed feature specifications.
+
+### 1.1 Document Scope
+
+**This document covers:**
+- User personas and roles
+- Functional requirements with acceptance criteria
+- Non-functional requirements (NFRs)
+- Traceability to business goals
+
+**This document does NOT cover:**
+- Implementation details (see [TSD](../04-specs/))
+- Architecture decisions (see [ADD](../03-architecture/add.md))
+
+## 2. Definitions
+
+| Term | Definition |
+|------|------------|
+| *Term 1* | *Definition* |
+| *Term 2* | *Definition* |
+
+See also: [Glossary](../00-meta/glossary.md)
+
+## 3. User Personas
+
+### 3.1 Persona: Administrator
+
+- **Role:** System administrator
+- **Goals:** Manage users, configure system, monitor health
+- **Pain Points:** Complex configuration, lack of visibility
+
+### 3.2 Persona: End User
+
+- **Role:** Primary system user
+- **Goals:** *User-specific goals*
+- **Pain Points:** *Current frustrations*
+
+## 4. User Workflows
+
+```mermaid
+flowchart TD
+    A[User Action] --> B{Decision Point}
+    B -- Yes --> C[Outcome 1]
+    B -- No --> D[Outcome 2]
+```
+
+## 5. Functional Requirements
+
+### 5.1 Module: Authentication (AUTH)
+
+| Req ID | Description | Acceptance Criteria | Priority | Related BG |
+|--------|-------------|---------------------|----------|------------|
+| **FR-AUTH-001** | System must support user login | User can authenticate with credentials; Invalid credentials show error | P0 | BG-001 |
+| **FR-AUTH-002** | System must support password reset | User receives reset email within 5 minutes; Link expires after 24h | P1 | BG-001 |
+{{#if variance.isRegulated}}
+| **FR-AUTH-003** | System must support MFA | User can enable TOTP; Codes validate within 30s window | P0 | BG-002 |
+{{/if}}
+
+### 5.2 Module: Core Features (CORE)
+
+| Req ID | Description | Acceptance Criteria | Priority | Related BG |
+|--------|-------------|---------------------|----------|------------|
+| **FR-CORE-001** | *Feature description* | *Testable criteria* | P0 | BG-001 |
+| **FR-CORE-002** | *Feature description* | *Testable criteria* | P1 | BG-002 |
+
+## 6. Non-Functional Requirements (NFRs)
+
+### 6.1 Performance
+
+| ID | Requirement | Constraint | Measurement |
+|----|-------------|------------|-------------|
+| NFR-PERF-001 | API response time | < 200ms (p95) | Load testing |
+| NFR-PERF-002 | Concurrent users | Support 1000 concurrent | Stress testing |
+
+### 6.2 Security
+
+| ID | Requirement | Constraint | Measurement |
+|----|-------------|------------|-------------|
+| NFR-SEC-001 | Data encryption at rest | AES-256 | Security audit |
+| NFR-SEC-002 | Data encryption in transit | TLS 1.3 | Cert verification |
+
+### 6.3 Availability
+
+| ID | Requirement | Target | Measurement |
+|----|-------------|--------|-------------|
+| NFR-AVL-001 | System uptime | 99.9% | Monitoring |
+| NFR-AVL-002 | Recovery time (RTO) | < 1 hour | DR testing |
+
+{{#if variance.isRegulated}}
+### 6.4 Compliance
+
+| ID | Requirement | Standard | Measurement |
+|----|-------------|----------|-------------|
+| NFR-CMP-001 | Audit logging | SOC 2 | Audit review |
+| NFR-CMP-002 | Data retention | 7 years | Policy compliance |
+{{/if}}
+
+## 7. UI/UX Requirements
+
+- **Design System:** *Link to Figma/Storybook*
+- **Accessibility:** WCAG 2.1 AA Compliance required
+- **Responsive:** Must support desktop and mobile viewports
+
+## 8. Deferred Backlog
+
+<!-- Features intentionally deferred to future phases -->
+
+| Feature | Reason for Deferral | Target Phase |
+|---------|---------------------|--------------|
+| *Feature X* | *Rationale* | Phase 2 |
+
+---
+
+## Appendices
+
+### A. Traceability Matrix
+
+| FRD Requirement | BRD Business Goal | Success Metric |
+|-----------------|-------------------|----------------|
+| FR-AUTH-001 to FR-AUTH-003 | BG-001 | User authentication rate |
+| FR-CORE-001 to FR-CORE-002 | BG-002 | Feature adoption |
+
+### B. Related Documents
+
+- [Business Requirements Document](../01-strategy/brd.md)
+- [Application Design Document](../03-architecture/add.md)
+- [Technical Specifications](../04-specs/)
+
+### C. Revision History
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0.0 | {{currentDate}} | {{owner}} | Initial draft |
+
+---
+
+*Previous Document: [BRD](../01-strategy/brd.md)*
+*Next Document: [ADD](../03-architecture/add.md)*

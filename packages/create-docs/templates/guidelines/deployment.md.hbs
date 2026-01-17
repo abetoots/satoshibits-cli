@@ -1,0 +1,271 @@
+---
+id: GUIDE-DEPLOYMENT
+title: "{{title}}"
+type: guideline
+status: Draft
+version: "1.0.0"
+created_date: "{{currentDate}}"
+last_updated: "{{currentDate}}"
+owner: "{{owner}}"
+---
+
+# Deployment Guidelines
+
+**Project:** {{projectName}}
+
+## 1. Overview
+
+This document defines deployment procedures and standards for {{projectName}}.
+
+## 2. Environment Strategy
+
+### 2.1 Environments
+
+| Environment | Purpose | URL | Deploy Trigger |
+|-------------|---------|-----|----------------|
+| Development | Feature testing | dev.example.com | Push to feature branch |
+| Staging | Integration testing | staging.example.com | Merge to main |
+| Production | Live system | example.com | Manual release |
+
+### 2.2 Environment Parity
+
+All environments should be as similar as possible:
+- Same container images
+- Same infrastructure configuration (scaled down)
+- Same database schema
+- Environment-specific: secrets, endpoints, scaling
+
+## 3. Container Strategy
+
+### 3.1 Dockerfile Best Practices
+
+```dockerfile
+# use specific base image version
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# copy dependency files first (cache layer)
+COPY package*.json ./
+RUN npm ci --only=production
+
+# copy source and build
+COPY . .
+RUN npm run build
+
+# production stage
+FROM node:20-alpine
+WORKDIR /app
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+
+# run as non-root user
+USER node
+EXPOSE 3000
+CMD ["node", "dist/main.js"]
+```
+
+### 3.2 Image Tagging
+
+| Tag Pattern | Use Case |
+|-------------|----------|
+| `latest` | Development only |
+| `v1.2.3` | Production releases |
+| `sha-abc123` | Staging deployments |
+
+## 4. Deployment Process
+
+### 4.1 Pre-Deployment Checklist
+
+- [ ] All tests pass in CI
+- [ ] Code review approved
+- [ ] Staging deployment verified
+- [ ] Database migrations tested
+- [ ] Feature flags configured
+- [ ] Rollback plan documented
+
+### 4.2 Deployment Steps
+
+```mermaid
+flowchart LR
+    A[Build] --> B[Test]
+    B --> C[Push Image]
+    C --> D[Deploy Staging]
+    D --> E[Verify]
+    E --> F[Deploy Prod]
+    F --> G[Monitor]
+```
+
+### 4.3 Zero-Downtime Deployment
+
+```yaml
+# kubernetes rolling update
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+```
+
+## 5. Database Migrations
+
+### 5.1 Migration Safety Rules
+
+| Rule | Reason |
+|------|--------|
+| Always backward compatible | Old code may still run |
+| Never drop columns immediately | Deploy new code first |
+| Add indexes concurrently | Avoid table locks |
+| Test with production-like data | Catch performance issues |
+
+### 5.2 Safe Migration Pattern
+
+```sql
+-- step 1: add new column (nullable)
+ALTER TABLE users ADD COLUMN new_field VARCHAR(255);
+
+-- step 2: deploy code that writes to both columns
+
+-- step 3: backfill data
+UPDATE users SET new_field = old_field WHERE new_field IS NULL;
+
+-- step 4: deploy code that only reads new column
+
+-- step 5: drop old column (separate deployment)
+ALTER TABLE users DROP COLUMN old_field;
+```
+
+## 6. Configuration Management
+
+### 6.1 Configuration Sources
+
+| Priority | Source | Use For |
+|----------|--------|---------|
+| 1 | Environment variables | Secrets, endpoints |
+| 2 | ConfigMaps | Non-sensitive config |
+| 3 | Default values | Development defaults |
+
+### 6.2 Secret Management
+
+```bash
+# never commit secrets to git
+# use kubernetes secrets or vault
+
+kubectl create secret generic app-secrets \
+  --from-literal=DATABASE_URL=postgres://... \
+  --from-literal=API_KEY=...
+```
+
+## 7. Health Checks
+
+### 7.1 Endpoint Requirements
+
+```typescript
+// liveness: is the process running?
+app.get('/health/live', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
+
+// readiness: can it accept traffic?
+app.get('/health/ready', async (req, res) => {
+  const dbOk = await checkDatabase();
+  const cacheOk = await checkCache();
+
+  if (dbOk && cacheOk) {
+    res.status(200).json({ status: 'ready' });
+  } else {
+    res.status(503).json({ status: 'not ready' });
+  }
+});
+```
+
+### 7.2 Probe Configuration
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /health/live
+    port: 3000
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /health/ready
+    port: 3000
+  initialDelaySeconds: 5
+  periodSeconds: 5
+```
+
+## 8. Rollback Procedures
+
+### 8.1 When to Rollback
+
+- Error rate exceeds threshold (>1%)
+- Latency exceeds SLA (P99 > 500ms)
+- Critical functionality broken
+- Security vulnerability discovered
+
+### 8.2 Rollback Steps
+
+```bash
+# 1. identify previous version
+kubectl rollout history deployment/app
+
+# 2. rollback to previous revision
+kubectl rollout undo deployment/app
+
+# 3. verify rollback
+kubectl rollout status deployment/app
+
+# 4. check application health
+curl https://example.com/health/ready
+```
+
+### 8.3 Database Rollback
+
+If migration must be rolled back:
+1. Deploy code that handles both schemas
+2. Run reverse migration
+3. Deploy code without new schema handling
+
+{{#if variance.isRegulated}}
+## 9. Compliance Requirements
+
+### 9.1 Change Documentation
+
+Every production deployment must have:
+- Change request ID
+- Approval record
+- Deployment timestamp
+- Deployer identity
+
+### 9.2 Deployment Windows
+
+| Day | Time (UTC) | Allowed |
+|-----|------------|---------|
+| Mon-Thu | 10:00-16:00 | Standard changes |
+| Friday | - | Emergency only |
+| Weekend | - | Emergency only |
+
+### 9.3 Post-Deployment Verification
+
+- [ ] Smoke tests pass
+- [ ] No new errors in logs
+- [ ] Metrics within normal range
+- [ ] Change record updated
+{{/if}}
+
+---
+
+## Related Documents
+
+{{#if variance.isRegulated}}
+- [Change Management](./change-management.md)
+{{/if}}
+- [Operations Runbook](../06-operations/runbook.md)
+
+---
+
+*[← Back to Guidelines](./)*

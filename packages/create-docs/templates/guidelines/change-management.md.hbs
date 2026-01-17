@@ -1,0 +1,208 @@
+---
+id: GUIDE-CHANGE
+title: "{{title}}"
+type: guideline
+status: Draft
+version: "1.0.0"
+created_date: "{{currentDate}}"
+last_updated: "{{currentDate}}"
+owner: "{{owner}}"
+---
+
+# Change Management Guidelines
+
+**Project:** {{projectName}}
+
+## 1. Overview
+
+This document defines the process for managing changes to {{projectName}}, including code changes, configuration updates, and infrastructure modifications.
+
+## 2. Change Categories
+
+| Category | Risk | Approval | Examples |
+|----------|------|----------|----------|
+| Standard | Low | Auto-approve | Bug fixes, minor UI changes |
+| Normal | Medium | Tech Lead | New features, API changes |
+| Emergency | High | On-call + Lead | Security patches, outages |
+{{#if variance.isRegulated}}
+| Regulated | Critical | CAB | Compliance-impacting changes |
+{{/if}}
+
+## 3. Git Workflow
+
+### 3.1 Branch Strategy (Trunk-Based)
+
+```mermaid
+gitGraph
+    commit id: "main"
+    branch feature/user-auth
+    commit id: "feat"
+    commit id: "test"
+    checkout main
+    merge feature/user-auth
+    commit id: "release"
+```
+
+### 3.2 Branch Naming
+
+| Type | Pattern | Example |
+|------|---------|---------|
+| Feature | `feature/<ticket>-<description>` | `feature/PROJ-123-user-auth` |
+| Bugfix | `fix/<ticket>-<description>` | `fix/PROJ-456-login-error` |
+| Hotfix | `hotfix/<description>` | `hotfix/security-patch` |
+
+### 3.3 Commit Messages
+
+```
+<type>(<scope>): <description>
+
+[optional body]
+
+[optional footer]
+```
+
+**Types:**
+- `feat`: New feature
+- `fix`: Bug fix
+- `docs`: Documentation
+- `refactor`: Code refactoring
+- `test`: Adding tests
+- `chore`: Maintenance
+
+## 4. Code Review Process
+
+### 4.1 Requirements
+
+- [ ] All tests pass
+- [ ] No new linting errors
+- [ ] Code coverage maintained
+- [ ] At least 1 approval required
+- [ ] No unresolved comments
+
+### 4.2 Review Checklist
+
+**Reviewer should verify:**
+
+- [ ] Code matches requirements
+- [ ] No security vulnerabilities
+- [ ] Error handling is appropriate
+- [ ] Tests cover new functionality
+- [ ] Documentation updated if needed
+
+### 4.3 Review Timeline
+
+| Change Type | Expected Review Time |
+|-------------|---------------------|
+| Small (<100 lines) | Same day |
+| Medium (100-500 lines) | 1-2 days |
+| Large (>500 lines) | 2-3 days |
+
+## 5. Deployment Process
+
+### 5.1 Environments
+
+| Environment | Purpose | Deployment |
+|-------------|---------|------------|
+| Development | Feature testing | On push |
+| Staging | Integration testing | On PR merge |
+| Production | Live system | Manual trigger |
+
+### 5.2 Deployment Checklist
+
+- [ ] All CI checks pass
+- [ ] Staging verification complete
+- [ ] Rollback plan documented
+- [ ] Monitoring dashboards ready
+- [ ] On-call notified (for major changes)
+
+### 5.3 Rollback Procedure
+
+```bash
+# identify last known good deployment
+git log --oneline -10
+
+# revert to previous release
+git revert <commit-hash>
+
+# or roll back infrastructure
+./scripts/rollback.sh <version>
+```
+
+## 6. Risk Assessment
+
+### 6.1 Impact Matrix
+
+| Factor | Low | Medium | High |
+|--------|-----|--------|------|
+| Users affected | <100 | 100-1000 | >1000 |
+| Data changes | None | Read paths | Write paths |
+| Downtime | None | <5 min | >5 min |
+
+### 6.2 Mitigation Strategies
+
+| Risk | Mitigation |
+|------|------------|
+| Data loss | Backup before migration |
+| Performance | Load test in staging |
+| Breaking changes | Feature flags |
+| Dependency issues | Lock file verification |
+
+{{#if variance.isRegulated}}
+## 7. Compliance Requirements
+
+### 7.1 Change Advisory Board (CAB)
+
+For regulated changes:
+
+1. Submit change request form
+2. CAB review (weekly meeting)
+3. Approval/rejection documented
+4. Implementation window assigned
+5. Post-implementation review
+
+### 7.2 Audit Trail
+
+All changes must include:
+
+- Change request ID
+- Approver name and timestamp
+- Implementation evidence
+- Rollback verification
+
+### 7.3 Documentation Requirements
+
+| Document | Required For |
+|----------|-------------|
+| Change Request | All regulated changes |
+| Risk Assessment | Medium+ risk changes |
+| Test Evidence | All production changes |
+| Rollback Plan | All production changes |
+{{/if}}
+
+## 8. Emergency Changes
+
+### 8.1 Criteria
+
+Emergency changes are only for:
+- Security vulnerabilities (active exploit)
+- Complete service outage
+- Data integrity issues
+
+### 8.2 Process
+
+1. Page on-call engineer
+2. Assess and document issue
+3. Implement fix with pair review
+4. Deploy with monitoring
+5. Post-incident review within 24h
+
+---
+
+## Related Documents
+
+- [Deployment Guidelines](./deployment.md)
+- [Operations Runbook](../06-operations/runbook.md)
+
+---
+
+*[← Back to Guidelines](./)*

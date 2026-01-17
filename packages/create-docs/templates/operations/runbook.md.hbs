@@ -1,0 +1,316 @@
+---
+id: OPS-RUNBOOK
+title: "{{title}}"
+type: operations
+status: Draft
+version: "1.0.0"
+created_date: "{{currentDate}}"
+last_updated: "{{currentDate}}"
+owner: "{{owner}}"
+---
+
+# Operations Runbook
+
+**Project:** {{projectName}}
+
+## 1. Service Overview
+
+### 1.1 Architecture
+
+```mermaid
+flowchart TB
+    LB[Load Balancer] --> API[API Service]
+    API --> DB[(Database)]
+    API --> Cache[(Redis)]
+    API --> Queue[Message Queue]
+    Queue --> Worker[Background Workers]
+```
+
+### 1.2 Service Endpoints
+
+| Service | URL | Health Check |
+|---------|-----|--------------|
+| API | api.example.com | `/health/ready` |
+| Admin | admin.example.com | `/health` |
+| Workers | - | Internal metrics |
+
+### 1.3 Dependencies
+
+| Dependency | Type | Criticality | Fallback |
+|------------|------|-------------|----------|
+| PostgreSQL | Database | Critical | Read replica |
+| Redis | Cache | High | Bypass cache |
+| S3 | Storage | Medium | Queue uploads |
+
+## 2. Monitoring
+
+### 2.1 Key Metrics
+
+| Metric | Normal | Warning | Critical |
+|--------|--------|---------|----------|
+| Error rate | <0.1% | 0.1-1% | >1% |
+| P99 latency | <200ms | 200-500ms | >500ms |
+| CPU usage | <70% | 70-85% | >85% |
+| Memory | <80% | 80-90% | >90% |
+
+### 2.2 Dashboards
+
+| Dashboard | URL | Purpose |
+|-----------|-----|---------|
+| Service Health | grafana.../service | Overall health |
+| Error Analysis | grafana.../errors | Error investigation |
+| Performance | grafana.../perf | Latency analysis |
+
+### 2.3 Alerting Channels
+
+| Severity | Channel | Response Time |
+|----------|---------|---------------|
+| Critical | PagerDuty | 5 min |
+| Warning | Slack #alerts | 30 min |
+| Info | Email | Next business day |
+
+## 3. Common Procedures
+
+### 3.1 Service Restart
+
+```bash
+# check current status
+kubectl get pods -l app={{projectName}}
+
+# restart deployment (rolling)
+kubectl rollout restart deployment/{{projectName}}
+
+# watch rollout progress
+kubectl rollout status deployment/{{projectName}}
+
+# verify pods are healthy
+kubectl get pods -l app={{projectName}} -w
+```
+
+### 3.2 Scale Service
+
+```bash
+# scale up
+kubectl scale deployment/{{projectName}} --replicas=5
+
+# scale down
+kubectl scale deployment/{{projectName}} --replicas=2
+
+# enable autoscaling
+kubectl autoscale deployment/{{projectName}} \
+  --min=2 --max=10 --cpu-percent=70
+```
+
+### 3.3 View Logs
+
+```bash
+# recent logs
+kubectl logs -l app={{projectName}} --tail=100
+
+# follow logs
+kubectl logs -l app={{projectName}} -f
+
+# search logs (Loki)
+logcli query '{app="{{projectName}}"} |= "error"' --limit=100
+```
+
+## 4. Incident Response
+
+### 4.1 Incident Severity
+
+| Severity | Description | Response |
+|----------|-------------|----------|
+| SEV1 | Complete outage | All hands, 15 min updates |
+| SEV2 | Major degradation | On-call + backup, 30 min updates |
+| SEV3 | Minor impact | On-call, hourly updates |
+| SEV4 | No user impact | Next business day |
+
+### 4.2 Incident Process
+
+```mermaid
+flowchart TD
+    A[Alert Triggered] --> B[Acknowledge]
+    B --> C[Assess Severity]
+    C --> D[Communicate]
+    D --> E[Investigate]
+    E --> F{Root Cause Found?}
+    F -->|Yes| G[Implement Fix]
+    F -->|No| H[Escalate]
+    H --> E
+    G --> I[Verify Resolution]
+    I --> J[Post-Incident Review]
+```
+
+### 4.3 Communication Template
+
+```markdown
+**Incident:** [Brief description]
+**Status:** Investigating | Identified | Monitoring | Resolved
+**Impact:** [User impact description]
+**Start Time:** YYYY-MM-DD HH:MM UTC
+**Updates:**
+- HH:MM: [Update]
+```
+
+## 5. Troubleshooting Guides
+
+### 5.1 High Error Rate
+
+**Symptoms:** Error rate > 1%, alerts firing
+
+**Investigation:**
+1. Check recent deployments: `kubectl rollout history deployment/{{projectName}}`
+2. Review error logs: `logcli query '{app="{{projectName}}"} |= "error"'`
+3. Check downstream dependencies
+4. Review recent config changes
+
+**Resolution:**
+- If recent deployment: rollback
+- If dependency issue: failover or circuit break
+- If config issue: revert config
+
+### 5.2 High Latency
+
+**Symptoms:** P99 latency > 500ms
+
+**Investigation:**
+1. Check database: `SELECT * FROM pg_stat_activity WHERE state = 'active'`
+2. Check cache hit rate: Redis INFO stats
+3. Review slow queries in APM
+4. Check for resource contention
+
+**Resolution:**
+- Kill long-running queries if safe
+- Clear problematic cache keys
+- Scale up if resource bound
+- Enable circuit breaker for slow dependencies
+
+### 5.3 Database Connection Issues
+
+**Symptoms:** "connection refused" or "too many connections"
+
+**Investigation:**
+1. Check connection count: `SELECT count(*) FROM pg_stat_activity`
+2. Check connection pool settings
+3. Verify database is accepting connections
+4. Check network connectivity
+
+**Resolution:**
+```bash
+# kill idle connections (careful!)
+SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE state = 'idle'
+  AND query_start < now() - interval '10 minutes';
+
+# increase max connections (requires restart)
+# ALTER SYSTEM SET max_connections = 200;
+```
+
+### 5.4 Out of Memory
+
+**Symptoms:** OOMKilled pods, memory alerts
+
+**Investigation:**
+1. Check memory usage: `kubectl top pods`
+2. Review heap dumps if available
+3. Check for memory leaks in recent deployments
+4. Review cache sizes
+
+**Resolution:**
+- Restart affected pods
+- Increase memory limits if justified
+- Enable memory profiling for investigation
+- Rollback if recent deployment
+
+## 6. Maintenance Procedures
+
+### 6.1 Database Maintenance
+
+```bash
+# vacuum (run during low traffic)
+VACUUM ANALYZE;
+
+# reindex (blocks writes, schedule carefully)
+REINDEX DATABASE {{projectName}};
+
+# check table bloat
+SELECT schemaname, tablename,
+       pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename))
+FROM pg_tables
+ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC
+LIMIT 10;
+```
+
+### 6.2 Certificate Renewal
+
+```bash
+# check certificate expiry
+echo | openssl s_client -connect example.com:443 2>/dev/null | \
+  openssl x509 -noout -dates
+
+# renew with cert-manager (automatic)
+kubectl get certificate -A
+
+# manual renewal
+kubectl delete secret tls-secret && kubectl apply -f certificate.yaml
+```
+
+{{#if variance.isRegulated}}
+## 7. Compliance Operations
+
+### 7.1 Audit Log Access
+
+```bash
+# export audit logs for compliance review
+./scripts/export-audit-logs.sh --from 2024-01-01 --to 2024-01-31
+
+# verify audit log integrity
+./scripts/verify-audit-chain.sh
+```
+
+### 7.2 Data Subject Requests
+
+| Request Type | SLA | Procedure |
+|--------------|-----|-----------|
+| Access (DSAR) | 30 days | Run export script |
+| Deletion | 30 days | Run anonymization job |
+| Correction | 30 days | Manual update + audit |
+
+### 7.3 Security Incident Response
+
+1. Isolate affected systems
+2. Preserve evidence (logs, snapshots)
+3. Notify security team immediately
+4. Document timeline
+5. Follow disclosure procedures
+{{/if}}
+
+## 8. Contacts
+
+### 8.1 Escalation Path
+
+| Level | Contact | When |
+|-------|---------|------|
+| L1 | On-call engineer | First response |
+| L2 | Team lead | 30 min no progress |
+| L3 | Engineering manager | SEV1 or extended outage |
+
+### 8.2 External Contacts
+
+| Service | Contact | SLA |
+|---------|---------|-----|
+| Cloud Provider | support@cloud.com | 15 min (critical) |
+| Database Vendor | support@db.com | 1 hour |
+
+---
+
+## Related Documents
+
+- [Security Guidelines](./security.md)
+- [Deployment Guidelines](../05-guidelines/deployment.md)
+- [Observability Guidelines](../05-guidelines/observability.md)
+
+---
+
+*[← Back to Operations](./)*

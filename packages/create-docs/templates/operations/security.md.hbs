@@ -1,0 +1,444 @@
+---
+id: OPS-SECURITY
+title: "{{title}}"
+type: operations
+status: Draft
+version: "1.0.0"
+created_date: "{{currentDate}}"
+last_updated: "{{currentDate}}"
+owner: "{{owner}}"
+---
+
+# Security Guidelines
+
+**Project:** {{projectName}}
+
+## 1. Security Principles
+
+- **Defense in depth** - Multiple layers of security
+- **Least privilege** - Minimum necessary access
+- **Zero trust** - Verify everything, trust nothing
+- **Fail secure** - Deny by default on errors
+
+## 2. Zero Trust Architecture
+
+Zero Trust is not optional - it's the baseline security posture for all modern applications.
+
+### 2.1 Core Tenets
+
+| Principle | Implementation |
+|-----------|----------------|
+| **Never trust, always verify** | Authenticate and authorize every request |
+| **Assume breach** | Design as if attackers are already inside |
+| **Explicit verification** | Check permissions at every layer, not just edge |
+| **Least privilege access** | Grant minimum necessary permissions |
+
+### 2.2 Account Isolation (Multi-Tenancy)
+
+**Every data query MUST include account filtering:**
+
+```typescript
+// repository layer - enforce isolation
+class UserRepository {
+  async findById(id: string, accountId: string): Promise<User | null> {
+    // always include accountId in WHERE clause
+    return this.db.user.findFirst({
+      where: {
+        id,
+        accountId,  // mandatory filter
+      },
+    });
+  }
+
+  async findAll(accountId: string): Promise<User[]> {
+    // never return cross-tenant data
+    return this.db.user.findMany({
+      where: { accountId },
+    });
+  }
+}
+
+// service layer - pass accountId from context
+class UserService {
+  async getUser(id: string, ctx: RequestContext): Promise<User> {
+    // accountId comes from authenticated token
+    return this.userRepo.findById(id, ctx.accountId);
+  }
+}
+```
+
+### 2.3 Authorization Checkpoints
+
+```mermaid
+flowchart LR
+    A[Request] --> B[Edge/Gateway]
+    B --> C[Controller]
+    C --> D[Service]
+    D --> E[Repository]
+
+    B -.- B1[Auth token valid?]
+    C -.- C1[Has permission?]
+    D -.- D1[Business rules OK?]
+    E -.- E1[Account isolation]
+```
+
+**Each layer verifies explicitly:**
+
+| Layer | Checks |
+|-------|--------|
+| **Edge** | Token validity, IP allowlist, rate limits |
+| **Controller** | Role/permission for action |
+| **Service** | Business rule authorization |
+| **Repository** | Account isolation, data access rules |
+
+### 2.4 Context Propagation
+
+```typescript
+// pass security context through all layers
+interface RequestContext {
+  userId: string;
+  accountId: string;
+  roles: string[];
+  permissions: string[];
+  ipAddress: string;
+  requestId: string;  // for tracing
+}
+
+// extract from authenticated request
+function extractContext(req: Request): RequestContext {
+  const token = verifyToken(req.headers.authorization);
+  return {
+    userId: token.sub,
+    accountId: token.account_id,
+    roles: token.roles,
+    permissions: token.permissions,
+    ipAddress: req.ip,
+    requestId: req.headers['x-request-id'] || uuid(),
+  };
+}
+```
+
+## 3. Authentication & Authorization
+
+### 3.1 Authentication Requirements
+
+| Requirement | Standard |
+|-------------|----------|
+| Password minimum length | 12 characters |
+| Password complexity | Upper, lower, number required |
+| Password hashing | bcrypt (cost 12) |
+| Session timeout | 1 hour (access), 7 days (refresh) |
+| MFA | Required for admin roles |
+
+### 3.2 Authorization Model
+
+```mermaid
+flowchart TD
+    A[Request] --> B{Authenticated?}
+    B -->|No| C[401 Unauthorized]
+    B -->|Yes| D{Has Permission?}
+    D -->|No| E[403 Forbidden]
+    D -->|Yes| F[Process Request]
+```
+
+### 3.3 API Authentication
+
+```typescript
+// all API requests must include bearer token
+Authorization: Bearer <jwt-token>
+
+// token validation
+const payload = await verifyToken(token, {
+  algorithms: ['RS256'],
+  issuer: '{{projectName}}',
+  audience: 'api',
+});
+```
+
+## 3. Data Protection
+
+### 3.1 Data Classification
+
+| Classification | Examples | Requirements |
+|----------------|----------|--------------|
+| Public | Marketing content | None |
+| Internal | Business data | Authentication |
+| Confidential | PII, financial | Encryption + access control |
+| Restricted | Credentials, keys | Encryption + audit + need-to-know |
+
+### 3.2 Encryption Standards
+
+| Context | Standard | Notes |
+|---------|----------|-------|
+| In transit | TLS 1.3 | TLS 1.2 minimum |
+| At rest | AES-256-GCM | Managed keys |
+| Passwords | bcrypt | Cost factor 12 |
+| Tokens | RS256 | 2048-bit keys |
+
+### 3.3 PII Handling
+
+```typescript
+// never log PII directly
+logger.info('user action', {
+  userId: user.id,           // ok: internal identifier
+  email: maskEmail(email),   // ok: masked
+  // email: user.email,      // bad: raw PII
+  // ssn: user.ssn,          // bad: sensitive data
+});
+
+// mask function
+function maskEmail(email: string): string {
+  const [local, domain] = email.split('@');
+  return `${local[0]}***@${domain}`;
+}
+```
+
+## 4. Input Validation
+
+### 4.1 Validation Rules
+
+| Input Type | Validation |
+|------------|------------|
+| Email | RFC 5322 regex + MX check |
+| URLs | Allowlist domains |
+| IDs | UUID format |
+| Numbers | Range bounds |
+| Strings | Length limits + sanitization |
+
+### 4.2 SQL Injection Prevention
+
+```typescript
+// always use parameterized queries
+const user = await db.query(
+  'SELECT * FROM users WHERE id = $1',
+  [userId]
+);
+
+// never concatenate user input
+// const user = await db.query(
+//   `SELECT * FROM users WHERE id = '${userId}'`  // bad!
+// );
+```
+
+### 4.3 XSS Prevention
+
+```typescript
+// escape output in templates
+<div>\{{ user.name | escape }}</div>
+
+// use Content-Security-Policy header
+Content-Security-Policy: default-src 'self'; script-src 'self'
+
+// sanitize HTML if needed
+const clean = DOMPurify.sanitize(userInput);
+```
+
+## 5. API Security
+
+### 5.1 Rate Limiting
+
+| Endpoint | Limit | Window | Action |
+|----------|-------|--------|--------|
+| /auth/login | 5 | 15 min | Block IP |
+| /api/* (authenticated) | 1000 | 1 min | 429 response |
+| /api/* (unauthenticated) | 100 | 1 min | 429 response |
+
+### 5.2 Security Headers
+
+```typescript
+// required security headers
+app.use(helmet({
+  contentSecurityPolicy: true,
+  crossOriginEmbedderPolicy: true,
+  crossOriginOpenerPolicy: true,
+  crossOriginResourcePolicy: true,
+  hsts: { maxAge: 31536000, includeSubDomains: true },
+  noSniff: true,
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  xssFilter: true,
+}));
+```
+
+### 5.3 CORS Configuration
+
+```typescript
+// restrictive CORS for APIs
+app.use(cors({
+  origin: ['https://app.example.com'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+}));
+```
+
+## 6. Secret Management
+
+### 6.1 Secret Storage
+
+| Secret Type | Storage | Rotation |
+|-------------|---------|----------|
+| API keys | Vault/K8s secrets | 90 days |
+| Database passwords | Vault | 90 days |
+| JWT signing keys | Vault | 365 days |
+| Encryption keys | KMS | As needed |
+
+### 6.2 Secret Handling
+
+```bash
+# never commit secrets
+echo "*.env" >> .gitignore
+echo "secrets/" >> .gitignore
+
+# use environment variables
+DATABASE_URL=${DATABASE_URL}
+
+# rotate secrets process
+1. Generate new secret
+2. Update secret store
+3. Deploy new version
+4. Verify functionality
+5. Revoke old secret
+```
+
+## 7. Security Monitoring
+
+### 7.1 Events to Monitor
+
+| Event | Severity | Action |
+|-------|----------|--------|
+| Failed login (>5) | Warning | Alert + review |
+| Admin action | Info | Audit log |
+| Permission denied | Info | Log |
+| Suspicious IP | Warning | Review + block |
+| Data export | Info | Audit log |
+
+### 7.2 Security Alerts
+
+```yaml
+# example alert rules
+- alert: BruteForceAttempt
+  expr: rate(auth_failures_total[5m]) > 10
+  for: 1m
+  labels:
+    severity: warning
+  annotations:
+    summary: "Possible brute force attack"
+
+- alert: SuspiciousActivity
+  expr: rate(permission_denied_total[5m]) > 50
+  for: 5m
+  labels:
+    severity: warning
+```
+
+## 8. Incident Response
+
+### 8.1 Security Incident Classification
+
+| Severity | Examples | Response Time |
+|----------|----------|---------------|
+| Critical | Data breach, active attack | Immediate |
+| High | Credential compromise, vulnerability | 1 hour |
+| Medium | Failed attack, policy violation | 4 hours |
+| Low | Suspicious activity | 24 hours |
+
+### 8.2 Response Procedure
+
+```mermaid
+flowchart TD
+    A[Detect] --> B[Contain]
+    B --> C[Assess]
+    C --> D[Eradicate]
+    D --> E[Recover]
+    E --> F[Review]
+```
+
+1. **Detect:** Identify and confirm the incident
+2. **Contain:** Isolate affected systems
+3. **Assess:** Determine scope and impact
+4. **Eradicate:** Remove threat
+5. **Recover:** Restore normal operations
+6. **Review:** Post-incident analysis
+
+{{#if variance.isRegulated}}
+## 9. Compliance Requirements
+
+### 9.1 Audit Logging
+
+All security-relevant events must be logged:
+
+```typescript
+interface AuditEvent {
+  timestamp: string;      // ISO 8601
+  actor: string;          // user ID or system
+  action: string;         // what was done
+  resource: string;       // what was affected
+  resourceId: string;     // specific item
+  result: 'success' | 'failure';
+  ipAddress?: string;
+  metadata?: object;
+}
+```
+
+### 9.2 Data Retention
+
+| Data Type | Retention | Deletion Method |
+|-----------|-----------|-----------------|
+| Audit logs | 7 years | Automated |
+| User data | Account lifetime + 30 days | Anonymization |
+| Backups | 90 days | Secure delete |
+
+### 9.3 Access Reviews
+
+| Review Type | Frequency | Reviewer |
+|-------------|-----------|----------|
+| User access | Quarterly | Manager |
+| Admin access | Monthly | Security team |
+| Service accounts | Quarterly | Platform team |
+
+### 9.4 Vulnerability Management
+
+| Severity | Remediation SLA |
+|----------|-----------------|
+| Critical | 24 hours |
+| High | 7 days |
+| Medium | 30 days |
+| Low | 90 days |
+{{/if}}
+
+## 10. Security Checklist
+
+### 10.1 Development
+
+- [ ] Input validation on all endpoints
+- [ ] Parameterized database queries
+- [ ] Output encoding in templates
+- [ ] No secrets in code or logs
+- [ ] Dependencies scanned for vulnerabilities
+
+### 10.2 Deployment
+
+- [ ] TLS configured correctly
+- [ ] Security headers enabled
+- [ ] Rate limiting active
+- [ ] Secrets in secure storage
+- [ ] Access logs enabled
+
+### 10.3 Operations
+
+- [ ] Security monitoring active
+- [ ] Alert rules configured
+- [ ] Incident response plan documented
+- [ ] Regular access reviews scheduled
+- [ ] Backup encryption verified
+
+---
+
+## Related Documents
+
+- [Authentication Spec](../04-specs/authentication.md)
+- [Operations Runbook](./runbook.md)
+
+---
+
+*[← Back to Operations](./)*
