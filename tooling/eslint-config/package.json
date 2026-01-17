@@ -1,0 +1,50 @@
+{
+  "name": "@satoshibits/eslint-config",
+  "version": "2.0.7",
+  "main": "./index.mts",
+  "exports": "./index.mts",
+  "private": false,
+  "files": [
+    "index.mts"
+  ],
+  "keywords": [
+    "eslint",
+    "eslint-config"
+  ],
+  "author": {
+    "name": "Abe M. Caymo",
+    "email": "caymo.abesuni@gmail.com",
+    "url": "https://github.com/abetoots"
+  },
+  "license": "ISC",
+  "description": "The eslint configuration for satoshibits projects.",
+  "peerDependencies": {
+    "@eslint/js": "^9.22.0",
+    "@typescript-eslint/utils": "^8.26.1",
+    "eslint": "^9.22.0",
+    "eslint-config-prettier": "^10.1.1",
+    "eslint-import-resolver-typescript": "^3.6.3",
+    "eslint-plugin-import-x": "^4.3.1",
+    "typescript": "^5.6.2",
+    "typescript-eslint": "^8.26.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abetoots/eslint-config.git"
+  },
+  "bugs": {
+    "url": "https://github.com/abetoots/eslint-config/issues"
+  },
+  "homepage": "https://github.com/abetoots/eslint-config#readme",
+  "devDependencies": {
+    "@eslint/js": "^9.22.0",
+    "@repo/typescript-config": "workspace:^",
+    "@typescript-eslint/utils": "^8.26.1",
+    "eslint": "^9.22.0",
+    "eslint-config-prettier": "^10.1.1",
+    "eslint-import-resolver-typescript": "^3.6.3",
+    "eslint-plugin-import-x": "^4.3.1",
+    "typescript": "^5.6.2",
+    "typescript-eslint": "^8.26.1"
+  }
+}

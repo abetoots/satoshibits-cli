@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "Default",
+  "compilerOptions": {
+    // [ Basics ]
+    "strict": true,
+
+    // [ Build ]
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+
+    // [ Module Resolution ]
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+
+    // [ Additional Checks ]
+    "noUncheckedIndexedAccess": true,
+
+    // [ Advanced ]
+    "isolatedModules": true,
+    "skipLibCheck": true
+  }
+}

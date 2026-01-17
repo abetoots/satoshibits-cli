@@ -2,11 +2,8 @@
   "extends": "@repo/typescript-config/base.json",
   "include": ["src"],
   "compilerOptions": {
-    "lib": ["ESNext", "DOM"],
-    "outDir": "dist",
-    "target": "esnext",
-    "module": "esnext",
-    "moduleResolution": "node"
+    "lib": ["ESNext"],
+    "outDir": "dist"
   },
   "references": [{ "path": "./tsconfig.node.json" }]
 }

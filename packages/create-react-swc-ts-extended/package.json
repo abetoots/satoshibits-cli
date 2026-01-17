@@ -20,7 +20,7 @@
     "test:coverage": "vitest run --coverage",
     "local-test": "./test-cli.sh",
     "package-test": "./test-package.sh",
-    "pre-commit": "pnpm exec lint-staged -c ./.lintstagedrc.mjs"
+    "pre-commit": "pnpm exec lint-staged -c ./.lintstagedrc.mjs --concurrent false"
   },
   "keywords": [
     "cli",

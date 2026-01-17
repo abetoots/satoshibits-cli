@@ -1,0 +1,7 @@
+{
+  "extends": "@repo/typescript-config/esm.json",
+  "include": ["**/*.ts", "**/*.mts"],
+  "compilerOptions": {
+    "noEmit": true
+  }
+}
