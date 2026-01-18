@@ -54,6 +54,11 @@
     "vitest": "^4.0.17"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.11.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abetoots/satoshibits-cli",
+    "directory": "packages/create-docs"
   }
 }
