@@ -60,5 +60,9 @@
     "type": "git",
     "url": "git+https://github.com/abetoots/satoshibits-cli",
     "directory": "packages/create-docs"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }
