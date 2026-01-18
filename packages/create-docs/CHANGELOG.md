@@ -1,5 +1,11 @@
 # @satoshibits/create-docs
 
+## 1.0.2
+
+### Patch Changes
+
+- 695d623: enhance frontmatter migration to handle moved files
+
 ## 1.0.1
 
 ### Patch Changes
