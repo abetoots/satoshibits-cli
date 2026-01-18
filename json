@@ -1,0 +1,25 @@
+{
+  "changesets": [
+    {
+      "releases": [
+        {
+          "name": "@satoshibits/create-docs",
+          "type": "patch"
+        }
+      ],
+      "summary": "enhance init command to detect existing specs and filter prompts accordingly",
+      "id": "thin-heads-obey"
+    }
+  ],
+  "releases": [
+    {
+      "name": "@satoshibits/create-docs",
+      "type": "patch",
+      "oldVersion": "1.0.2",
+      "changesets": [
+        "thin-heads-obey"
+      ],
+      "newVersion": "1.0.3"
+    }
+  ]
+}
