@@ -1,0 +1,75 @@
+{
+  "name": "@satoshibits/create-github-workflows",
+  "version": "0.0.0",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": "./dist/index.mjs",
+  "type": "module",
+  "private": false,
+  "bin": {
+    "create-github-workflows": "./dist/index.mjs"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc",
+    "lint": "pnpm exec eslint .",
+    "prepublishOnly": "npm run build",
+    "pre-commit": "pnpm exec lint-staged -c ./.lintstagedrc.mjs --concurrent false",
+    "test": "vitest --run"
+  },
+  "files": [
+    "./dist/**/*",
+    "./templates/**/*",
+    "./presets/**/*",
+    "!./dist/**/*.test.*"
+  ],
+  "keywords": [
+    "create-github-workflows",
+    "github-actions",
+    "workflow",
+    "ci-cd",
+    "devops",
+    "cli"
+  ],
+  "author": {
+    "name": "Abe M. Caymo",
+    "email": "caymo.abesuni@gmail.com",
+    "url": "https://github.com/abetoots"
+  },
+  "license": "ISC",
+  "description": "CLI for generating standardized github workflows",
+  "dependencies": {
+    "@inquirer/prompts": "^7.5.0",
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "fs-extra": "^11.2.0",
+    "handlebars": "^4.7.8",
+    "ora": "^8.1.1",
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "@eslint/compat": "^1.2.0",
+    "@repo/typescript-config": "workspace:^",
+    "@satoshibits/eslint-config": "workspace:^",
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^22.7.4",
+    "@typescript-eslint/utils": "^8.26.1",
+    "eslint": "^9.22.0",
+    "jiti": "^2.4.2",
+    "lint-staged": "^15.2.10",
+    "typescript": "^5.7.3",
+    "vitest": "^4.0.17"
+  },
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abetoots/satoshibits-cli",
+    "directory": "packages/create-github-workflows"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "homepage": "https://github.com/abetoots/satoshibits-cli/packages/create-github-workflows"
+}

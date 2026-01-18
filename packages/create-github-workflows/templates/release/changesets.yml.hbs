@@ -1,0 +1,85 @@
+name: Changesets
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: $\{{ github.workflow }}-$\{{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # required for changesets to detect changes
+          fetch-depth: 0
+
+{{#if (eq packageManager "pnpm")}}
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+{{/if}}
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "{{nodeVersion}}"
+{{#if (eq packageManager "pnpm")}}
+          cache: "pnpm"
+{{else if (eq packageManager "yarn")}}
+          cache: "yarn"
+{{else if (eq packageManager "npm")}}
+          cache: "npm"
+{{/if}}
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: {{{installCmd packageManager}}}
+
+      - name: Create Release Pull Request or Publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          publish: {{{runCmd packageManager}}} release
+          version: {{{runCmd packageManager}}} version
+          title: "chore: version packages"
+          commit: "chore: version packages"
+        env:
+          GITHUB_TOKEN: $\{{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: $\{{ secrets.NPM_TOKEN }}
+
+# ═══════════════════════════════════════════════════════════
+# Setup Instructions
+# ═══════════════════════════════════════════════════════════
+#
+# 1. Initialize changesets:
+#    npx changeset init
+#
+# 2. Add scripts to package.json:
+#    {
+#      "scripts": {
+#        "version": "changeset version",
+#        "release": "changeset publish"
+#      }
+#    }
+#
+# 3. Create NPM_TOKEN secret:
+#    - Go to npmjs.com → Access Tokens → Generate New Token
+#    - Select "Automation" token type
+#    - Add as repository secret named NPM_TOKEN
+#
+# 4. Creating changesets:
+#    - Run: npx changeset
+#    - Select packages and bump type
+#    - Commit the generated changeset file

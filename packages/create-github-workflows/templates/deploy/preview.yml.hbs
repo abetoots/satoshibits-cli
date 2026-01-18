@@ -1,0 +1,113 @@
+name: Deploy to Preview
+
+# Preview deployment workflow
+# Strategy: Build and deploy from any branch for stakeholder review
+# Philosophy: Separate from release pipeline - artifacts are disposable
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to deploy (leave empty for current branch)"
+        required: false
+        type: string
+        default: ""
+
+concurrency:
+  group: shared-preview-env
+  cancel-in-progress: true
+
+env:
+  REGISTRY: {{#if docker}}{{#if (eq docker.registry "ghcr")}}ghcr.io{{else if (eq docker.registry "dockerhub")}}docker.io{{else if (eq docker.registry "ecr")}}$\{{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$\{{ secrets.AWS_REGION }}.amazonaws.com{{/if}}{{else}}ghcr.io{{/if}}
+
+jobs:
+  deploy-preview:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: $\{{ inputs.branch != '' && inputs.branch || github.ref }}
+
+      - name: Set lowercase image prefix
+        id: image-prefix
+        run: echo "PREFIX={{#if docker}}$\{{ env.REGISTRY }}/${GITHUB_REPOSITORY_OWNER,,}/{{docker.imageName}}{{else}}$\{{ env.REGISTRY }}/${GITHUB_REPOSITORY_OWNER,,}/{{projectName}}{{/if}}" >> $GITHUB_OUTPUT
+
+      - name: Get commit SHA
+        id: get-sha
+        run: |
+          COMMIT_SHA=$(git rev-parse HEAD)
+          echo "sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+{{#if (eq docker.registry "ghcr")}}
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: $\{{ env.REGISTRY }}
+          username: $\{{ github.actor }}
+          password: $\{{ secrets.GITHUB_TOKEN }}
+{{else if (eq docker.registry "dockerhub")}}
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: $\{{ secrets.DOCKERHUB_USERNAME }}
+          password: $\{{ secrets.DOCKERHUB_TOKEN }}
+{{else if (eq docker.registry "ecr")}}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: $\{{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: $\{{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: $\{{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+{{else}}
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: $\{{ env.REGISTRY }}
+          username: $\{{ github.actor }}
+          password: $\{{ secrets.GITHUB_TOKEN }}
+{{/if}}
+
+      - name: Build and push preview image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: {{#if docker}}{{docker.dockerfilePath}}{{else}}./Dockerfile{{/if}}
+          push: true
+          tags: $\{{ steps.image-prefix.outputs.PREFIX }}:preview-$\{{ steps.get-sha.outputs.sha }}
+          cache-from: type=gha,scope=preview
+          cache-to: type=gha,mode=max,scope=preview
+
+      - name: Deploy to Preview
+        uses: digitalocean/app_action/deploy@v2
+        with:
+          token: $\{{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          app_name: {{#each deployEnvironments}}{{#if (eq name "preview")}}{{appName}}{{/if}}{{/each}}
+        env:
+          IMAGE_TAG_WEB_SERVICE: preview-$\{{ steps.get-sha.outputs.sha }}
+
+      - name: Summary
+        run: |
+          echo "## Preview Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** \`$\{{ inputs.branch != '' && inputs.branch || github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** \`$\{{ steps.get-sha.outputs.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image:** \`$\{{ steps.image-prefix.outputs.PREFIX }}:preview-$\{{ steps.get-sha.outputs.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Time:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+
+# ═══════════════════════════════════════════════════════════
+# When to use:
+# - PM needs to review a feature before merge
+# - Design review with stakeholders
+# - Demo to external parties
+#
+# Note: Only one branch can be previewed at a time.
+# ═══════════════════════════════════════════════════════════

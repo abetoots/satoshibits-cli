@@ -1,0 +1,232 @@
+name: Build and Validate Artifacts
+
+# Main branch protection workflow
+# Strategy: Build Docker images and validate they start correctly
+# Philosophy: Ensure only validated Docker artifacts can be deployed
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: {{#if docker}}{{#if (eq docker.registry "ghcr")}}ghcr.io{{else if (eq docker.registry "dockerhub")}}docker.io{{else if (eq docker.registry "ecr")}}$\{{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$\{{ secrets.AWS_REGION }}.amazonaws.com{{/if}}{{else}}ghcr.io{{/if}}
+
+jobs:
+  # ═══════════════════════════════════════════════════════════
+  # Job 1: Quick Checks (Redundant Safeguard)
+  # ═══════════════════════════════════════════════════════════
+  quick-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+{{#if (eq packageManager "pnpm")}}
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+{{/if}}
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "{{nodeVersion}}"
+{{#if (eq packageManager "pnpm")}}
+          cache: "pnpm"
+{{else if (eq packageManager "yarn")}}
+          cache: "yarn"
+{{else if (eq packageManager "npm")}}
+          cache: "npm"
+{{/if}}
+
+      - name: Install dependencies
+        run: {{{installCmd packageManager}}}
+
+{{#if isMonorepo}}
+      - name: Build shared packages
+        run: {{{runCmd packageManager}}} build
+{{/if}}
+
+      - name: Run linting
+        run: {{{runCmd packageManager}}} lint
+
+      - name: Run type checking
+        run: {{{runCmd packageManager}}} typecheck
+
+      - name: Run tests
+        run: {{{runCmd packageManager}}} test
+        env:
+          NODE_ENV: test
+
+  # ═══════════════════════════════════════════════════════════
+  # Job 2: Build Docker Images (Immutable Artifacts)
+  # ═══════════════════════════════════════════════════════════
+  build-images:
+    needs: quick-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      sha-tag: $\{{ github.sha }}
+      image: $\{{ steps.image-prefix.outputs.PREFIX }}:$\{{ github.sha }}
+      digest: $\{{ steps.build.outputs.digest }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ghcr.io only allows lowercase image names
+      - name: Set lowercase image prefix
+        id: image-prefix
+        run: echo "PREFIX={{#if docker}}$\{{ env.REGISTRY }}/${GITHUB_REPOSITORY_OWNER,,}/{{docker.imageName}}{{else}}$\{{ env.REGISTRY }}/${GITHUB_REPOSITORY_OWNER,,}/{{projectName}}{{/if}}" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+{{#if (eq docker.registry "ghcr")}}
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: $\{{ env.REGISTRY }}
+          username: $\{{ github.actor }}
+          password: $\{{ secrets.GITHUB_TOKEN }}
+{{else if (eq docker.registry "dockerhub")}}
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: $\{{ secrets.DOCKERHUB_USERNAME }}
+          password: $\{{ secrets.DOCKERHUB_TOKEN }}
+{{else if (eq docker.registry "ecr")}}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: $\{{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: $\{{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: $\{{ secrets.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+{{else}}
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: $\{{ env.REGISTRY }}
+          username: $\{{ github.actor }}
+          password: $\{{ secrets.GITHUB_TOKEN }}
+{{/if}}
+
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: {{#if docker}}{{docker.dockerfilePath}}{{else}}./Dockerfile{{/if}}
+          push: true
+          tags: $\{{ steps.image-prefix.outputs.PREFIX }}:$\{{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # generate SBOM for supply chain security
+          attests: type=sbom
+
+  # ═══════════════════════════════════════════════════════════
+  # Job 3: Validate Docker Artifacts (Smoke Test)
+  # ═══════════════════════════════════════════════════════════
+  validate-artifacts:
+    needs: build-images
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+{{#if (eq docker.registry "ghcr")}}
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: $\{{ env.REGISTRY }}
+          username: $\{{ github.actor }}
+          password: $\{{ secrets.GITHUB_TOKEN }}
+{{else if (eq docker.registry "dockerhub")}}
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: $\{{ secrets.DOCKERHUB_USERNAME }}
+          password: $\{{ secrets.DOCKERHUB_TOKEN }}
+{{else if (eq docker.registry "ecr")}}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: $\{{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: $\{{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: $\{{ secrets.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+{{else}}
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: $\{{ env.REGISTRY }}
+          username: $\{{ github.actor }}
+          password: $\{{ secrets.GITHUB_TOKEN }}
+{{/if}}
+
+      - name: Pull image
+        run: docker pull $\{{ needs.build-images.outputs.image }}
+
+      - name: Start container
+        run: |
+          docker run -d \
+            --name {{projectName}}-test \
+            --network host \
+            -e NODE_ENV=production \
+            $\{{ needs.build-images.outputs.image }}
+
+          echo "Container started. Waiting for health..."
+
+      - name: Wait for container to be healthy
+        run: |
+          echo "Waiting for service to respond..."
+          timeout 60 bash -c 'until curl -sf http://localhost:8080/health > /dev/null 2>&1; do
+            echo "Waiting for health endpoint..."
+            sleep 2
+          done'
+          echo "✅ Container is healthy!"
+
+      - name: Collect Docker logs on failure
+        if: failure()
+        run: |
+          mkdir -p logs
+          docker logs {{projectName}}-test > logs/container.log 2>&1 || echo "Failed to get logs"
+
+      - name: Upload Docker logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifact-validation-logs
+          path: logs/
+          retention-days: 7
+
+      - name: Cleanup containers
+        if: always()
+        run: |
+          docker stop {{projectName}}-test || true
+          docker rm {{projectName}}-test || true
+
+  # ═══════════════════════════════════════════════════════════
+  # Summary: What This Workflow Validates
+  # ═══════════════════════════════════════════════════════════
+  # ✅ Code quality (quick-checks job)
+  # ✅ Docker image builds successfully (build-images job)
+  # ✅ Images are pushed to registry with SHA tags
+  # ✅ Container starts and health check passes (validate-artifacts job)
+  #
+  # Result:
+  # - Main branch is protected
+  # - SHA-tagged images are validated and ready for promotion

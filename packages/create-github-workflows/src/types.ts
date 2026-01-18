@@ -1,0 +1,323 @@
+/**
+ * Type definitions for create-github-workflows CLI
+ */
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PRESET TYPES
+// ═══════════════════════════════════════════════════════════════════════════
+
+export type Preset = 'library' | 'docker-app' | 'monorepo';
+
+export type ReleaseStrategy = 'release-please' | 'changesets';
+
+export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
+
+export type DockerRegistry = 'ghcr' | 'dockerhub' | 'ecr';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WORKFLOW TYPES
+// ═══════════════════════════════════════════════════════════════════════════
+
+export type WorkflowCategory = 'ci' | 'release' | 'publish' | 'deploy';
+
+export type CIWorkflow = 'pr-validation' | 'build';
+
+export type ReleaseWorkflow = 'release-please' | 'changesets';
+
+export type PublishWorkflow = 'npm' | 'docker';
+
+export type DeployWorkflow = 'staging' | 'preview' | 'production';
+
+export type WorkflowName = CIWorkflow | ReleaseWorkflow | PublishWorkflow | DeployWorkflow;
+
+export interface WorkflowInfo {
+  name: WorkflowName;
+  category: WorkflowCategory;
+  description: string;
+  templateFile: string;
+  outputFile: string;
+  requiredSecrets: string[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PROJECT DETECTION
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface DetectedProject {
+  packageManager: PackageManager;
+  isMonorepo: boolean;
+  /** Path to Dockerfile if found, null otherwise */
+  dockerfilePath: string | null;
+  nodeVersion: string | null;
+  hasExistingWorkflows: boolean;
+  existingWorkflows: string[];
+  projectName: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CONFIGURATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface WorkflowConfig {
+  /** config schema version for future migrations */
+  version: number;
+  /** project name for workflow names */
+  projectName: string;
+  /** selected preset */
+  preset: Preset;
+  /** package manager to use */
+  packageManager: PackageManager;
+  /** release strategy */
+  releaseStrategy: ReleaseStrategy;
+  /** node version for workflows */
+  nodeVersion: string;
+  /** whether the project is a monorepo */
+  isMonorepo: boolean;
+  /** docker configuration */
+  docker: DockerConfig | null;
+  /** deployment environments */
+  deployEnvironments: DeployEnvironment[];
+  /** selected workflows */
+  workflows: WorkflowName[];
+  /** npm publishing configuration */
+  npm: NpmConfig | null;
+  /** timestamp when created */
+  createdAt: string;
+}
+
+export interface DockerConfig {
+  /** docker registry */
+  registry: DockerRegistry;
+  /** image name (without registry prefix) */
+  imageName: string;
+  /** dockerfile path */
+  dockerfilePath: string;
+  /** build targets (for multi-stage builds) */
+  buildTargets: string[];
+}
+
+export interface DeployEnvironment {
+  name: 'staging' | 'preview' | 'production';
+  /** digitalocean app name or other platform identifier */
+  appName: string;
+  /** whether this environment is enabled */
+  enabled: boolean;
+}
+
+export interface NpmConfig {
+  /** whether to publish to npm */
+  publish: boolean;
+  /** npm access level */
+  access: 'public' | 'restricted';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TEMPLATE CONTEXT
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface TemplateContext {
+  /** project name */
+  projectName: string;
+  /** package manager */
+  packageManager: PackageManager;
+  /** node version */
+  nodeVersion: string;
+  /** whether project is a monorepo */
+  isMonorepo: boolean;
+  /** docker configuration */
+  docker: DockerConfig | null;
+  /** deployment environments */
+  deployEnvironments: DeployEnvironment[];
+  /** release strategy */
+  releaseStrategy: ReleaseStrategy;
+  /** npm configuration */
+  npm: NpmConfig | null;
+  /** additional context from preset */
+  [key: string]: unknown;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PRESET DEFINITION
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface PresetDefinition {
+  name: Preset;
+  description: string;
+  releaseStrategy: ReleaseStrategy;
+  workflows: WorkflowName[];
+  hasDocker: boolean;
+  hasNpm: boolean;
+  deployEnvironments: ('staging' | 'preview' | 'production')[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CLI OPTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface InitOptions {
+  preset?: Preset;
+  yes?: boolean;
+  force?: boolean;
+}
+
+export interface AddOptions {
+  force?: boolean;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECRETS INFORMATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface SecretInfo {
+  name: string;
+  description: string;
+  required: boolean;
+  workflows: WorkflowName[];
+}
+
+export const WORKFLOW_SECRETS: Record<WorkflowName, SecretInfo[]> = {
+  'pr-validation': [],
+  'build': [
+    {
+      name: 'GITHUB_TOKEN',
+      description: 'Automatically provided by GitHub Actions',
+      required: true,
+      workflows: ['build'],
+    },
+  ],
+  'release-please': [
+    {
+      name: 'RELEASE_PAT',
+      description: 'Personal Access Token with contents:write permission (to trigger other workflows)',
+      required: true,
+      workflows: ['release-please'],
+    },
+  ],
+  'changesets': [
+    {
+      name: 'NPM_TOKEN',
+      description: 'NPM authentication token for publishing',
+      required: true,
+      workflows: ['changesets'],
+    },
+  ],
+  'npm': [
+    {
+      name: 'NPM_TOKEN',
+      description: 'NPM authentication token for publishing',
+      required: true,
+      workflows: ['npm'],
+    },
+  ],
+  'docker': [
+    {
+      name: 'GITHUB_TOKEN',
+      description: 'Automatically provided (for GHCR)',
+      required: true,
+      workflows: ['docker'],
+    },
+  ],
+  'staging': [
+    {
+      name: 'DIGITALOCEAN_ACCESS_TOKEN',
+      description: 'DigitalOcean API token for App Platform deployment',
+      required: true,
+      workflows: ['staging'],
+    },
+  ],
+  'preview': [
+    {
+      name: 'DIGITALOCEAN_ACCESS_TOKEN',
+      description: 'DigitalOcean API token for App Platform deployment',
+      required: true,
+      workflows: ['preview'],
+    },
+  ],
+  'production': [
+    {
+      name: 'DIGITALOCEAN_ACCESS_TOKEN',
+      description: 'DigitalOcean API token for App Platform deployment',
+      required: true,
+      workflows: ['production'],
+    },
+  ],
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WORKFLOW REGISTRY
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const WORKFLOW_REGISTRY: Record<WorkflowName, WorkflowInfo> = {
+  'pr-validation': {
+    name: 'pr-validation',
+    category: 'ci',
+    description: 'Fast PR feedback with lint, typecheck, and unit tests',
+    templateFile: 'ci/pr-validation.yml.hbs',
+    outputFile: 'pr-validation.yml',
+    requiredSecrets: [],
+  },
+  'build': {
+    name: 'build',
+    category: 'ci',
+    description: 'Main branch protection with Docker image build and validation',
+    templateFile: 'ci/build.yml.hbs',
+    outputFile: 'build.yml',
+    requiredSecrets: ['GITHUB_TOKEN'],
+  },
+  'release-please': {
+    name: 'release-please',
+    category: 'release',
+    description: 'Automated version and changelog management',
+    templateFile: 'release/release-please.yml.hbs',
+    outputFile: 'release-please.yml',
+    requiredSecrets: ['RELEASE_PAT'],
+  },
+  'changesets': {
+    name: 'changesets',
+    category: 'release',
+    description: 'Monorepo release management with changesets',
+    templateFile: 'release/changesets.yml.hbs',
+    outputFile: 'changesets.yml',
+    requiredSecrets: ['NPM_TOKEN'],
+  },
+  'npm': {
+    name: 'npm',
+    category: 'publish',
+    description: 'NPM package publishing',
+    templateFile: 'publish/npm.yml.hbs',
+    outputFile: 'publish-npm.yml',
+    requiredSecrets: ['NPM_TOKEN'],
+  },
+  'docker': {
+    name: 'docker',
+    category: 'publish',
+    description: 'Docker image promotion with version tags',
+    templateFile: 'publish/docker.yml.hbs',
+    outputFile: 'publish-docker.yml',
+    requiredSecrets: ['GITHUB_TOKEN'],
+  },
+  'staging': {
+    name: 'staging',
+    category: 'deploy',
+    description: 'Manual staging deployment',
+    templateFile: 'deploy/staging.yml.hbs',
+    outputFile: 'deploy-staging.yml',
+    requiredSecrets: ['DIGITALOCEAN_ACCESS_TOKEN'],
+  },
+  'preview': {
+    name: 'preview',
+    category: 'deploy',
+    description: 'Manual preview deployment from any branch',
+    templateFile: 'deploy/preview.yml.hbs',
+    outputFile: 'deploy-preview.yml',
+    requiredSecrets: ['DIGITALOCEAN_ACCESS_TOKEN'],
+  },
+  'production': {
+    name: 'production',
+    category: 'deploy',
+    description: 'Tag-triggered production deployment',
+    templateFile: 'deploy/production.yml.hbs',
+    outputFile: 'deploy-production.yml',
+    requiredSecrets: ['DIGITALOCEAN_ACCESS_TOKEN'],
+  },
+};

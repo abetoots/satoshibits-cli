@@ -1,0 +1,8 @@
+{
+  "$schema": "https://jsr.io/schema/config-file.v1.json",
+  "name": "create-github-workflows",
+  "description": "CLI for generating standardized github workflows",
+  "version": "0.0.0",
+  "exports": "./src/index.mts",
+  "license": "ISC"
+}

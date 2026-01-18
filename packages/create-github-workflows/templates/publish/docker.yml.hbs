@@ -1,0 +1,199 @@
+name: Publish Docker Images
+
+# Version promotion workflow
+# Strategy: Re-tag SHA-tagged images (NEVER rebuild)
+# Philosophy: Build once, deploy many - promote tested artifacts
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag (e.g., v1.2.3)"
+        required: true
+        type: string
+      sha:
+        description: "Git SHA to promote (must have passed build.yml)"
+        required: true
+        type: string
+
+env:
+  REGISTRY: {{#if docker}}{{#if (eq docker.registry "ghcr")}}ghcr.io{{else if (eq docker.registry "dockerhub")}}docker.io{{else if (eq docker.registry "ecr")}}$\{{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$\{{ secrets.AWS_REGION }}.amazonaws.com{{/if}}{{else}}ghcr.io{{/if}}
+
+jobs:
+  promote-images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    outputs:
+      version: $\{{ steps.version.outputs.version }}
+      is_prerelease: $\{{ steps.version.outputs.is_prerelease }}
+    permissions:
+      contents: write
+      packages: write
+      actions: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set lowercase image prefix
+        id: image-prefix
+        run: echo "PREFIX={{#if docker}}$\{{ env.REGISTRY }}/${GITHUB_REPOSITORY_OWNER,,}/{{docker.imageName}}{{else}}$\{{ env.REGISTRY }}/${GITHUB_REPOSITORY_OWNER,,}/{{projectName}}{{/if}}" >> $GITHUB_OUTPUT
+
+      # Validate SHA for manual dispatch
+      - name: Verify build.yml success for manual dispatch
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: $\{{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA="${\{{ github.event.inputs.sha }}}"
+          echo "Verifying build.yml success for SHA: $SHA"
+
+          STATUS=$(gh run list --commit "$SHA" --workflow "build.yml" --json conclusion --jq '.[0].conclusion // "not_found"')
+
+          if [ "$STATUS" != "success" ]; then
+            echo "❌ No successful build.yml run for SHA $SHA (status: $STATUS)"
+            exit 1
+          fi
+          echo "✅ Build validation confirmed for SHA $SHA"
+
+      - name: Determine version and SHA
+        id: version
+        run: |
+          if [ "$\{{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${\{{ github.event.inputs.version }}}"
+            SHA="${\{{ github.event.inputs.sha }}}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+            SHA="${\{{ github.sha }}}"
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+
+          # Extract semver parts
+          if [[ $VERSION =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)([-+][a-zA-Z0-9\.\-]+)?$ ]]; then
+            MAJOR="${BASH_REMATCH[1]}"
+            MINOR="${BASH_REMATCH[2]}"
+            PRERELEASE="${BASH_REMATCH[4]}"
+            echo "major_minor=v$MAJOR.$MINOR" >> $GITHUB_OUTPUT
+            echo "major_only=v$MAJOR" >> $GITHUB_OUTPUT
+
+            if [ -n "$PRERELEASE" ]; then
+              echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            else
+              echo "is_prerelease=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "Error: Version tag must be in format v1.2.3 or v1.2.3-prerelease"
+            exit 1
+          fi
+
+{{#if (eq docker.registry "ghcr")}}
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: $\{{ env.REGISTRY }}
+          username: $\{{ github.actor }}
+          password: $\{{ secrets.GITHUB_TOKEN }}
+{{else if (eq docker.registry "dockerhub")}}
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: $\{{ secrets.DOCKERHUB_USERNAME }}
+          password: $\{{ secrets.DOCKERHUB_TOKEN }}
+{{else if (eq docker.registry "ecr")}}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: $\{{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: $\{{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: $\{{ secrets.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+{{else}}
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: $\{{ env.REGISTRY }}
+          username: $\{{ github.actor }}
+          password: $\{{ secrets.GITHUB_TOKEN }}
+{{/if}}
+
+      # Wait for source images (handles race condition with build.yml)
+      - name: Wait for source images in registry
+        timeout-minutes: 35
+        run: |
+          SHA="${\{{ steps.version.outputs.sha }}}"
+          echo "Waiting for images from build.yml for SHA: $SHA"
+
+          MAX_ATTEMPTS=70
+          ATTEMPT=1
+
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Checking for image..."
+
+            if docker manifest inspect $\{{ steps.image-prefix.outputs.PREFIX }}:$SHA > /dev/null 2>&1; then
+              echo "✅ Image found and ready for promotion!"
+              exit 0
+            fi
+
+            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+              echo "⏳ Image not found yet, waiting 30 seconds..."
+              sleep 30
+            fi
+
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+
+          echo "❌ Timeout: Image not found after $MAX_ATTEMPTS attempts"
+          exit 1
+
+      - name: Promote image
+        run: |
+          SHA="${\{{ steps.version.outputs.sha }}}"
+          VERSION="${\{{ steps.version.outputs.version }}}"
+          MAJOR_MINOR="${\{{ steps.version.outputs.major_minor }}}"
+          MAJOR="${\{{ steps.version.outputs.major_only }}}"
+          IS_PRERELEASE="${\{{ steps.version.outputs.is_prerelease }}}"
+
+          echo "🔄 Pulling image with SHA tag..."
+          docker pull $\{{ steps.image-prefix.outputs.PREFIX }}:$SHA
+
+          echo "🏷️  Tagging image with version tags..."
+          docker tag $\{{ steps.image-prefix.outputs.PREFIX }}:$SHA $\{{ steps.image-prefix.outputs.PREFIX }}:$VERSION
+
+          if [ "$IS_PRERELEASE" != "true" ]; then
+            docker tag $\{{ steps.image-prefix.outputs.PREFIX }}:$SHA $\{{ steps.image-prefix.outputs.PREFIX }}:$MAJOR_MINOR
+            docker tag $\{{ steps.image-prefix.outputs.PREFIX }}:$SHA $\{{ steps.image-prefix.outputs.PREFIX }}:$MAJOR
+            docker tag $\{{ steps.image-prefix.outputs.PREFIX }}:$SHA $\{{ steps.image-prefix.outputs.PREFIX }}:latest
+          fi
+
+          echo "⬆️  Pushing image with version tags..."
+          docker push $\{{ steps.image-prefix.outputs.PREFIX }}:$VERSION
+
+          if [ "$IS_PRERELEASE" != "true" ]; then
+            docker push $\{{ steps.image-prefix.outputs.PREFIX }}:$MAJOR_MINOR
+            docker push $\{{ steps.image-prefix.outputs.PREFIX }}:$MAJOR
+            docker push $\{{ steps.image-prefix.outputs.PREFIX }}:latest
+          fi
+
+          echo "✅ Image promoted successfully"
+
+      - name: Summary
+        run: |
+          echo "## Docker Publish Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** \`$\{{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **SHA:** \`$\{{ steps.version.outputs.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image:** \`$\{{ steps.image-prefix.outputs.PREFIX }}:$\{{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+
+# ═══════════════════════════════════════════════════════════
+# Summary: Immutable Artifact Pattern
+# ═══════════════════════════════════════════════════════════
+# ✅ Images are NEVER rebuilt during promotion
+# ✅ Production uses the EXACT artifact that passed all tests
+# ✅ Multi-tagging enables flexible deployment strategies
+# ✅ Rollback = redeploy previous version tag

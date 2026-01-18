@@ -1,0 +1,115 @@
+name: Deploy to Production
+
+# Production deployment workflow
+# Strategy: Deploy promoted version-tagged images
+# Philosophy: Only release-tagged artifacts reach production
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to deploy (e.g., v1.2.3)"
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  REGISTRY: {{#if docker}}{{#if (eq docker.registry "ghcr")}}ghcr.io{{else if (eq docker.registry "dockerhub")}}docker.io{{else if (eq docker.registry "ecr")}}$\{{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$\{{ secrets.AWS_REGION }}.amazonaws.com{{/if}}{{else}}ghcr.io{{/if}}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Set lowercase image prefix
+        id: image-prefix
+        run: echo "PREFIX={{#if docker}}$\{{ env.REGISTRY }}/${GITHUB_REPOSITORY_OWNER,,}/{{docker.imageName}}{{else}}$\{{ env.REGISTRY }}/${GITHUB_REPOSITORY_OWNER,,}/{{projectName}}{{/if}}" >> $GITHUB_OUTPUT
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "$\{{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${\{{ github.event.inputs.version }}}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+
+          # Check for pre-release
+          if [[ $VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+-.+ ]]; then
+            echo "⚠️  Warning: Deploying pre-release version $VERSION to production"
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Deploying version: $VERSION"
+
+{{#if (eq docker.registry "ghcr")}}
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: $\{{ env.REGISTRY }}
+          username: $\{{ github.actor }}
+          password: $\{{ secrets.GITHUB_TOKEN }}
+{{else if (eq docker.registry "dockerhub")}}
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: $\{{ secrets.DOCKERHUB_USERNAME }}
+          password: $\{{ secrets.DOCKERHUB_TOKEN }}
+{{else if (eq docker.registry "ecr")}}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: $\{{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: $\{{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: $\{{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+{{else}}
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: $\{{ env.REGISTRY }}
+          username: $\{{ github.actor }}
+          password: $\{{ secrets.GITHUB_TOKEN }}
+{{/if}}
+
+      - name: Verify image exists in registry
+        run: |
+          VERSION="${\{{ steps.version.outputs.version }}}"
+          docker manifest inspect $\{{ steps.image-prefix.outputs.PREFIX }}:$VERSION
+          echo "✅ Image verified: $VERSION"
+
+      - name: Deploy to Production
+        uses: digitalocean/app_action/deploy@v2
+        with:
+          token: $\{{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          app_name: {{#each deployEnvironments}}{{#if (eq name "production")}}{{appName}}{{/if}}{{/each}}
+          print_deploy_logs: true
+        env:
+          IMAGE_TAG_WEB_SERVICE: $\{{ steps.version.outputs.version }}
+
+      - name: Summary
+        run: |
+          echo "## Production Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** \`$\{{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image:** \`$\{{ steps.image-prefix.outputs.PREFIX }}:$\{{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Time:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+
+# ═══════════════════════════════════════════════════════════
+# Deployment Flow:
+# 1. release-please creates version tag → triggers this workflow
+# 2. publish-docker.yml promotes SHA-tagged image to version tag
+# 3. This workflow deploys the version-tagged image
+#
+# Rollback:
+# - Manual: Actions → Deploy to Production → Enter previous version
+# ═══════════════════════════════════════════════════════════

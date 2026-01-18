@@ -1,0 +1,111 @@
+name: Deploy to Staging
+
+# Staging deployment workflow
+# Strategy: Deploy SHA-tagged images from main branch (NEVER rebuild)
+# Philosophy: Test the exact artifact that will go to production
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Git SHA to deploy (must have passed build.yml)"
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: true
+
+env:
+  REGISTRY: {{#if docker}}{{#if (eq docker.registry "ghcr")}}ghcr.io{{else if (eq docker.registry "dockerhub")}}docker.io{{else if (eq docker.registry "ecr")}}$\{{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$\{{ secrets.AWS_REGION }}.amazonaws.com{{/if}}{{else}}ghcr.io{{/if}}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Set lowercase image prefix
+        id: image-prefix
+        run: echo "PREFIX={{#if docker}}$\{{ env.REGISTRY }}/${GITHUB_REPOSITORY_OWNER,,}/{{docker.imageName}}{{else}}$\{{ env.REGISTRY }}/${GITHUB_REPOSITORY_OWNER,,}/{{projectName}}{{/if}}" >> $GITHUB_OUTPUT
+
+      - name: Resolve SHA
+        id: resolve
+        run: |
+          SHA="${\{{ inputs.sha }}}"
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+
+      # Verify build.yml succeeded for this SHA
+      - name: Verify build.yml success
+        env:
+          GH_TOKEN: $\{{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA="${\{{ steps.resolve.outputs.sha }}}"
+          echo "Verifying build.yml success for SHA: $SHA"
+
+          STATUS=$(gh run list --commit "$SHA" --workflow "build.yml" --json conclusion --jq '.[0].conclusion // "not_found"')
+
+          if [ "$STATUS" != "success" ]; then
+            echo "❌ No successful build.yml run for SHA $SHA (status: $STATUS)"
+            exit 1
+          fi
+          echo "✅ Build validation confirmed"
+
+{{#if (eq docker.registry "ghcr")}}
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: $\{{ env.REGISTRY }}
+          username: $\{{ github.actor }}
+          password: $\{{ secrets.GITHUB_TOKEN }}
+{{else if (eq docker.registry "dockerhub")}}
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: $\{{ secrets.DOCKERHUB_USERNAME }}
+          password: $\{{ secrets.DOCKERHUB_TOKEN }}
+{{else if (eq docker.registry "ecr")}}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: $\{{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: $\{{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: $\{{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+{{else}}
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: $\{{ env.REGISTRY }}
+          username: $\{{ github.actor }}
+          password: $\{{ secrets.GITHUB_TOKEN }}
+{{/if}}
+
+      - name: Verify image exists in registry
+        run: |
+          SHA="${\{{ steps.resolve.outputs.sha }}}"
+          docker manifest inspect $\{{ steps.image-prefix.outputs.PREFIX }}:$SHA
+          echo "✅ Image verified"
+
+      - name: Deploy to Staging
+        uses: digitalocean/app_action/deploy@v2
+        with:
+          token: $\{{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          app_name: {{#each deployEnvironments}}{{#if (eq name "staging")}}{{appName}}{{/if}}{{/each}}
+        env:
+          IMAGE_TAG_WEB_SERVICE: $\{{ steps.resolve.outputs.sha }}
+
+      - name: Summary
+        run: |
+          echo "## Staging Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "- **SHA:** \`$\{{ steps.resolve.outputs.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image:** \`$\{{ steps.image-prefix.outputs.PREFIX }}:$\{{ steps.resolve.outputs.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Time:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+
+# ═══════════════════════════════════════════════════════════
+# Usage:
+# - Manual: Actions → Deploy to Staging → Enter SHA → Run
+# ═══════════════════════════════════════════════════════════

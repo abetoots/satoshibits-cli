@@ -1,0 +1,87 @@
+name: Publish to NPM
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag (e.g., v1.2.3)"
+        required: true
+        type: string
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "$\{{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${\{{ github.event.inputs.version }}}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Publishing version: $VERSION"
+
+{{#if (eq packageManager "pnpm")}}
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+{{/if}}
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "{{nodeVersion}}"
+{{#if (eq packageManager "pnpm")}}
+          cache: "pnpm"
+{{else if (eq packageManager "yarn")}}
+          cache: "yarn"
+{{else if (eq packageManager "npm")}}
+          cache: "npm"
+{{/if}}
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: {{{installCmd packageManager}}}
+
+      - name: Build
+        run: {{{runCmd packageManager}}} build
+
+      - name: Publish to NPM
+        run: {{#if (eq packageManager "pnpm")}}pnpm publish --access {{#if npm}}{{npm.access}}{{else}}public{{/if}} --no-git-checks{{else if (eq packageManager "yarn")}}yarn publish --access {{#if npm}}{{npm.access}}{{else}}public{{/if}}{{else}}npm publish --access {{#if npm}}{{npm.access}}{{else}}public{{/if}}{{/if}}
+        env:
+          NODE_AUTH_TOKEN: $\{{ secrets.NPM_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## NPM Publish Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** \`$\{{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Package:** \`{{projectName}}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Registry:** https://registry.npmjs.org" >> $GITHUB_STEP_SUMMARY
+
+# ═══════════════════════════════════════════════════════════
+# Setup Instructions
+# ═══════════════════════════════════════════════════════════
+#
+# 1. Create NPM_TOKEN secret:
+#    - Go to npmjs.com → Access Tokens → Generate New Token
+#    - Select "Automation" token type
+#    - Add as repository secret named NPM_TOKEN
+#
+# 2. Ensure package.json has correct publishConfig:
+#    {
+#      "publishConfig": {
+#        "access": "{{#if npm}}{{npm.access}}{{else}}public{{/if}}",
+#        "registry": "https://registry.npmjs.org/"
+#      }
+#    }

@@ -1,0 +1,85 @@
+name: PR Validation
+
+# Fast feedback workflow for pull requests
+# Strategy: Test source code with lint, typecheck, and unit tests
+# Philosophy: Catch errors early without expensive builds
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel in-progress runs for same PR
+concurrency:
+  group: pr-validation-$\{{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ═══════════════════════════════════════════════════════════
+  # Job 1: Validate Code Quality and Business Logic
+  # ═══════════════════════════════════════════════════════════
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+{{#if (eq packageManager "pnpm")}}
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+{{/if}}
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "{{nodeVersion}}"
+{{#if (eq packageManager "pnpm")}}
+          cache: "pnpm"
+{{else if (eq packageManager "yarn")}}
+          cache: "yarn"
+{{else if (eq packageManager "npm")}}
+          cache: "npm"
+{{/if}}
+
+      - name: Install dependencies
+        run: {{{installCmd packageManager}}}
+
+{{#if isMonorepo}}
+      - name: Build shared packages
+        run: {{{runCmd packageManager}}} build
+{{/if}}
+
+      - name: Run linting
+        run: {{{runCmd packageManager}}} lint
+
+      - name: Run type checking
+        run: {{{runCmd packageManager}}} typecheck
+
+      - name: Run tests
+        run: {{{runCmd packageManager}}} test
+        env:
+          NODE_ENV: test
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-validation-logs
+          path: |
+            **/logs/**
+            **/*.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ═══════════════════════════════════════════════════════════
+  # Summary: What This Workflow Validates
+  # ═══════════════════════════════════════════════════════════
+  # ✅ Code quality (lint, types)
+  # ✅ Business logic (unit tests)
+  #
+  # Benefits:
+  # - Fast feedback for most failures
+  # - Developers stay in flow
+  # - Only validated code proceeds to main branch
