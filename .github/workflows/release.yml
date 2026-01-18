@@ -55,6 +55,17 @@ jobs:
       - name: 📥 Download deps
         run: pnpm install --prefer-offline
 
+      - name: Capture new release versions
+        id: get_versions
+        run: |
+          # Use the changeset CLI to get the status output as JSON
+          # This example uses 'jq' to parse the JSON and format the message
+          # Install jq if it's not already available in your runner image
+          # e.g., run: sudo apt-get install jq
+          CHANGED_PACKAGES=$(npx @changesets/cli status --output=json | jq -r '.releases | map(.name + "@" + .newVersion) | join(", ")')
+          # Set a GITHUB_ENV variable with the dynamic message
+          echo "CS_COMMIT_MESSAGE=chore(release): version packages ${CHANGED_PACKAGES}" >> $GITHUB_ENV
+
       # Make sure you permit Github Actions to create or approve pull requests
       # https://stackoverflow.com/questions/72376229/github-actions-is-not-permitted-to-create-or-approve-pull-requests-createpullre
       - name: Create Release Pull Request or Publish to npm
@@ -63,6 +74,9 @@ jobs:
         with:
           # This expects you to have a script called release which does a build for your packages and calls changeset publish
           publish: pnpm run ci:release
+          # Use the dynamically created environment variable for commit and title
+          commit: ${{ env.CS_COMMIT_MESSAGE }}
+          title: ${{ env.CS_COMMIT_MESSAGE }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
