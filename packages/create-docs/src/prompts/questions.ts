@@ -68,6 +68,29 @@ export interface InitAnswers {
   iacTool?: IacTool;
 }
 
+/**
+ * question name constants for type-safe references
+ * used by init.ts to map spec files to questions
+ */
+export const QuestionNames = {
+  // database-related
+  databaseEngine: 'databaseEngine',
+  ormStrategy: 'ormStrategy',
+  // api-related
+  hasApi: 'hasApi',
+  apiStyle: 'apiStyle',
+  apiVersioning: 'apiVersioning',
+  // authentication-related
+  identityProvider: 'identityProvider',
+  authStrategy: 'authStrategy',
+  // async processing-related
+  hasAsyncProcessing: 'hasAsyncProcessing',
+  messagingPattern: 'messagingPattern',
+  messageBroker: 'messageBroker',
+} as const;
+
+export type QuestionName = (typeof QuestionNames)[keyof typeof QuestionNames];
+
 // separator for visual grouping in prompts
 const separator = (text: string) => ({ type: 'separator' as const, line: `\n─── ${text} ───` });
 

@@ -33,6 +33,18 @@ vi.mock('../src/prompts/questions.js', () => ({
     hasAsyncProcessing: false,
     isRegulated: false,
   })),
+  QuestionNames: {
+    databaseEngine: 'databaseEngine',
+    ormStrategy: 'ormStrategy',
+    hasApi: 'hasApi',
+    apiStyle: 'apiStyle',
+    apiVersioning: 'apiVersioning',
+    identityProvider: 'identityProvider',
+    authStrategy: 'authStrategy',
+    hasAsyncProcessing: 'hasAsyncProcessing',
+    messagingPattern: 'messagingPattern',
+    messageBroker: 'messageBroker',
+  },
 }));
 vi.mock('../src/templates/renderer.js', () => ({
   renderTemplate: vi.fn(() => '# Mock Template Content'),

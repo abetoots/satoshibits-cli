@@ -16,6 +16,7 @@ import {
 import {
   initQuestions,
   answersToVariance,
+  QuestionNames,
   type InitAnswers,
 } from '../prompts/questions.js';
 import { renderTemplate, createTemplateContext } from '../templates/renderer.js';
@@ -26,6 +27,9 @@ interface InitOptions {
   yes?: boolean;
   force?: boolean;
 }
+
+// type for question items that may have a name property (questions have name, separators don't)
+interface QuestionItem { name?: string; [key: string]: unknown }
 
 // directory structure to create
 const DOCS_STRUCTURE = [
@@ -39,6 +43,73 @@ const DOCS_STRUCTURE = [
   '06-operations',
   'archive',
 ];
+
+// mapping of spec file names to their question names (using constants for type safety)
+const SPEC_TO_QUESTIONS: Record<string, string[]> = {
+  'database': [QuestionNames.databaseEngine, QuestionNames.ormStrategy],
+  'api': [QuestionNames.hasApi, QuestionNames.apiStyle, QuestionNames.apiVersioning],
+  'authentication': [QuestionNames.identityProvider, QuestionNames.authStrategy],
+  'background-jobs': [QuestionNames.hasAsyncProcessing, QuestionNames.messagingPattern, QuestionNames.messageBroker],
+};
+
+/**
+ * detects which spec files already exist in the docs directory
+ */
+function detectExistingSpecs(docsPath: string): Set<string> {
+  const existingSpecs = new Set<string>();
+  const specsDir = path.join(docsPath, '04-specs');
+
+  if (!fs.existsSync(specsDir)) {
+    return existingSpecs;
+  }
+
+  for (const specName of Object.keys(SPEC_TO_QUESTIONS)) {
+    const specPath = path.join(specsDir, `${specName}.md`);
+    if (fs.existsSync(specPath)) {
+      existingSpecs.add(specName);
+    }
+  }
+
+  return existingSpecs;
+}
+
+/**
+ * infers variance config values from existing spec files
+ */
+function inferVarianceFromExistingSpecs(existingSpecs: Set<string>): Partial<VarianceConfig> {
+  return {
+    hasDatabase: existingSpecs.has('database'),
+    hasApi: existingSpecs.has('api') || existingSpecs.has('authentication'),
+    hasAsyncProcessing: existingSpecs.has('background-jobs'),
+  };
+}
+
+/**
+ * filters out questions that correspond to existing spec files
+ */
+function filterQuestionsForExistingSpecs(
+  questions: QuestionItem[],
+  existingSpecs: Set<string>
+): QuestionItem[] {
+  // collect all question names to skip based on existing specs
+  const questionsToSkip = new Set<string>();
+
+  for (const specName of existingSpecs) {
+    const questionNames = SPEC_TO_QUESTIONS[specName];
+    if (questionNames) {
+      for (const qName of questionNames) {
+        questionsToSkip.add(qName);
+      }
+    }
+  }
+
+  if (questionsToSkip.size === 0) {
+    return questions;
+  }
+
+  // filter out questions by name (separators have no name, so they pass through)
+  return questions.filter((q) => !q.name || !questionsToSkip.has(q.name));
+}
 
 // core documents to generate for each profile
 const CORE_DOCUMENTS: Record<ProjectProfile, string[]> = {
@@ -81,6 +152,17 @@ export async function initCommand(options: InitOptions = {}): Promise<void> {
     console.log(chalk.gray('Will create config and fill in missing documents.\n'));
   }
 
+  // detect existing spec files to skip related prompts
+  const docsPath = getDocsPath(cwd);
+  const existingSpecs = detectExistingSpecs(docsPath);
+  const inferredVariance = inferVarianceFromExistingSpecs(existingSpecs);
+
+  // notify user about skipped prompts
+  if (!options.force && existingSpecs.size > 0) {
+    console.log(chalk.blue(`Detected existing specs: ${[...existingSpecs].join(', ')}`));
+    console.log(chalk.gray('Skipping related prompts. Use --force to reconfigure.\n'));
+  }
+
   let answers: InitAnswers;
 
   if (options.yes) {
@@ -109,16 +191,32 @@ export async function initCommand(options: InitOptions = {}): Promise<void> {
     console.log(chalk.blue('Using default configuration...'));
   } else if (options.profile) {
     // prompt with pre-selected profile
-    const questionsArray = initQuestions as { name?: string }[];
-    const filteredQuestions = questionsArray.filter((q) => q.name !== 'profile');
-    const partialAnswers = await inquirer.prompt<Omit<InitAnswers, 'profile'>>(filteredQuestions);
+    let questionsArray = (initQuestions as QuestionItem[]).filter((q) => q.name !== 'profile');
+    // filter out questions for existing specs (unless --force)
+    if (!options.force && existingSpecs.size > 0) {
+      questionsArray = filterQuestionsForExistingSpecs(questionsArray, existingSpecs);
+    }
+    const partialAnswers = await inquirer.prompt<Omit<InitAnswers, 'profile'>>(questionsArray);
     answers = { ...partialAnswers, profile: options.profile };
   } else {
     // full interactive mode
-    answers = await inquirer.prompt(initQuestions);
+    // filter out questions for existing specs (unless --force)
+    const questionsToUse = !options.force && existingSpecs.size > 0
+      ? filterQuestionsForExistingSpecs(initQuestions as QuestionItem[], existingSpecs)
+      : initQuestions;
+    answers = await inquirer.prompt(questionsToUse);
   }
 
-  const variance = answersToVariance(answers);
+  // merge inferred variance from existing specs with prompted answers
+  const baseVariance = answersToVariance(answers);
+  const variance: VarianceConfig = {
+    ...baseVariance,
+    // inferred values take precedence only when true (existing specs mean feature exists)
+    // this ensures we don't override user's "yes" answers with "false" from missing specs
+    ...(inferredVariance.hasDatabase && { hasDatabase: true }),
+    ...(inferredVariance.hasApi && { hasApi: true }),
+    ...(inferredVariance.hasAsyncProcessing && { hasAsyncProcessing: true }),
+  };
   const config = createDefaultConfig(
     answers.projectName,
     answers.profile,
@@ -128,8 +226,7 @@ export async function initCommand(options: InitOptions = {}): Promise<void> {
 
   console.log(chalk.blue('\nCreating documentation structure...'));
 
-  // create directory structure
-  const docsPath = getDocsPath(cwd);
+  // create directory structure (docsPath already defined above)
   for (const dir of DOCS_STRUCTURE) {
     const dirPath = path.join(docsPath, dir);
     if (!fs.existsSync(dirPath)) {
