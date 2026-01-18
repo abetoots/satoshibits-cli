@@ -10,7 +10,6 @@ import type {
   DocumentType,
   MigrationItem,
   MigrationPlan,
-  MigrationTier,
   FrontmatterChange,
   IdTransformation,
 } from './types.js';
@@ -84,7 +83,7 @@ export function getTargetPath(file: DetectedFile): string {
   if (basePath.endsWith('/')) {
     // for ADRs, keep original filename if it follows pattern
     if (file.detectedType === 'adr') {
-      const adrMatch = filename.match(/^(\d{4})[-_](.+)$/);
+      const adrMatch = /^(\d{4})[-_](.+)$/.exec(filename);
       if (adrMatch) {
         return `${basePath}${filename}`;
       }
@@ -219,12 +218,12 @@ export function analyzeFrontmatterChanges(
   defaultOwner: string
 ): FrontmatterChange[] {
   const changes: FrontmatterChange[] = [];
-  const existing = file.frontmatter || {};
+  const existing = file.frontmatter ?? {};
 
   // map existing fields to standard names
   const mapped: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(existing)) {
-    const standardKey = FIELD_MAPPINGS[key.toLowerCase()] || key;
+    const standardKey = FIELD_MAPPINGS[key.toLowerCase()] ?? key;
     mapped[standardKey] = value;
   }
 
@@ -238,7 +237,7 @@ export function analyzeFrontmatterChanges(
           newValue = generateDocId(file.detectedType);
           break;
         case 'title':
-          newValue = extractTitle(file.content) || path.basename(file.relativePath, '.md');
+          newValue = extractTitle(file.content) ?? path.basename(file.relativePath, '.md');
           break;
         case 'status':
           newValue = 'Draft';
@@ -264,8 +263,10 @@ export function analyzeFrontmatterChanges(
       });
     } else if (field === 'status') {
       // normalize status value
-      const normalizedStatus = normalizeStatus(String(mapped[field]));
-      if (normalizedStatus !== mapped[field]) {
+      const statusValue = mapped[field];
+      const statusString = typeof statusValue === 'string' ? statusValue : '';
+      const normalizedStatus = normalizeStatus(statusString);
+      if (normalizedStatus !== statusValue) {
         changes.push({
           field,
           oldValue: mapped[field],
@@ -293,14 +294,14 @@ function generateDocId(type: DocumentType): string {
  */
 function normalizeStatus(status: string): string {
   const normalized = STATUS_MAPPINGS[status.toLowerCase()];
-  return normalized || 'Draft';
+  return normalized ?? 'Draft';
 }
 
 /**
  * Propose frontmatter migration plan
  */
 export function proposeFrontmatterMigration(
-  cwd: string,
+  _cwd: string,
   files: DetectedFile[],
   defaultOwner: string
 ): MigrationPlan {
@@ -338,7 +339,7 @@ export function proposeFrontmatterMigration(
       filesToSkip: 0,
       conflicts: 0,
       frontmatterChanges: items.reduce(
-        (sum, i) => sum + (i.frontmatterChanges?.length || 0),
+        (sum, i) => sum + (i.frontmatterChanges?.length ?? 0),
         0
       ),
       idTransformations: 0,
@@ -396,7 +397,6 @@ export function analyzeIdTransformations(
     }
 
     // determine new ID format
-    let newId: string;
     let prefix = 'FR';
 
     if (/^NFR/i.test(id)) {
@@ -406,17 +406,17 @@ export function analyzeIdTransformations(
     }
 
     // extract number
-    const numMatch = id.match(/\d+/);
+    const numMatch = /\d+/.exec(id);
     const num = numMatch ? numMatch[0].padStart(3, '0') : '001';
 
-    newId = `${prefix}-CORE-${num}`;
+    const newId = `${prefix}-CORE-${num}`;
     idMapping.set(id, newId);
   }
 
   // count occurrences and create transformations
   for (const [oldId, newId] of idMapping) {
     const regex = new RegExp(oldId.replace(/[-_]/g, '[-_]?'), 'g');
-    const matches = content.match(regex) || [];
+    const matches = content.match(regex) ?? [];
 
     if (matches.length > 0) {
       transformations.push({
@@ -451,7 +451,14 @@ export function updateCrossReferences(
   let match;
 
   while ((match = linkPattern.exec(content)) !== null) {
-    const [fullMatch, text, linkPath] = match;
+    const fullMatch = match[0];
+    const text = match[1];
+    const linkPath = match[2];
+
+    // skip if capture groups are missing (shouldn't happen with this pattern)
+    if (!fullMatch || !text || !linkPath) {
+      continue;
+    }
 
     // skip external links
     if (linkPath.startsWith('http://') || linkPath.startsWith('https://')) {
@@ -460,7 +467,7 @@ export function updateCrossReferences(
 
     // resolve the link relative to the ORIGINAL file location
     const originalDir = path.dirname(originalFilePath);
-    const linkTarget = linkPath.split('#')[0];
+    const linkTarget = linkPath.split('#')[0] ?? '';
     const resolvedOldPath = path.normalize(path.join(originalDir, linkTarget));
 
     // check if this target was moved
@@ -470,7 +477,7 @@ export function updateCrossReferences(
         const newDir = path.dirname(newFilePath);
         // normalize to forward slashes for markdown compatibility (Windows fix)
         const newRelativePath = path.relative(newDir, newPath).split(path.sep).join('/');
-        const anchor = linkPath.includes('#') ? linkPath.split('#')[1] : '';
+        const anchor = linkPath.includes('#') ? (linkPath.split('#')[1] ?? '') : '';
         const newLink = anchor ? `${newRelativePath}#${anchor}` : newRelativePath;
 
         updatedContent = updatedContent.replace(

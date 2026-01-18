@@ -42,11 +42,11 @@ export async function lintCommand(): Promise<void> {
   let totalWarnings = 0;
 
   // collect all requirement IDs from FRD for cross-reference validation
-  const definedReqIds = await collectDefinedReqIds(docsPath);
+  const definedReqIds = collectDefinedReqIds(docsPath);
 
   for (const file of files) {
     const filePath = path.join(docsPath, file);
-    const result = await lintFile(filePath, file, docsPath, definedReqIds);
+    const result = lintFile(filePath, file, docsPath, definedReqIds);
     results.push(result);
     totalErrors += result.errors.length;
     totalWarnings += result.warnings.length;
@@ -93,12 +93,12 @@ export async function lintCommand(): Promise<void> {
   }
 }
 
-async function lintFile(
+function lintFile(
   filePath: string,
   relativePath: string,
-  docsPath: string,
+  _docsPath: string,
   definedReqIds: Set<string>
-): Promise<LintResult> {
+): LintResult {
   const errors: LintError[] = [];
   const warnings: LintWarning[] = [];
 
@@ -122,20 +122,22 @@ async function lintFile(
   }
 
   // validate status value
-  if (frontmatter.status && !VALID_STATUSES.includes(frontmatter.status)) {
+  const status = frontmatter.status as string | undefined;
+  if (status && !VALID_STATUSES.includes(status as DocumentStatus)) {
     errors.push({
       type: 'invalid-value',
-      message: `Invalid status: "${frontmatter.status}". Must be one of: ${VALID_STATUSES.join(', ')}`,
+      message: `Invalid status: "${status}". Must be one of: ${VALID_STATUSES.join(', ')}`,
       field: 'status',
     });
   }
 
   // check for stale documents
-  if (frontmatter.last_updated) {
-    const lastUpdated = new Date(frontmatter.last_updated);
+  const lastUpdatedValue = frontmatter.last_updated as string | undefined;
+  if (lastUpdatedValue) {
+    const lastUpdated = new Date(lastUpdatedValue);
     const daysSinceUpdate = Math.floor((Date.now() - lastUpdated.getTime()) / (1000 * 60 * 60 * 24));
 
-    if (daysSinceUpdate > STALE_DAYS && frontmatter.status !== 'Deprecated') {
+    if (daysSinceUpdate > STALE_DAYS && status !== 'Deprecated') {
       warnings.push({
         type: 'stale-document',
         message: `Document not updated in ${daysSinceUpdate} days. Consider reviewing.`,
@@ -144,7 +146,8 @@ async function lintFile(
   }
 
   // check for missing reviewers on non-draft docs
-  if (frontmatter.status !== 'Draft' && !frontmatter.reviewers?.length) {
+  const reviewers = frontmatter.reviewers as string[] | undefined;
+  if (status !== 'Draft' && !reviewers?.length) {
     warnings.push({
       type: 'missing-reviewer',
       message: 'Non-draft document has no reviewers listed.',
@@ -153,7 +156,13 @@ async function lintFile(
 
   // validate internal links
   const links = [...body.matchAll(LINK_PATTERN)];
-  for (const [, , linkPath] of links) {
+  for (const match of links) {
+    const linkPath = match[2];
+    // skip if capture group is missing (shouldn't happen with this pattern)
+    if (!linkPath) {
+      continue;
+    }
+
     // skip external links
     if (linkPath.startsWith('http://') || linkPath.startsWith('https://')) {
       continue;
@@ -161,7 +170,7 @@ async function lintFile(
 
     // resolve relative links
     const linkDir = path.dirname(filePath);
-    const resolvedPath = path.resolve(linkDir, linkPath.split('#')[0]);
+    const resolvedPath = path.resolve(linkDir, linkPath.split('#')[0] ?? '');
 
     if (!fs.existsSync(resolvedPath)) {
       errors.push({
@@ -173,7 +182,7 @@ async function lintFile(
 
   // validate requirement ID references (only for non-FRD files)
   if (!relativePath.includes('frd.md')) {
-    const referencedReqIds = body.match(REQ_ID_PATTERN) || [];
+    const referencedReqIds = body.match(REQ_ID_PATTERN) ?? [];
     for (const reqId of referencedReqIds) {
       if (!definedReqIds.has(reqId)) {
         warnings.push({
@@ -187,7 +196,7 @@ async function lintFile(
   return { file: relativePath, errors, warnings };
 }
 
-async function collectDefinedReqIds(docsPath: string): Promise<Set<string>> {
+function collectDefinedReqIds(docsPath: string): Set<string> {
   const reqIds = new Set<string>();
 
   // look for FRD file
@@ -197,7 +206,7 @@ async function collectDefinedReqIds(docsPath: string): Promise<Set<string>> {
   }
 
   const content = fs.readFileSync(frdPath, 'utf-8');
-  const matches = content.match(REQ_ID_PATTERN) || [];
+  const matches = content.match(REQ_ID_PATTERN) ?? [];
 
   for (const match of matches) {
     reqIds.add(match);

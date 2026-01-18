@@ -5,7 +5,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { glob } from 'glob';
 import type { BackupManifest, BackupInfo, BackupFileEntry, MigrationTier } from './types.js';
 import { loadConfig } from '../config/manager.js';
 
@@ -15,7 +14,7 @@ const MANIFEST_FILE = 'manifest.json';
 // read version from package.json
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageJsonPath = path.join(__dirname, '../../package.json');
-const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8')) as { version: string };
 const CLI_VERSION: string = packageJson.version;
 
 /**
@@ -35,11 +34,11 @@ export function generateBackupName(): string {
 /**
  * Create a backup of existing docs before migration
  */
-export async function createBackup(
+export function createBackup(
   cwd: string,
   tier: MigrationTier,
   filesToBackup: string[]
-): Promise<string> {
+): string {
   const backupName = generateBackupName();
   const backupPath = path.join(getBackupDir(cwd), backupName);
 
@@ -57,7 +56,6 @@ export async function createBackup(
 
     // determine backup subdirectory
     const isInsideDocs = relativePath.startsWith('docs/') || relativePath.startsWith('docs\\');
-    const backupSubdir = isInsideDocs ? 'docs' : 'loose-files';
     const backupFilePath = isInsideDocs
       ? relativePath
       : path.join('loose-files', relativePath);
@@ -113,7 +111,7 @@ export function updateBackupManifest(
     return;
   }
 
-  const manifest: BackupManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as BackupManifest;
 
   for (const entry of manifest.files) {
     const target = fileMapping.get(entry.from);
@@ -128,7 +126,7 @@ export function updateBackupManifest(
 /**
  * List all available backups
  */
-export async function listBackups(cwd: string): Promise<BackupInfo[]> {
+export function listBackups(cwd: string): BackupInfo[] {
   const backupDir = getBackupDir(cwd);
 
   if (!fs.existsSync(backupDir)) {
@@ -150,9 +148,9 @@ export async function listBackups(cwd: string): Promise<BackupInfo[]> {
     }
 
     try {
-      const manifest: BackupManifest = JSON.parse(
+      const manifest = JSON.parse(
         fs.readFileSync(manifestPath, 'utf-8')
-      );
+      ) as BackupManifest;
 
       backups.push({
         name: entry.name,
@@ -176,7 +174,7 @@ export async function listBackups(cwd: string): Promise<BackupInfo[]> {
 /**
  * Get a specific backup by name
  */
-export async function getBackup(cwd: string, backupName: string): Promise<BackupInfo | null> {
+export function getBackup(cwd: string, backupName: string): BackupInfo | null {
   const backupPath = path.join(getBackupDir(cwd), backupName);
   const manifestPath = path.join(backupPath, MANIFEST_FILE);
 
@@ -185,9 +183,9 @@ export async function getBackup(cwd: string, backupName: string): Promise<Backup
   }
 
   try {
-    const manifest: BackupManifest = JSON.parse(
+    const manifest = JSON.parse(
       fs.readFileSync(manifestPath, 'utf-8')
-    );
+    ) as BackupManifest;
 
     return {
       name: backupName,
@@ -202,12 +200,12 @@ export async function getBackup(cwd: string, backupName: string): Promise<Backup
 /**
  * Restore files from a backup
  */
-export async function restoreBackup(cwd: string, backupName: string): Promise<{
+export function restoreBackup(cwd: string, backupName: string): {
   restored: string[];
   removed: string[];
   errors: string[];
-}> {
-  const backup = await getBackup(cwd, backupName);
+} {
+  const backup = getBackup(cwd, backupName);
 
   if (!backup) {
     throw new Error(`Backup not found: ${backupName}`);
@@ -239,7 +237,7 @@ export async function restoreBackup(cwd: string, backupName: string): Promise<{
         restored.push(entry.from);
       }
     } catch (err) {
-      errors.push(`Failed to restore ${entry.from}: ${err}`);
+      errors.push(`Failed to restore ${entry.from}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -249,7 +247,7 @@ export async function restoreBackup(cwd: string, backupName: string): Promise<{
 /**
  * Delete a backup
  */
-export async function deleteBackup(cwd: string, backupName: string): Promise<void> {
+export function deleteBackup(cwd: string, backupName: string): void {
   const backupPath = path.join(getBackupDir(cwd), backupName);
 
   if (!fs.existsSync(backupPath)) {

@@ -1,7 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import * as fs from 'fs';
-import * as path from 'path';
-import os from 'os';
+import { describe, it, expect } from 'vitest';
 import { createDefaultConfig } from '../src/config/manager.js';
 import type { CreateDocsConfig, VarianceConfig } from '../src/types.js';
 

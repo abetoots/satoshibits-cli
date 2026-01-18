@@ -99,7 +99,7 @@ const CLASSIFICATION_RULES: ClassificationRule[] = [
   {
     type: 'spec',
     filenamePatterns: [/spec/i, /database/i, /api[-_]?spec/i, /auth/i],
-    pathPatterns: [/specs?[\/\\]/i],
+    pathPatterns: [/specs?[/\\]/i],
     contentPatterns: [
       /##?\s*database\s+schema/i,
       /##?\s*api\s+endpoints?/i,
@@ -111,7 +111,7 @@ const CLASSIFICATION_RULES: ClassificationRule[] = [
   {
     type: 'adr',
     filenamePatterns: [/^\d{4}[-_]/i, /^adr[-_]/i],
-    pathPatterns: [/decisions?[\/\\]/i, /adrs?[\/\\]/i],
+    pathPatterns: [/decisions?[/\\]/i, /adrs?[/\\]/i],
     contentPatterns: [
       /##?\s*status/i,
       /##?\s*context/i,
@@ -124,7 +124,7 @@ const CLASSIFICATION_RULES: ClassificationRule[] = [
   {
     type: 'guideline',
     filenamePatterns: [/guideline/i, /coding[-_]?standard/i, /style[-_]?guide/i, /testing/i],
-    pathPatterns: [/guidelines?[\/\\]/i],
+    pathPatterns: [/guidelines?[/\\]/i],
     contentPatterns: [
       /##?\s*coding\s+(guidelines?|standards?)/i,
       /##?\s*testing\s+strategy/i,
@@ -135,7 +135,7 @@ const CLASSIFICATION_RULES: ClassificationRule[] = [
   {
     type: 'runbook',
     filenamePatterns: [/runbook/i, /playbook/i, /operations?/i],
-    pathPatterns: [/operations?[\/\\]/i, /runbooks?[\/\\]/i],
+    pathPatterns: [/operations?[/\\]/i, /runbooks?[/\\]/i],
     contentPatterns: [
       /##?\s*incident\s+response/i,
       /##?\s*deployment\s+procedure/i,
@@ -301,17 +301,18 @@ export function detectRequirementIds(content: string): {
  * Extract first H1 heading from content
  */
 export function extractTitle(content: string): string | null {
-  const match = content.match(/^#\s+(.+)$/m);
-  return match ? match[1].trim() : null;
+  const match = /^#\s+(.+)$/m.exec(content);
+  const title = match?.[1];
+  return title ? title.trim() : null;
 }
 
 /**
  * Full file detection - combines all detection functions
  */
-export async function detectFile(
+export function detectFile(
   cwd: string,
   relativePath: string
-): Promise<DetectedFile> {
+): DetectedFile {
   const absolutePath = path.join(cwd, relativePath);
   const content = fs.readFileSync(absolutePath, 'utf-8');
   const { type, confidence } = classifyDocument(relativePath, content);
@@ -338,7 +339,7 @@ export async function detectAllFiles(cwd: string): Promise<DetectedFile[]> {
   const detected: DetectedFile[] = [];
 
   for (const file of files) {
-    const fileInfo = await detectFile(cwd, file);
+    const fileInfo = detectFile(cwd, file);
     detected.push(fileInfo);
   }
 

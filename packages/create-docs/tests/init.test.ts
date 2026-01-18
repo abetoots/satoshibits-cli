@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -60,7 +60,7 @@ describe('commands/init', () => {
     mockFs.writeFileSync.mockReturnValue(undefined);
     mockFs.readFileSync.mockReturnValue('{}');
     // silence console output during tests
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
   });
 
   describe('directory creation', () => {
@@ -154,7 +154,6 @@ describe('commands/init', () => {
       mockConfigExists.mockReturnValue(true);
       mockDocsExist.mockReturnValue(true);
 
-      const existingFile = path.join(process.cwd(), 'docs', 'README.md');
       mockFs.existsSync.mockImplementation((p) => {
         const pathStr = String(p);
         // README.md exists, other files don't

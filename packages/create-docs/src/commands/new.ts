@@ -101,7 +101,7 @@ export async function newCommand(options: NewOptions): Promise<void> {
   // check if file exists
   if (fs.existsSync(outputPath)) {
     console.log(chalk.yellow(`Warning: File already exists: ${outputPath}`));
-    const { overwrite } = await inquirer.prompt([
+    const { overwrite } = await inquirer.prompt<{ overwrite: boolean }>([
       {
         type: 'confirm',
         name: 'overwrite',

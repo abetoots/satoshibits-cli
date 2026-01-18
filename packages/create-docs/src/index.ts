@@ -12,6 +12,22 @@ import { newCommand } from './commands/new.js';
 import { lintCommand } from './commands/lint.js';
 import { statusCommand } from './commands/status.js';
 import { migrateCommand } from './commands/migrate.js';
+import type { ProjectProfile } from './types.js';
+import type { MigrationTier } from './migrate/types.js';
+
+interface InitOptions {
+  profile?: ProjectProfile;
+  yes?: boolean;
+  force?: boolean;
+}
+
+interface MigrateOptions {
+  dryRun?: boolean;
+  tier?: MigrationTier;
+  noBackup?: boolean;
+  restore?: string | boolean;
+  yes?: boolean;
+}
 
 const program = new Command();
 
@@ -27,7 +43,7 @@ program
   .option('-p, --profile <profile>', 'Project profile (greenfield, migration, library)')
   .option('-y, --yes', 'Skip prompts and use defaults')
   .option('-f, --force', 'Overwrite existing docs/ directory')
-  .action(async (options) => {
+  .action(async (options: InitOptions) => {
     await initCommand({
       profile: options.profile,
       yes: options.yes,
@@ -51,7 +67,7 @@ Examples:
   create-docs new spec api
   create-docs new guideline code-review-process
   `)
-  .action(async (type, name) => {
+  .action(async (type: 'adr' | 'spec' | 'guideline' | 'basic', name?: string) => {
     await newCommand({ type, name });
   });
 
@@ -110,7 +126,7 @@ Examples:
   create-docs migrate --restore           # List available backups
   create-docs migrate --restore <name>    # Restore from backup
   `)
-  .action(async (options) => {
+  .action(async (options: MigrateOptions) => {
     await migrateCommand({
       dryRun: options.dryRun,
       tier: options.tier,

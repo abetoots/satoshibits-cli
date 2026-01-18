@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as fs from 'fs';
-import * as path from 'path';
 
 vi.mock('fs');
 vi.mock('glob', () => ({
@@ -93,7 +92,7 @@ Also check [another](../folder/doc.md).
     });
 
     it('should not flag external links', () => {
-      const content = `See [docs](https://example.com/docs.md)`;
+      const _content = `See [docs](https://example.com/docs.md)`;
 
       const isExternal = (url: string) =>
         url.startsWith('http://') || url.startsWith('https://');
@@ -113,7 +112,7 @@ Also check [another](../folder/doc.md).
       `;
 
       const reqPattern = /(FR|NFR)-[A-Z]+-\d{3}/g;
-      const reqIds = content.match(reqPattern) || [];
+      const reqIds = content.match(reqPattern) ?? [];
 
       expect(reqIds).toContain('FR-AUTH-001');
       expect(reqIds).toContain('FR-AUTH-002');

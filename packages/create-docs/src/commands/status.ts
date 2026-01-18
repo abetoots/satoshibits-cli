@@ -50,11 +50,11 @@ export async function statusCommand(): Promise<void> {
 
   for (const file of files) {
     const filePath = path.join(docsPath, file);
-    const entry = await getStatusEntry(filePath, file);
+    const entry = getStatusEntry(filePath, file);
 
     if (entry) {
       entries.push(entry);
-      statusCounts[entry.status] = (statusCounts[entry.status] || 0) + 1;
+      statusCounts[entry.status] = (statusCounts[entry.status] ?? 0) + 1;
     }
   }
 
@@ -77,7 +77,7 @@ export async function statusCommand(): Promise<void> {
   });
 
   for (const entry of entries) {
-    const colorFn = STATUS_COLORS[entry.status] || chalk.white;
+    const colorFn = STATUS_COLORS[entry.status] ?? chalk.white;
     table.push([
       entry.document,
       colorFn(entry.status),
@@ -93,22 +93,22 @@ export async function statusCommand(): Promise<void> {
   console.log(chalk.white.bold('\nSummary'));
   console.log(`  Total documents: ${entries.length}`);
 
-  if (statusCounts.Draft > 0) {
+  if ((statusCounts.Draft ?? 0) > 0) {
     console.log(chalk.yellow(`  Draft: ${statusCounts.Draft}`));
   }
-  if (statusCounts.Review > 0) {
+  if ((statusCounts.Review ?? 0) > 0) {
     console.log(chalk.blue(`  In Review: ${statusCounts.Review}`));
   }
-  if (statusCounts.Approved > 0) {
+  if ((statusCounts.Approved ?? 0) > 0) {
     console.log(chalk.green(`  Approved: ${statusCounts.Approved}`));
   }
-  if (statusCounts.Deprecated > 0) {
+  if ((statusCounts.Deprecated ?? 0) > 0) {
     console.log(chalk.gray(`  Deprecated: ${statusCounts.Deprecated}`));
   }
 
   // coverage metrics
   const totalWithFrontmatter = entries.length;
-  const approved = statusCounts.Approved || 0;
+  const approved = statusCounts.Approved ?? 0;
   const coverage = totalWithFrontmatter > 0
     ? Math.round((approved / totalWithFrontmatter) * 100)
     : 0;
@@ -132,7 +132,7 @@ export async function statusCommand(): Promise<void> {
   }
 }
 
-async function getStatusEntry(filePath: string, relativePath: string): Promise<StatusEntry | null> {
+function getStatusEntry(filePath: string, relativePath: string): StatusEntry | null {
   const content = fs.readFileSync(filePath, 'utf-8');
   const { data: frontmatter } = matter(content);
 
@@ -141,11 +141,16 @@ async function getStatusEntry(filePath: string, relativePath: string): Promise<S
     return null;
   }
 
+  const status = (frontmatter.status as DocumentStatus | undefined) ?? 'Draft';
+  const owner = (frontmatter.owner as string | undefined) ?? '';
+  const lastUpdated = (frontmatter.last_updated as string | undefined) ?? '';
+  const version = (frontmatter.version as string | undefined) ?? '';
+
   return {
     document: `docs/${relativePath}`,
-    status: (frontmatter.status as DocumentStatus) || 'Draft',
-    owner: frontmatter.owner || '',
-    lastUpdated: frontmatter.last_updated || '',
-    version: frontmatter.version || '',
+    status,
+    owner,
+    lastUpdated,
+    version,
   };
 }

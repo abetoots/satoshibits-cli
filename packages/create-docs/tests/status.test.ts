@@ -24,7 +24,7 @@ last_updated: "2024-01-15"
 # Content`;
 
       // simulate gray-matter parsing
-      const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+      const frontmatterMatch = /^---\n([\s\S]*?)\n---/.exec(content);
       expect(frontmatterMatch).not.toBeNull();
     });
   });
@@ -48,9 +48,9 @@ last_updated: "2024-01-15"
         {} as Record<string, number>
       );
 
-      expect(statusCounts['Draft']).toBe(2);
-      expect(statusCounts['Review']).toBe(1);
-      expect(statusCounts['Approved']).toBe(3);
+      expect(statusCounts.Draft).toBe(2);
+      expect(statusCounts.Review).toBe(1);
+      expect(statusCounts.Approved).toBe(3);
     });
 
     it('should identify documents without frontmatter', () => {

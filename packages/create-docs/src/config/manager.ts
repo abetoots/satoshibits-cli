@@ -48,7 +48,7 @@ export function createDefaultConfig(
     owner,
     adrCounter: 0,
     variance,
-    createdAt: new Date().toISOString().split('T')[0],
+    createdAt: new Date().toISOString().slice(0, 10),
   };
 }
 

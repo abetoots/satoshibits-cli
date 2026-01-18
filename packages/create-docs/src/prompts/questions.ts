@@ -554,27 +554,24 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
     name: 'containerOrchestration',
     message: 'Container orchestration:',
     when: (answers) => answers.advancedConfig,
-    choices: (answers) => {
-      const isAws = answers.cloudProvider === 'aws';
-      return [
-        {
-          name: 'Serverless Containers (Recommended) - Fargate/Cloud Run, low ops',
-          value: 'serverless',
-        },
-        {
-          name: 'Kubernetes - Full control, higher complexity',
-          value: 'kubernetes',
-        },
-        {
-          name: 'PaaS (Heroku/Render) - Simplest, limited control',
-          value: 'paas',
-        },
-        {
-          name: 'None - No containerization',
-          value: 'none',
-        },
-      ];
-    },
+    choices: [
+      {
+        name: 'Serverless Containers (Recommended) - Fargate/Cloud Run, low ops',
+        value: 'serverless',
+      },
+      {
+        name: 'Kubernetes - Full control, higher complexity',
+        value: 'kubernetes',
+      },
+      {
+        name: 'PaaS (Heroku/Render) - Simplest, limited control',
+        value: 'paas',
+      },
+      {
+        name: 'None - No containerization',
+        value: 'none',
+      },
+    ],
     default: 'serverless',
   },
   {

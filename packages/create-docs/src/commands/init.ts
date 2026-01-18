@@ -87,7 +87,7 @@ export async function initCommand(options: InitOptions = {}): Promise<void> {
     // use defaults for quick setup with expert-recommended values
     answers = {
       projectName: path.basename(cwd),
-      profile: options.profile || 'greenfield',
+      profile: options.profile ?? 'greenfield',
       owner: '@lead-engineer',
       // tier 1 required fields
       hasApi: true,
@@ -109,7 +109,7 @@ export async function initCommand(options: InitOptions = {}): Promise<void> {
     console.log(chalk.blue('Using default configuration...'));
   } else if (options.profile) {
     // prompt with pre-selected profile
-    const questionsArray = initQuestions as Array<{ name?: string }>;
+    const questionsArray = initQuestions as { name?: string }[];
     const filteredQuestions = questionsArray.filter((q) => q.name !== 'profile');
     const partialAnswers = await inquirer.prompt<Omit<InitAnswers, 'profile'>>(filteredQuestions);
     answers = { ...partialAnswers, profile: options.profile };
@@ -145,13 +145,13 @@ export async function initCommand(options: InitOptions = {}): Promise<void> {
   // generate core documents
   const coreDocuments = CORE_DOCUMENTS[answers.profile];
   for (const docType of coreDocuments) {
-    const result = await generateDocument(docType, answers.projectName, answers.owner, variance, docsPath, options.force);
+    const result = generateDocument(docType, answers.projectName, answers.owner, variance, docsPath, options.force);
     if (result === 'created') created++;
     else if (result === 'skipped') skipped++;
   }
 
   // generate conditional documents based on variance
-  const conditionalStats = await generateConditionalDocuments(variance, answers.projectName, answers.owner, docsPath, options.force);
+  const conditionalStats = generateConditionalDocuments(variance, answers.projectName, answers.owner, docsPath, options.force);
   created += conditionalStats.created;
   skipped += conditionalStats.skipped;
 
@@ -181,14 +181,14 @@ export async function initCommand(options: InitOptions = {}): Promise<void> {
   console.log('  3. Use `create-docs status` to view document health');
 }
 
-async function generateDocument(
+function generateDocument(
   docType: string,
   projectName: string,
   owner: string,
   variance: VarianceConfig,
   docsPath: string,
   force?: boolean
-): Promise<'created' | 'skipped' | 'none'> {
+): 'created' | 'skipped' | 'none' {
   const context = createTemplateContext(projectName, getDocTitle(docType), docType, owner, variance);
 
   let content: string;
@@ -234,13 +234,13 @@ async function generateDocument(
   return 'created';
 }
 
-async function generateConditionalDocuments(
+function generateConditionalDocuments(
   variance: VarianceConfig,
   projectName: string,
   owner: string,
   docsPath: string,
   force?: boolean
-): Promise<{ created: number; skipped: number }> {
+): { created: number; skipped: number } {
   const context = createTemplateContext(projectName, '', '', owner, variance);
   let created = 0;
   let skipped = 0;
@@ -353,5 +353,5 @@ function getDocTitle(docType: string): string {
     add: 'Application Design Document',
     'tsd-index': 'Technical Specifications',
   };
-  return titles[docType] || docType;
+  return titles[docType] ?? docType;
 }

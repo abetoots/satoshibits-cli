@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { tmpdir } from 'os';
@@ -15,7 +15,6 @@ import {
 // transformer tests
 import {
   getTargetPath,
-  checkConflict,
   analyzeFrontmatterChanges,
   updateCrossReferences,
 } from '../src/migrate/transformer.js';
@@ -433,8 +432,8 @@ describe('migrate/backup', () => {
   });
 
   describe('createBackup', () => {
-    it('should create backup directory and manifest', async () => {
-      const backupName = await createBackup(testDir, 'structure', ['docs/test.md']);
+    it('should create backup directory and manifest', () => {
+      const backupName = createBackup(testDir, 'structure', ['docs/test.md']);
 
       const backupPath = path.join(testDir, '.create-docs-backups', backupName);
       expect(fs.existsSync(backupPath)).toBe(true);
@@ -442,13 +441,13 @@ describe('migrate/backup', () => {
       const manifestPath = path.join(backupPath, 'manifest.json');
       expect(fs.existsSync(manifestPath)).toBe(true);
 
-      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as { tier: string; files: string[] };
       expect(manifest.tier).toBe('structure');
       expect(manifest.files.length).toBe(1);
     });
 
-    it('should copy files to backup', async () => {
-      const backupName = await createBackup(testDir, 'structure', ['docs/test.md']);
+    it('should copy files to backup', () => {
+      const backupName = createBackup(testDir, 'structure', ['docs/test.md']);
 
       const backupFilePath = path.join(testDir, '.create-docs-backups', backupName, 'docs/test.md');
       expect(fs.existsSync(backupFilePath)).toBe(true);
@@ -457,30 +456,30 @@ describe('migrate/backup', () => {
   });
 
   describe('listBackups', () => {
-    it('should return empty array when no backups', async () => {
-      const backups = await listBackups(testDir);
+    it('should return empty array when no backups', () => {
+      const backups = listBackups(testDir);
       expect(backups).toEqual([]);
     });
 
-    it('should list created backups', async () => {
-      await createBackup(testDir, 'structure', ['docs/test.md']);
+    it('should list created backups', () => {
+      createBackup(testDir, 'structure', ['docs/test.md']);
 
-      const backups = await listBackups(testDir);
+      const backups = listBackups(testDir);
       expect(backups.length).toBe(1);
-      expect(backups[0].manifest.tier).toBe('structure');
+      expect(backups[0]?.manifest.tier).toBe('structure');
     });
   });
 
   describe('getBackup', () => {
-    it('should return null for non-existent backup', async () => {
-      const backup = await getBackup(testDir, 'non-existent');
+    it('should return null for non-existent backup', () => {
+      const backup = getBackup(testDir, 'non-existent');
       expect(backup).toBeNull();
     });
 
-    it('should return backup info', async () => {
-      const backupName = await createBackup(testDir, 'structure', ['docs/test.md']);
+    it('should return backup info', () => {
+      const backupName = createBackup(testDir, 'structure', ['docs/test.md']);
 
-      const backup = await getBackup(testDir, backupName);
+      const backup = getBackup(testDir, backupName);
       expect(backup).not.toBeNull();
       expect(backup?.name).toBe(backupName);
       expect(backup?.manifest.tier).toBe('structure');
@@ -488,20 +487,20 @@ describe('migrate/backup', () => {
   });
 
   describe('restoreBackup', () => {
-    it('should restore backed up files', async () => {
-      const backupName = await createBackup(testDir, 'structure', ['docs/test.md']);
+    it('should restore backed up files', () => {
+      const backupName = createBackup(testDir, 'structure', ['docs/test.md']);
 
       // modify the original file
       fs.writeFileSync(path.join(testDir, 'docs/test.md'), '# Modified');
 
-      const result = await restoreBackup(testDir, backupName);
+      const result = restoreBackup(testDir, backupName);
 
       expect(result.restored).toContain('docs/test.md');
       expect(fs.readFileSync(path.join(testDir, 'docs/test.md'), 'utf-8')).toBe('# Test');
     });
 
-    it('should throw for non-existent backup', async () => {
-      await expect(restoreBackup(testDir, 'non-existent')).rejects.toThrow('Backup not found');
+    it('should throw for non-existent backup', () => {
+      expect(() => restoreBackup(testDir, 'non-existent')).toThrow('Backup not found');
     });
   });
 });

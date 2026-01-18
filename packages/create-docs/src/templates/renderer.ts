@@ -71,16 +71,16 @@ export function createTemplateContext(
   options?: { adrNumber?: string; specName?: string; audience?: TemplateContext['audience'] }
 ): TemplateContext {
   // default audience based on document type
-  const defaultAudience = ['brd'].includes(docType) ? 'business' as const
-    : ['frd', 'readme', 'glossary'].includes(docType) ? 'all' as const
-    : 'technical' as const;
+  const defaultAudience: TemplateContext['audience'] = ['brd'].includes(docType) ? 'business'
+    : ['frd', 'readme', 'glossary'].includes(docType) ? 'all'
+    : 'technical';
 
   return {
     projectName,
     title,
     docType,
     owner,
-    currentDate: new Date().toISOString().split('T')[0],
+    currentDate: new Date().toISOString().slice(0, 10),
     variance,
     audience: options?.audience ?? defaultAudience,
     adrNumber: options?.adrNumber,

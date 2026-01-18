@@ -11,7 +11,6 @@ import { loadConfig, getDocsPath } from '../config/manager.js';
 import {
   detectAllFiles,
   shouldPromptForFile,
-  detectRequirementIds,
 } from '../migrate/detector.js';
 import {
   proposeStructureMigration,
@@ -31,9 +30,7 @@ import type {
   MigrateCommandOptions,
   MigrationTier,
   MigrationPlan,
-  MigrationItem,
   ConflictResolution,
-  DetectedFile,
 } from '../migrate/types.js';
 
 export async function migrateCommand(options: MigrateCommandOptions): Promise<void> {
@@ -71,7 +68,7 @@ export async function migrateCommand(options: MigrateCommandOptions): Promise<vo
     console.log(chalk.yellow(`Found ${looseFiles.length} files outside docs/ directory:`));
 
     for (const file of looseFiles) {
-      const { include } = await inquirer.prompt([
+      const { include } = await inquirer.prompt<{ include: boolean }>([
         {
           type: 'confirm',
           name: 'include',
@@ -91,10 +88,10 @@ export async function migrateCommand(options: MigrateCommandOptions): Promise<vo
   }
 
   // select tier
-  let tier: MigrationTier = options.tier || 'structure';
+  let tier: MigrationTier = options.tier ?? 'structure';
 
   if (!options.tier && !options.yes) {
-    const { selectedTier } = await inquirer.prompt([
+    const { selectedTier } = await inquirer.prompt<{ selectedTier: MigrationTier }>([
       {
         type: 'list',
         name: 'selectedTier',
@@ -128,7 +125,7 @@ export async function migrateCommand(options: MigrateCommandOptions): Promise<vo
   }
 
   if (tier === 'frontmatter' || tier === 'conventions') {
-    const owner = config?.owner || '@owner';
+    const owner = config?.owner ?? '@owner';
     const frontmatterPlan = proposeFrontmatterMigration(cwd, files, owner);
     plans.push(frontmatterPlan);
   }
@@ -148,7 +145,7 @@ export async function migrateCommand(options: MigrateCommandOptions): Promise<vo
 
   // confirm execution
   if (!options.yes) {
-    const { proceed } = await inquirer.prompt([
+    const { proceed } = await inquirer.prompt<{ proceed: boolean }>([
       {
         type: 'confirm',
         name: 'proceed',
@@ -169,7 +166,7 @@ export async function migrateCommand(options: MigrateCommandOptions): Promise<vo
   if (!options.noBackup) {
     console.log(chalk.blue('\nCreating backup...'));
     const filesToBackup = files.map((f) => f.relativePath);
-    backupName = await createBackup(cwd, tier, filesToBackup);
+    backupName = createBackup(cwd, tier, filesToBackup);
     console.log(chalk.green(`Backup created: ${backupName}`));
   }
 
@@ -260,7 +257,7 @@ async function resolveConflicts(plan: MigrationPlan): Promise<void> {
       continue;
     }
 
-    const { resolution } = await inquirer.prompt([
+    const { resolution } = await inquirer.prompt<{ resolution: ConflictResolution }>([
       {
         type: 'list',
         name: 'resolution',
@@ -274,7 +271,7 @@ async function resolveConflicts(plan: MigrationPlan): Promise<void> {
       },
     ]);
 
-    item.conflictResolution = resolution as ConflictResolution;
+    item.conflictResolution = resolution;
 
     if (resolution === 'skip') {
       item.action = 'skip';
@@ -286,7 +283,7 @@ async function resolveConflicts(plan: MigrationPlan): Promise<void> {
  * Handle restore subcommand
  */
 async function handleRestore(cwd: string, backupArg: string | boolean): Promise<void> {
-  const backups = await listBackups(cwd);
+  const backups = listBackups(cwd);
 
   if (backups.length === 0) {
     console.log(chalk.yellow('No backups found.'));
@@ -323,14 +320,14 @@ async function handleRestore(cwd: string, backupArg: string | boolean): Promise<
 
   // restore specific backup
   const backupName = String(backupArg);
-  const backup = await getBackup(cwd, backupName);
+  const backup = getBackup(cwd, backupName);
 
   if (!backup) {
     console.log(chalk.red(`Backup not found: ${backupName}`));
     return;
   }
 
-  const { confirm } = await inquirer.prompt([
+  const { confirm } = await inquirer.prompt<{ confirm: boolean }>([
     {
       type: 'confirm',
       name: 'confirm',
@@ -346,7 +343,7 @@ async function handleRestore(cwd: string, backupArg: string | boolean): Promise<
 
   console.log(chalk.blue('Restoring from backup...'));
 
-  const result = await restoreBackup(cwd, backupName);
+  const result = restoreBackup(cwd, backupName);
 
   console.log(chalk.green(`\nRestored ${result.restored.length} files`));
 
@@ -392,7 +389,7 @@ async function updateAllCrossReferences(
     // determine the file's original path (before migration)
     // normalize path for cross-platform map lookup
     const normalizedPath = path.normalize(file.relativePath);
-    const originalPath = newToOldPath.get(normalizedPath) || file.relativePath;
+    const originalPath = newToOldPath.get(normalizedPath) ?? file.relativePath;
 
     const originalContent = file.content;
     const updatedContent = updateCrossReferences(
