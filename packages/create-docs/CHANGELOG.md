@@ -1,5 +1,11 @@
 # @satoshibits/create-docs
 
+## 1.0.3
+
+### Patch Changes
+
+- 11725e5: enhance init command to detect existing specs and filter prompts accordingly
+
 ## 1.0.2
 
 ### Patch Changes
