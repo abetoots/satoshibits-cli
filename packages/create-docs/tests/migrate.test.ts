@@ -17,6 +17,7 @@ import {
   getTargetPath,
   analyzeFrontmatterChanges,
   updateCrossReferences,
+  executeFrontmatterMigration,
 } from '../src/migrate/transformer.js';
 
 // backup tests
@@ -28,7 +29,7 @@ import {
   generateBackupName,
 } from '../src/migrate/backup.js';
 
-import type { DetectedFile } from '../src/migrate/types.js';
+import type { DetectedFile, MigrationPlan } from '../src/migrate/types.js';
 
 describe('migrate/detector', () => {
   describe('classifyDocument', () => {
@@ -405,6 +406,80 @@ describe('migrate/transformer', () => {
 
       // path.relative returns '04-specs/spec.md' (without leading ./)
       expect(result).toContain('04-specs/spec.md');
+    });
+  });
+
+  describe('executeFrontmatterMigration with moved files', () => {
+    let testDir: string;
+
+    beforeEach(() => {
+      testDir = fs.mkdtempSync(path.join(tmpdir(), 'migrate-frontmatter-test-'));
+    });
+
+    afterEach(() => {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    });
+
+    it('should update frontmatter in files that were moved by structure migration', () => {
+      // setup: create a file at docs/old-location/test.md
+      const oldDir = path.join(testDir, 'docs', 'old-location');
+      fs.mkdirSync(oldDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(oldDir, 'test.md'),
+        '# Test Document\n\nContent here'
+      );
+
+      // create detected file object with original path
+      const detectedFile: DetectedFile = {
+        relativePath: 'docs/old-location/test.md',
+        absolutePath: path.join(testDir, 'docs/old-location/test.md'),
+        insideDocs: true,
+        detectedType: 'spec',
+        confidence: 0.7,
+        frontmatter: null,
+        content: '# Test Document\n\nContent here',
+      };
+
+      // simulate structure migration: move file to new location
+      const newDir = path.join(testDir, 'docs', '04-specs');
+      fs.mkdirSync(newDir, { recursive: true });
+      fs.renameSync(
+        path.join(testDir, 'docs/old-location/test.md'),
+        path.join(testDir, 'docs/04-specs/test.md')
+      );
+
+      // create file mapping from structure migration
+      const fileMapping = new Map([
+        ['docs/old-location/test.md', 'docs/04-specs/test.md']
+      ]);
+
+      // create frontmatter migration plan (using original path)
+      const plan: MigrationPlan = {
+        timestamp: new Date().toISOString(),
+        tier: 'frontmatter',
+        items: [{
+          source: detectedFile,
+          targetPath: 'docs/old-location/test.md', // original path
+          action: 'add-frontmatter',
+          hasConflict: false,
+          frontmatterChanges: [
+            { field: 'id', oldValue: null, newValue: 'SPEC-001', action: 'add' },
+            { field: 'title', oldValue: null, newValue: 'Test Document', action: 'add' },
+            { field: 'status', oldValue: null, newValue: 'Draft', action: 'add' },
+          ],
+        }],
+        summary: { totalFiles: 1, filesToMove: 0, filesToSkip: 0, conflicts: 0, frontmatterChanges: 3, idTransformations: 0 },
+      };
+
+      // this should NOT throw - it should use fileMapping to find the actual path
+      expect(() => {
+        executeFrontmatterMigration(testDir, plan, fileMapping);
+      }).not.toThrow();
+
+      // verify frontmatter was added to the moved file
+      const content = fs.readFileSync(path.join(testDir, 'docs/04-specs/test.md'), 'utf-8');
+      expect(content).toContain('id: SPEC-001');
+      expect(content).toContain('title: Test Document');
     });
   });
 });

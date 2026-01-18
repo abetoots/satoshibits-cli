@@ -181,7 +181,7 @@ export async function migrateCommand(options: MigrateCommandOptions): Promise<vo
     }
 
     if (plan.tier === 'frontmatter') {
-      executeFrontmatterMigration(cwd, plan);
+      executeFrontmatterMigration(cwd, plan, fileMapping);
       console.log(chalk.green(`  Updated frontmatter in ${plan.items.length} files`));
     }
   }

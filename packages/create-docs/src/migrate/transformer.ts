@@ -352,14 +352,18 @@ export function proposeFrontmatterMigration(
  */
 export function executeFrontmatterMigration(
   cwd: string,
-  plan: MigrationPlan
+  plan: MigrationPlan,
+  fileMapping?: Map<string, string>
 ): void {
   for (const item of plan.items) {
     if (!item.frontmatterChanges || item.frontmatterChanges.length === 0) {
       continue;
     }
 
-    const filePath = path.join(cwd, item.source.relativePath);
+    // resolve actual file path - use new location if file was moved
+    const originalPath = item.source.relativePath;
+    const actualPath = fileMapping?.get(originalPath) ?? originalPath;
+    const filePath = path.join(cwd, actualPath);
     const content = fs.readFileSync(filePath, 'utf-8');
     const { data: existingFrontmatter, content: body } = matter(content);
 
