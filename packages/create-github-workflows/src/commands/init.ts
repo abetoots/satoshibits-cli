@@ -2,6 +2,7 @@
  * init command - scaffolds GitHub workflows based on preset
  */
 
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import chalk from 'chalk';
 import ora from 'ora';
@@ -25,6 +26,7 @@ import {
   askNpmConfig,
   askDeploymentConfig,
   askWorkflows,
+  askGenerateReleaseConfig,
 } from '../prompts/questions.js';
 import type {
   InitOptions,
@@ -98,6 +100,22 @@ export async function initCommand(options: InitOptions = {}): Promise<void> {
 
   printWriteSummary(results);
 
+  // generate release config if using release-please
+  let generatedReleaseConfig = false;
+  if (config.releaseStrategy === 'release-please') {
+    const configPath = path.join(cwd, 'release-please-config.json');
+    const configExists = fs.existsSync(configPath);
+    const shouldGenerate = options.yes ? !configExists : await askGenerateReleaseConfig(configExists);
+
+    if (shouldGenerate) {
+      const spinner3 = ora('Generating release-please config...').start();
+      const releaseResults = await generateReleaseConfig(config, cwd, options.force);
+      spinner3.succeed('Release config generated');
+      printWriteSummary(releaseResults);
+      generatedReleaseConfig = true;
+    }
+  }
+
   // save config
   saveConfig(config, cwd);
   console.log(chalk.gray(`\n  Saved: .github-workflows.json`));
@@ -106,7 +124,7 @@ export async function initCommand(options: InitOptions = {}): Promise<void> {
   printRequiredSecrets(config.workflows, config.deployEnvironments, config.docker);
 
   // show next steps
-  printNextSteps(config);
+  printNextSteps(config, generatedReleaseConfig);
 }
 
 /**
@@ -281,6 +299,40 @@ async function generateWorkflows(
 }
 
 /**
+ * generates release-please config files
+ */
+async function generateReleaseConfig(
+  config: WorkflowConfig,
+  cwd: string,
+  force?: boolean
+): Promise<WriteResult[]> {
+  const results: WriteResult[] = [];
+
+  const context = createTemplateContext(
+    config.projectName,
+    config.packageManager,
+    config.nodeVersion,
+    config.isMonorepo
+  );
+
+  // generate release-please-config.json
+  const configContent = renderAndValidate('config/release-please-config.json.hbs', context);
+  const configPath = path.join(cwd, 'release-please-config.json');
+  results.push(
+    await writeFileWithProtection(configPath, configContent, { force, backup: true })
+  );
+
+  // generate .release-please-manifest.json
+  const manifestContent = renderAndValidate('config/release-please-manifest.json.hbs', context);
+  const manifestPath = path.join(cwd, '.release-please-manifest.json');
+  results.push(
+    await writeFileWithProtection(manifestPath, manifestContent, { force, backup: true })
+  );
+
+  return results;
+}
+
+/**
  * collects secrets required by selected deployment platforms
  */
 function getDeploymentSecrets(deployEnvironments: DeployEnvironment[]): SecretInfo[] {
@@ -355,19 +407,22 @@ function printRequiredSecrets(
 /**
  * prints next steps
  */
-function printNextSteps(config: WorkflowConfig): void {
+function printNextSteps(config: WorkflowConfig, generatedReleaseConfig: boolean): void {
   console.log(chalk.green('\n✓ Workflows generated successfully!\n'));
 
   console.log(chalk.blue('Next steps:'));
   console.log('  1. Review generated workflows in .github/workflows/');
   console.log('  2. Configure required secrets in GitHub repository settings');
 
-  if (config.releaseStrategy === 'release-please') {
-    console.log('  3. Create release-please-config.json and .release-please-manifest.json');
+  let stepNum = 3;
+  if (config.releaseStrategy === 'release-please' && !generatedReleaseConfig) {
+    console.log(`  ${stepNum}. Create release-please-config.json and .release-please-manifest.json`);
+    stepNum++;
   } else if (config.releaseStrategy === 'changesets') {
-    console.log('  3. Run `npx changeset init` to set up changesets');
+    console.log(`  ${stepNum}. Run \`npx changeset init\` to set up changesets`);
+    stepNum++;
   }
 
-  console.log('  4. Use `create-github-workflows list` to see installed workflows');
-  console.log('  5. Use `create-github-workflows add <workflow>` to add more workflows');
+  console.log(`  ${stepNum}. Use \`create-github-workflows list\` to see installed workflows`);
+  console.log(`  ${stepNum + 1}. Use \`create-github-workflows add <workflow>\` to add more workflows`);
 }

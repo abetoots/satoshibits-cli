@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    ".": {
+{{#if isMonorepo}}
+      "release-type": "node",
+      "component": "{{projectName}}"
+{{else}}
+      "release-type": "node"
+{{/if}}
+    }
+  }
+}

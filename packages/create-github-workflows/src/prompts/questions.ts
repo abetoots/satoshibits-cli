@@ -446,6 +446,23 @@ export async function askDeploymentConfig(
 }
 
 /**
+ * asks whether to generate release-please config files
+ */
+export async function askGenerateReleaseConfig(existingConfig: boolean): Promise<boolean> {
+  if (existingConfig) {
+    return confirm({
+      message: 'release-please-config.json already exists. Overwrite?',
+      default: false,
+    });
+  }
+
+  return confirm({
+    message: 'Generate release-please config files? (required for workflow to work)',
+    default: true,
+  });
+}
+
+/**
  * asks which workflows to include
  */
 export async function askWorkflows(
