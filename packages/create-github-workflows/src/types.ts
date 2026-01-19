@@ -14,6 +14,8 @@ export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
 
 export type DockerRegistry = 'ghcr' | 'dockerhub' | 'ecr';
 
+export type DeploymentPlatform = 'digitalocean' | 'kubernetes' | 'aws-ecs';
+
 // ═══════════════════════════════════════════════════════════════════════════
 // WORKFLOW TYPES
 // ═══════════════════════════════════════════════════════════════════════════
@@ -96,12 +98,38 @@ export interface DockerConfig {
   buildTargets: string[];
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// DEPLOYMENT PLATFORM CONFIGURATIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface DigitalOceanConfig {
+  appName: string;
+}
+
+export interface KubernetesConfig {
+  clusterName: string;
+  namespace: string;
+  deploymentName: string;
+}
+
+export interface AwsEcsConfig {
+  clusterName: string;
+  serviceName: string;
+  region: string;
+}
+
 export interface DeployEnvironment {
   name: 'staging' | 'preview' | 'production';
-  /** digitalocean app name or other platform identifier */
-  appName: string;
   /** whether this environment is enabled */
   enabled: boolean;
+  /** deployment platform */
+  platform: DeploymentPlatform;
+  /** digitalocean configuration (if platform is digitalocean) */
+  digitalocean?: DigitalOceanConfig;
+  /** kubernetes configuration (if platform is kubernetes) */
+  kubernetes?: KubernetesConfig;
+  /** aws ecs configuration (if platform is aws-ecs) */
+  awsEcs?: AwsEcsConfig;
 }
 
 export interface NpmConfig {
@@ -175,6 +203,98 @@ export interface SecretInfo {
   workflows: WorkflowName[];
 }
 
+/**
+ * Secrets required by each Docker registry.
+ * These are dynamically included based on selected registry.
+ */
+export const DOCKER_REGISTRY_SECRETS: Record<DockerRegistry, SecretInfo[]> = {
+  ghcr: [
+    {
+      name: 'GITHUB_TOKEN',
+      description: 'Automatically provided by GitHub Actions (for GHCR)',
+      required: true,
+      workflows: ['build', 'docker'],
+    },
+  ],
+  dockerhub: [
+    {
+      name: 'DOCKERHUB_USERNAME',
+      description: 'Docker Hub username for authentication',
+      required: true,
+      workflows: ['build', 'docker'],
+    },
+    {
+      name: 'DOCKERHUB_TOKEN',
+      description: 'Docker Hub access token for authentication',
+      required: true,
+      workflows: ['build', 'docker'],
+    },
+  ],
+  ecr: [
+    {
+      name: 'AWS_ACCESS_KEY_ID',
+      description: 'AWS access key for ECR authentication',
+      required: true,
+      workflows: ['build', 'docker'],
+    },
+    {
+      name: 'AWS_SECRET_ACCESS_KEY',
+      description: 'AWS secret key for ECR authentication',
+      required: true,
+      workflows: ['build', 'docker'],
+    },
+    {
+      name: 'AWS_REGION',
+      description: 'AWS region for ECR',
+      required: true,
+      workflows: ['build', 'docker'],
+    },
+    {
+      name: 'AWS_ACCOUNT_ID',
+      description: 'AWS account ID for ECR registry URL',
+      required: true,
+      workflows: ['build', 'docker'],
+    },
+  ],
+};
+
+/**
+ * Secrets required by each deployment platform.
+ * These are dynamically included based on selected platforms.
+ */
+export const PLATFORM_SECRETS: Record<DeploymentPlatform, SecretInfo[]> = {
+  digitalocean: [
+    {
+      name: 'DIGITALOCEAN_ACCESS_TOKEN',
+      description: 'DigitalOcean API token for App Platform deployment',
+      required: true,
+      workflows: ['staging', 'preview', 'production'],
+    },
+  ],
+  kubernetes: [
+    {
+      name: 'KUBE_CONFIG',
+      description: 'Base64-encoded kubeconfig for cluster access',
+      required: true,
+      workflows: ['staging', 'preview', 'production'],
+    },
+  ],
+  'aws-ecs': [
+    {
+      name: 'AWS_ACCESS_KEY_ID',
+      description: 'AWS access key for ECS deployment',
+      required: true,
+      workflows: ['staging', 'preview', 'production'],
+    },
+    {
+      name: 'AWS_SECRET_ACCESS_KEY',
+      description: 'AWS secret key for ECS deployment',
+      required: true,
+      workflows: ['staging', 'preview', 'production'],
+    },
+  ],
+};
+
 export const WORKFLOW_SECRETS: Record<WorkflowName, SecretInfo[]> = {
   'pr-validation': [],
   'build': [
@@ -217,30 +337,10 @@ export const WORKFLOW_SECRETS: Record<WorkflowName, SecretInfo[]> = {
       workflows: ['docker'],
     },
   ],
-  'staging': [
-    {
-      name: 'DIGITALOCEAN_ACCESS_TOKEN',
-      description: 'DigitalOcean API token for App Platform deployment',
-      required: true,
-      workflows: ['staging'],
-    },
-  ],
-  'preview': [
-    {
-      name: 'DIGITALOCEAN_ACCESS_TOKEN',
-      description: 'DigitalOcean API token for App Platform deployment',
-      required: true,
-      workflows: ['preview'],
-    },
-  ],
-  'production': [
-    {
-      name: 'DIGITALOCEAN_ACCESS_TOKEN',
-      description: 'DigitalOcean API token for App Platform deployment',
-      required: true,
-      workflows: ['production'],
-    },
-  ],
+  // deploy workflow secrets are now computed dynamically via PLATFORM_SECRETS
+  'staging': [],
+  'preview': [],
+  'production': [],
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -296,13 +396,14 @@ export const WORKFLOW_REGISTRY: Record<WorkflowName, WorkflowInfo> = {
     outputFile: 'publish-docker.yml',
     requiredSecrets: ['GITHUB_TOKEN'],
   },
+  // deploy workflow secrets are now computed dynamically based on selected platform
   'staging': {
     name: 'staging',
     category: 'deploy',
     description: 'Manual staging deployment',
     templateFile: 'deploy/staging.yml.hbs',
     outputFile: 'deploy-staging.yml',
-    requiredSecrets: ['DIGITALOCEAN_ACCESS_TOKEN'],
+    requiredSecrets: [],
   },
   'preview': {
     name: 'preview',
@@ -310,7 +411,7 @@ export const WORKFLOW_REGISTRY: Record<WorkflowName, WorkflowInfo> = {
     description: 'Manual preview deployment from any branch',
     templateFile: 'deploy/preview.yml.hbs',
     outputFile: 'deploy-preview.yml',
-    requiredSecrets: ['DIGITALOCEAN_ACCESS_TOKEN'],
+    requiredSecrets: [],
   },
   'production': {
     name: 'production',
@@ -318,6 +419,6 @@ export const WORKFLOW_REGISTRY: Record<WorkflowName, WorkflowInfo> = {
     description: 'Tag-triggered production deployment',
     templateFile: 'deploy/production.yml.hbs',
     outputFile: 'deploy-production.yml',
-    requiredSecrets: ['DIGITALOCEAN_ACCESS_TOKEN'],
+    requiredSecrets: [],
   },
 };

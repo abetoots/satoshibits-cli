@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Handlebars from 'handlebars';
 import * as yaml from 'yaml';
-import type { TemplateContext } from '../types.js';
+import type { TemplateContext, DeployEnvironment } from '../types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -104,6 +104,16 @@ function registerHelpers(): void {
         return `npm --workspace ${filter}`;
     }
   });
+
+  // get platform config for a specific environment
+  // pass deployEnvironments explicitly for stable context
+  Handlebars.registerHelper(
+    'getPlatformConfig',
+    (deployEnvs: DeployEnvironment[], envName: string) => {
+      if (!Array.isArray(deployEnvs)) return null;
+      return deployEnvs.find((e: DeployEnvironment) => e.name === envName) ?? null;
+    }
+  );
 }
 
 // register helpers on module load

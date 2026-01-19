@@ -48,7 +48,7 @@ jobs:
         env:
           GH_TOKEN: $\{{ secrets.GITHUB_TOKEN }}
         run: |
-          SHA="${\{{ github.event.inputs.sha }}}"
+          SHA=$\{{ github.event.inputs.sha }}
           echo "Verifying build.yml success for SHA: $SHA"
 
           STATUS=$(gh run list --commit "$SHA" --workflow "build.yml" --json conclusion --jq '.[0].conclusion // "not_found"')
@@ -63,11 +63,11 @@ jobs:
         id: version
         run: |
           if [ "$\{{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${\{{ github.event.inputs.version }}}"
-            SHA="${\{{ github.event.inputs.sha }}}"
+            VERSION=$\{{ github.event.inputs.version }}
+            SHA=$\{{ github.event.inputs.sha }}
           else
             VERSION="${GITHUB_REF#refs/tags/}"
-            SHA="${\{{ github.sha }}}"
+            SHA=$\{{ github.sha }}
           fi
 
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -127,7 +127,7 @@ jobs:
       - name: Wait for source images in registry
         timeout-minutes: 35
         run: |
-          SHA="${\{{ steps.version.outputs.sha }}}"
+          SHA=$\{{ steps.version.outputs.sha }}
           echo "Waiting for images from build.yml for SHA: $SHA"
 
           MAX_ATTEMPTS=70
@@ -154,11 +154,11 @@ jobs:
 
       - name: Promote image
         run: |
-          SHA="${\{{ steps.version.outputs.sha }}}"
-          VERSION="${\{{ steps.version.outputs.version }}}"
-          MAJOR_MINOR="${\{{ steps.version.outputs.major_minor }}}"
-          MAJOR="${\{{ steps.version.outputs.major_only }}}"
-          IS_PRERELEASE="${\{{ steps.version.outputs.is_prerelease }}}"
+          SHA=$\{{ steps.version.outputs.sha }}
+          VERSION=$\{{ steps.version.outputs.version }}
+          MAJOR_MINOR=$\{{ steps.version.outputs.major_minor }}
+          MAJOR=$\{{ steps.version.outputs.major_only }}
+          IS_PRERELEASE=$\{{ steps.version.outputs.is_prerelease }}
 
           echo "🔄 Pulling image with SHA tag..."
           docker pull $\{{ steps.image-prefix.outputs.PREFIX }}:$SHA

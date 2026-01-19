@@ -33,7 +33,7 @@ jobs:
       - name: Resolve SHA
         id: resolve
         run: |
-          SHA="${\{{ inputs.sha }}}"
+          SHA=$\{{ inputs.sha }}
           echo "sha=$SHA" >> $GITHUB_OUTPUT
 
       # Verify build.yml succeeded for this SHA
@@ -41,7 +41,7 @@ jobs:
         env:
           GH_TOKEN: $\{{ secrets.GITHUB_TOKEN }}
         run: |
-          SHA="${\{{ steps.resolve.outputs.sha }}}"
+          SHA=$\{{ steps.resolve.outputs.sha }}
           echo "Verifying build.yml success for SHA: $SHA"
 
           STATUS=$(gh run list --commit "$SHA" --workflow "build.yml" --json conclusion --jq '.[0].conclusion // "not_found"')
@@ -86,17 +86,54 @@ jobs:
 
       - name: Verify image exists in registry
         run: |
-          SHA="${\{{ steps.resolve.outputs.sha }}}"
+          SHA=$\{{ steps.resolve.outputs.sha }}
           docker manifest inspect $\{{ steps.image-prefix.outputs.PREFIX }}:$SHA
           echo "✅ Image verified"
 
-      - name: Deploy to Staging
+{{#with (getPlatformConfig deployEnvironments "staging")}}
+{{#if (eq platform "digitalocean")}}
+      - name: Deploy to Staging (DigitalOcean)
         uses: digitalocean/app_action/deploy@v2
         with:
           token: $\{{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-          app_name: {{#each deployEnvironments}}{{#if (eq name "staging")}}{{appName}}{{/if}}{{/each}}
+          app_name: {{digitalocean.appName}}
         env:
           IMAGE_TAG_WEB_SERVICE: $\{{ steps.resolve.outputs.sha }}
+{{else if (eq platform "kubernetes")}}
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "$\{{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Deploy to Staging (Kubernetes)
+        run: |
+          kubectl set image deployment/{{kubernetes.deploymentName}} \
+            {{kubernetes.deploymentName}}=$\{{ steps.image-prefix.outputs.PREFIX }}:$\{{ steps.resolve.outputs.sha }} \
+            -n {{kubernetes.namespace}}
+          kubectl rollout status deployment/{{kubernetes.deploymentName}} -n {{kubernetes.namespace}} --timeout=5m
+{{else if (eq platform "aws-ecs")}}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: $\{{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: $\{{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: {{awsEcs.region}}
+
+      - name: Deploy to Staging (ECS)
+        run: |
+          aws ecs update-service \
+            --cluster {{awsEcs.clusterName}} \
+            --service {{awsEcs.serviceName}} \
+            --force-new-deployment
+          aws ecs wait services-stable \
+            --cluster {{awsEcs.clusterName}} \
+            --services {{awsEcs.serviceName}}
+{{/if}}
+{{/with}}
 
       - name: Summary
         run: |

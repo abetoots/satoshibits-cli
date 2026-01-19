@@ -36,7 +36,7 @@ import type {
   DeployEnvironment,
   NpmConfig,
 } from '../types.js';
-import { WORKFLOW_REGISTRY, WORKFLOW_SECRETS } from '../types.js';
+import { WORKFLOW_REGISTRY, WORKFLOW_SECRETS, PLATFORM_SECRETS, DOCKER_REGISTRY_SECRETS } from '../types.js';
 import { loadPreset } from './presets.js';
 
 interface InitContext {
@@ -103,7 +103,7 @@ export async function initCommand(options: InitOptions = {}): Promise<void> {
   console.log(chalk.gray(`\n  Saved: .github-workflows.json`));
 
   // show required secrets
-  printRequiredSecrets(config.workflows);
+  printRequiredSecrets(config.workflows, config.deployEnvironments, config.docker);
 
   // show next steps
   printNextSteps(config);
@@ -147,11 +147,13 @@ function createConfigFromPreset(
   }
 
   // add deploy environments if preset includes them
+  // default to digitalocean platform in quick mode
   if (presetDef.deployEnvironments.length > 0) {
     config.deployEnvironments = presetDef.deployEnvironments.map((env) => ({
       name: env,
-      appName: `${detected.projectName}-${env}`,
       enabled: true,
+      platform: 'digitalocean' as const,
+      digitalocean: { appName: `${detected.projectName}-${env}` },
     }));
   }
 
@@ -185,8 +187,10 @@ async function createConfigInteractive(
   // release strategy
   const releaseStrategy = await askReleaseStrategy(detected.isMonorepo);
 
-  // docker config
-  const dockerResult = await askDockerConfig(projectName, detected.dockerfilePath);
+  // docker config - skip confirmation if docker-app preset is selected
+  const dockerResult = preset === 'docker-app'
+    ? await askDockerConfig(projectName, detected.dockerfilePath, true)
+    : await askDockerConfig(projectName, detected.dockerfilePath);
   const docker: DockerConfig | null = dockerResult
     ? {
         registry: dockerResult.registry,
@@ -199,13 +203,8 @@ async function createConfigInteractive(
   // npm config
   const npm: NpmConfig | null = await askNpmConfig(preset);
 
-  // deployment config
-  const deploymentResult = await askDeploymentConfig(projectName);
-  const deployEnvironments: DeployEnvironment[] = deploymentResult.map((d) => ({
-    name: d.name,
-    appName: d.appName,
-    enabled: true,
-  }));
+  // deployment config - already returns DeployEnvironment[]
+  const deployEnvironments: DeployEnvironment[] = await askDeploymentConfig(projectName);
 
   // workflow selection
   const workflows = await askWorkflows(
@@ -282,17 +281,57 @@ async function generateWorkflows(
 }
 
 /**
+ * collects secrets required by selected deployment platforms
+ */
+function getDeploymentSecrets(deployEnvironments: DeployEnvironment[]): SecretInfo[] {
+  const platformsUsed = new Set(
+    deployEnvironments.filter((env) => env.enabled).map((env) => env.platform)
+  );
+
+  const secrets: SecretInfo[] = [];
+  for (const platform of platformsUsed) {
+    const platformSecrets = PLATFORM_SECRETS[platform] ?? [];
+    secrets.push(...platformSecrets);
+  }
+
+  return secrets;
+}
+
+/**
  * prints required secrets table
  */
-function printRequiredSecrets(workflows: WorkflowName[]): void {
+function printRequiredSecrets(
+  workflows: WorkflowName[],
+  deployEnvironments: DeployEnvironment[],
+  dockerConfig: DockerConfig | null
+): void {
   const secretsMap = new Map<string, SecretInfo>();
 
+  // collect workflow secrets
   for (const workflowName of workflows) {
     const secrets = WORKFLOW_SECRETS[workflowName] ?? [];
     for (const secret of secrets) {
       if (!secretsMap.has(secret.name)) {
         secretsMap.set(secret.name, secret);
       }
+    }
+  }
+
+  // collect docker registry secrets
+  if (dockerConfig) {
+    const registrySecrets = DOCKER_REGISTRY_SECRETS[dockerConfig.registry] ?? [];
+    for (const secret of registrySecrets) {
+      if (!secretsMap.has(secret.name)) {
+        secretsMap.set(secret.name, secret);
+      }
+    }
+  }
+
+  // collect platform-specific deployment secrets
+  const deploySecrets = getDeploymentSecrets(deployEnvironments);
+  for (const secret of deploySecrets) {
+    if (!secretsMap.has(secret.name)) {
+      secretsMap.set(secret.name, secret);
     }
   }
 

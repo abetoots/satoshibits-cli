@@ -4,7 +4,14 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { WorkflowConfig, Preset, PackageManager, ReleaseStrategy, WorkflowName } from '../types.js';
+import type {
+  WorkflowConfig,
+  Preset,
+  PackageManager,
+  ReleaseStrategy,
+  WorkflowName,
+  DeployEnvironment,
+} from '../types.js';
 
 const CONFIG_FILENAME = '.github-workflows.json';
 
@@ -16,6 +23,43 @@ export function configExists(cwd: string = process.cwd()): boolean {
   return fs.existsSync(getConfigPath(cwd));
 }
 
+/**
+ * migrates a legacy deploy environment to the new format with platform field
+ * legacy format: { name, appName, enabled }
+ * new format: { name, enabled, platform, digitalocean?: { appName } }
+ */
+function migrateDeployEnvironment(env: unknown): DeployEnvironment {
+  const legacyEnv = env as { name: 'staging' | 'preview' | 'production'; appName?: string; enabled: boolean; platform?: string };
+
+  // already migrated
+  if (legacyEnv.platform) {
+    return env as DeployEnvironment;
+  }
+
+  // migrate from legacy format (default to digitalocean)
+  // provide fallback appName to ensure valid config
+  return {
+    name: legacyEnv.name,
+    enabled: legacyEnv.enabled,
+    platform: 'digitalocean',
+    digitalocean: { appName: legacyEnv.appName ?? `${legacyEnv.name}-app` },
+  };
+}
+
+/**
+ * migrates the config to the latest version
+ */
+function migrateConfig(config: unknown): WorkflowConfig {
+  const rawConfig = config as WorkflowConfig & { deployEnvironments?: unknown[] };
+
+  // migrate deploy environments if needed
+  if (Array.isArray(rawConfig.deployEnvironments)) {
+    rawConfig.deployEnvironments = rawConfig.deployEnvironments.map(migrateDeployEnvironment);
+  }
+
+  return rawConfig as WorkflowConfig;
+}
+
 export function loadConfig(cwd: string = process.cwd()): WorkflowConfig | null {
   const configPath = getConfigPath(cwd);
 
@@ -25,7 +69,8 @@ export function loadConfig(cwd: string = process.cwd()): WorkflowConfig | null {
 
   try {
     const content = fs.readFileSync(configPath, 'utf-8');
-    return JSON.parse(content) as WorkflowConfig;
+    const rawConfig = JSON.parse(content) as unknown;
+    return migrateConfig(rawConfig);
   } catch {
     return null;
   }

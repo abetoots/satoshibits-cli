@@ -87,13 +87,50 @@ jobs:
           cache-from: type=gha,scope=preview
           cache-to: type=gha,mode=max,scope=preview
 
-      - name: Deploy to Preview
+{{#with (getPlatformConfig deployEnvironments "preview")}}
+{{#if (eq platform "digitalocean")}}
+      - name: Deploy to Preview (DigitalOcean)
         uses: digitalocean/app_action/deploy@v2
         with:
           token: $\{{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-          app_name: {{#each deployEnvironments}}{{#if (eq name "preview")}}{{appName}}{{/if}}{{/each}}
+          app_name: {{digitalocean.appName}}
         env:
           IMAGE_TAG_WEB_SERVICE: preview-$\{{ steps.get-sha.outputs.sha }}
+{{else if (eq platform "kubernetes")}}
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "$\{{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Deploy to Preview (Kubernetes)
+        run: |
+          kubectl set image deployment/{{kubernetes.deploymentName}} \
+            {{kubernetes.deploymentName}}=$\{{ steps.image-prefix.outputs.PREFIX }}:preview-$\{{ steps.get-sha.outputs.sha }} \
+            -n {{kubernetes.namespace}}
+          kubectl rollout status deployment/{{kubernetes.deploymentName}} -n {{kubernetes.namespace}} --timeout=5m
+{{else if (eq platform "aws-ecs")}}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: $\{{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: $\{{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: {{awsEcs.region}}
+
+      - name: Deploy to Preview (ECS)
+        run: |
+          aws ecs update-service \
+            --cluster {{awsEcs.clusterName}} \
+            --service {{awsEcs.serviceName}} \
+            --force-new-deployment
+          aws ecs wait services-stable \
+            --cluster {{awsEcs.clusterName}} \
+            --services {{awsEcs.serviceName}}
+{{/if}}
+{{/with}}
 
       - name: Summary
         run: |

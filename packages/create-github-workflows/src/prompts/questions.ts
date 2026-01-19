@@ -9,6 +9,11 @@ import type {
   WorkflowName,
   DockerRegistry,
   PackageManager,
+  DeploymentPlatform,
+  DeployEnvironment,
+  DigitalOceanConfig,
+  KubernetesConfig,
+  AwsEcsConfig,
 } from '../types.js';
 
 export interface InitAnswers {
@@ -149,20 +154,24 @@ export async function askReleaseStrategy(isMonorepo: boolean): Promise<ReleaseSt
 
 /**
  * asks for docker configuration
+ * @param skipConfirmation - skip the "Include Docker workflows?" confirmation (for docker-app preset)
  */
 export async function askDockerConfig(
   projectName: string,
-  detectedPath: string | null
+  detectedPath: string | null,
+  skipConfirmation = false
 ): Promise<{ registry: DockerRegistry; imageName: string; dockerfilePath: string } | null> {
-  const hasDocker = await confirm({
-    message: detectedPath
-      ? `Dockerfile detected at ${detectedPath}. Include Docker workflows?`
-      : 'Include Docker workflows?',
-    default: detectedPath !== null,
-  });
+  if (!skipConfirmation) {
+    const hasDocker = await confirm({
+      message: detectedPath
+        ? `Dockerfile detected at ${detectedPath}. Include Docker workflows?`
+        : 'Include Docker workflows?',
+      default: detectedPath !== null,
+    });
 
-  if (!hasDocker) {
-    return null;
+    if (!hasDocker) {
+      return null;
+    }
   }
 
   // ask for Dockerfile path if not detected
@@ -248,11 +257,145 @@ export async function askNpmConfig(
 }
 
 /**
- * asks for deployment environments
+ * asks for deployment platform selection
+ */
+export async function askDeploymentPlatform(envName: string): Promise<DeploymentPlatform> {
+  return select<DeploymentPlatform>({
+    message: `Select deployment platform for ${envName}:`,
+    choices: [
+      {
+        name: 'DigitalOcean App Platform (Recommended)',
+        value: 'digitalocean',
+        description: 'Simple deployment to DigitalOcean App Platform',
+      },
+      {
+        name: 'Kubernetes',
+        value: 'kubernetes',
+        description: 'Deploy to any Kubernetes cluster',
+      },
+      {
+        name: 'AWS ECS',
+        value: 'aws-ecs',
+        description: 'Deploy to Amazon Elastic Container Service',
+      },
+    ],
+    default: 'digitalocean',
+  });
+}
+
+/**
+ * asks for digitalocean-specific configuration
+ */
+async function askDigitalOceanConfig(
+  projectName: string,
+  envName: string
+): Promise<DigitalOceanConfig> {
+  const appName = await input({
+    message: `DigitalOcean app name for ${envName}:`,
+    default: `${projectName}-${envName}`,
+    validate: (value) => {
+      if (!value.trim()) {
+        return 'App name is required';
+      }
+      return true;
+    },
+  });
+
+  return { appName };
+}
+
+/**
+ * asks for kubernetes-specific configuration
+ */
+async function askKubernetesConfig(
+  projectName: string,
+  envName: string
+): Promise<KubernetesConfig> {
+  const clusterName = await input({
+    message: `Kubernetes cluster name for ${envName}:`,
+    default: `${envName}-cluster`,
+    validate: (value) => {
+      if (!value.trim()) {
+        return 'Cluster name is required';
+      }
+      return true;
+    },
+  });
+
+  const namespace = await input({
+    message: `Kubernetes namespace for ${envName}:`,
+    default: envName,
+    validate: (value) => {
+      if (!value.trim()) {
+        return 'Namespace is required';
+      }
+      return true;
+    },
+  });
+
+  const deploymentName = await input({
+    message: `Kubernetes deployment name for ${envName}:`,
+    default: projectName,
+    validate: (value) => {
+      if (!value.trim()) {
+        return 'Deployment name is required';
+      }
+      return true;
+    },
+  });
+
+  return { clusterName, namespace, deploymentName };
+}
+
+/**
+ * asks for aws ecs-specific configuration
+ */
+async function askAwsEcsConfig(
+  projectName: string,
+  envName: string
+): Promise<AwsEcsConfig> {
+  const clusterName = await input({
+    message: `ECS cluster name for ${envName}:`,
+    default: `${projectName}-${envName}`,
+    validate: (value) => {
+      if (!value.trim()) {
+        return 'Cluster name is required';
+      }
+      return true;
+    },
+  });
+
+  const serviceName = await input({
+    message: `ECS service name for ${envName}:`,
+    default: projectName,
+    validate: (value) => {
+      if (!value.trim()) {
+        return 'Service name is required';
+      }
+      return true;
+    },
+  });
+
+  const region = await input({
+    message: `AWS region for ${envName}:`,
+    default: 'us-east-1',
+    validate: (value) => {
+      if (!value.trim()) {
+        return 'Region is required';
+      }
+      return true;
+    },
+  });
+
+  return { clusterName, serviceName, region };
+}
+
+/**
+ * asks for deployment environments with platform-specific configuration
  */
 export async function askDeploymentConfig(
   projectName: string
-): Promise<{ name: 'staging' | 'preview' | 'production'; appName: string }[]> {
+): Promise<DeployEnvironment[]> {
   const hasDeployments = await confirm({
     message: 'Include deployment workflows?',
     default: true,
@@ -271,14 +414,32 @@ export async function askDeploymentConfig(
     ],
   });
 
-  const result: { name: 'staging' | 'preview' | 'production'; appName: string }[] = [];
+  const result: DeployEnvironment[] = [];
 
   for (const env of environments) {
-    const appName = await input({
-      message: `${env.charAt(0).toUpperCase() + env.slice(1)} app name (DigitalOcean):`,
-      default: `${projectName}-${env}`,
-    });
-    result.push({ name: env, appName });
+    const envLabel = env.charAt(0).toUpperCase() + env.slice(1);
+    const platform = await askDeploymentPlatform(envLabel);
+
+    const baseEnv: DeployEnvironment = {
+      name: env,
+      enabled: true,
+      platform,
+    };
+
+    // collect platform-specific configuration
+    switch (platform) {
+      case 'digitalocean':
+        baseEnv.digitalocean = await askDigitalOceanConfig(projectName, envLabel);
+        break;
+      case 'kubernetes':
+        baseEnv.kubernetes = await askKubernetesConfig(projectName, envLabel);
+        break;
+      case 'aws-ecs':
+        baseEnv.awsEcs = await askAwsEcsConfig(projectName, envLabel);
+        break;
+    }
+
+    result.push(baseEnv);
   }
 
   return result;
