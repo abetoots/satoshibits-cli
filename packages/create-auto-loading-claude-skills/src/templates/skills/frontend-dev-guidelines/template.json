@@ -1,0 +1,85 @@
+{
+  "version": "1.0",
+  "name": "frontend-dev-guidelines",
+  "displayName": "Frontend Development Guidelines",
+  "description": "React/TypeScript patterns for building modern, accessible UIs",
+  "category": "development",
+  "tags": ["frontend", "react", "typescript", "ui", "components", "hooks"],
+  "author": "create-auto-loading-claude-skills",
+
+  "variables": {
+    "PROJECT_NAME": "Your Project",
+    "UI_FRAMEWORK": "React",
+    "UI_LIBRARY": "Material-UI",
+    "STATE_MANAGEMENT": "React Context"
+  },
+
+  "skillRule": {
+    "type": "domain",
+    "enforcement": "suggest",
+    "priority": "high",
+    "description": "React/TypeScript patterns for building modern, accessible UIs",
+
+    "promptTriggers": {
+      "keywords": [
+        "component",
+        "React",
+        "useState",
+        "useEffect",
+        "UI",
+        "frontend",
+        "hook",
+        "props",
+        "JSX",
+        "render"
+      ],
+      "intentPatterns": [
+        "(create|build|add).*?(component|UI|interface)",
+        "(how to|best practice).*?(React|component|frontend)",
+        "state.*?(management|handling)",
+        "(props|hook).*?(pattern|usage)"
+      ]
+    },
+
+    "fileTriggers": {
+      "pathPatterns": [
+        "src/components/**/*.tsx",
+        "src/components/**/*.jsx",
+        "frontend/**/*.tsx",
+        "client/**/*.tsx",
+        "**/pages/**/*.tsx",
+        "**/hooks/**/*.ts"
+      ],
+      "contentPatterns": [
+        "import.*react",
+        "export.*function.*Component",
+        "export default function",
+        "useState|useEffect|useCallback",
+        "interface.*Props"
+      ]
+    },
+
+    "validationRules": [
+      {
+        "name": "proper-hooks-import",
+        "condition": {
+          "pattern": "useState|useEffect|useCallback|useMemo"
+        },
+        "requirement": {
+          "pattern": "import.*\\{.*(useState|useEffect|useCallback|useMemo)"
+        },
+        "reminder": "Did you import React hooks at the top of the file?"
+      },
+      {
+        "name": "props-interface",
+        "condition": {
+          "pattern": "export (default )?function \\w+\\("
+        },
+        "requirement": {
+          "pattern": "interface \\w+Props"
+        },
+        "reminder": "Did you define a TypeScript interface for component props?"
+      }
+    ]
+  }
+}

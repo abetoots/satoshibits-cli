@@ -1,0 +1,88 @@
+{
+  "name": "@satoshibits/create-auto-loading-claude-skills",
+  "version": "0.0.0",
+  "main": "dist/index.mjs",
+  "types": "dist/index.d.mts",
+  "bin": {
+    "cl-auto-skills": "./dist/src/bin/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    },
+    "./helpers": {
+      "types": "./dist/helpers/index.d.ts",
+      "import": "./dist/helpers/index.js"
+    },
+    "./helpers/internal": {
+      "types": "./dist/helpers/internal/index.d.ts",
+      "import": "./dist/helpers/internal/index.js"
+    }
+  },
+  "type": "module",
+  "private": false,
+  "scripts": {
+    "build": "rm -rf dist && tsc",
+    "lint": "pnpm exec eslint .",
+    "prepublishOnly": "npm run build",
+    "pre-commit": "pnpm exec lint-staged -c ./.lintstagedrc.mjs --concurrent false",
+    "test": "vitest --run"
+  },
+  "files": [
+    "./dist/**/*",
+    "!./dist/**/*.test.*"
+  ],
+  "keywords": [
+    "claude",
+    "claude-code",
+    "skills",
+    "reliability engine",
+    "deterministic skills",
+    "automation",
+    "scaffolding",
+    "hooks",
+    "auto-loading",
+    "cli"
+  ],
+  "author": {
+    "name": "Abe M. Caymo",
+    "email": "caymo.abesuni@gmail.com",
+    "url": "https://github.com/abetoots"
+  },
+  "license": "ISC",
+  "description": "Scaffolding CLI for Claude Code auto-loading skill system",
+  "dependencies": {
+    "chalk": "^5.6.2",
+    "@satoshibits/claude-skill-runtime": "workspace:^",
+    "commander": "^14.0.2",
+    "glob": "^11.0.3",
+    "js-yaml": "^4.1.1",
+    "minimatch": "^10.1.1",
+    "ora": "^9.0.0",
+    "prompts": "^2.4.2",
+    "proper-lockfile": "^4.1.2"
+  },
+  "devDependencies": {
+    "@eslint/compat": "^1.2.0",
+    "@repo/typescript-config": "workspace:^",
+    "@satoshibits/eslint-config": "workspace:^",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^24.10.1",
+    "@types/prompts": "^2.4.9",
+    "@types/proper-lockfile": "^4.1.4",
+    "@typescript-eslint/utils": "^8.26.1",
+    "esbuild": "^0.27.2",
+    "eslint": "^9.22.0",
+    "jiti": "^2.4.2",
+    "lint-staged": "^15.2.10",
+    "tsx": "^4.20.6",
+    "typescript": "^5.7.3",
+    "vitest": "^3.1.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/abetoots/satoshibits-services.git"
+  },
+  "homepage": "https://github.com/abetoots/satoshibits-services/packages/create-auto-loading-claude-skills"
+}

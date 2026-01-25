@@ -1,0 +1,91 @@
+{
+  "version": "1.0",
+  "name": "error-handling",
+  "displayName": "Error Handling & Logging",
+  "description": "Comprehensive error tracking, logging, and validation patterns",
+  "category": "quality",
+  "tags": ["error-handling", "logging", "sentry", "validation", "debugging"],
+  "author": "create-auto-loading-claude-skills",
+
+  "variables": {
+    "PROJECT_NAME": "Your Project",
+    "ERROR_TRACKER": "Sentry",
+    "LOGGER": "Winston"
+  },
+
+  "skillRule": {
+    "type": "domain",
+    "enforcement": "suggest",
+    "priority": "high",
+    "description": "Comprehensive error tracking, logging, and validation patterns",
+
+    "promptTriggers": {
+      "keywords": [
+        "error",
+        "exception",
+        "logging",
+        "log",
+        "Sentry",
+        "validation",
+        "try-catch",
+        "debugging",
+        "monitoring"
+      ],
+      "intentPatterns": [
+        "(add|implement|fix).*?(error|exception|logging)",
+        "(how to|best practice).*?(error|logging|validation)",
+        "track.*?(error|exception)",
+        "handle.*?(error|failure|exception)"
+      ]
+    },
+
+    "fileTriggers": {
+      "pathPatterns": [
+        "**/*.ts",
+        "**/*.tsx",
+        "**/*.js",
+        "**/*.jsx"
+      ],
+      "contentPatterns": [
+        "try\\s*\\{",
+        "catch\\s*\\(",
+        "throw new Error",
+        "import.*Sentry",
+        "logger\\."
+      ]
+    },
+
+    "validationRules": [
+      {
+        "name": "catch-block-logging",
+        "condition": {
+          "pattern": "catch\\s*\\([^)]*\\)\\s*\\{"
+        },
+        "requirement": {
+          "pattern": "captureException|logger\\.error|console\\.error"
+        },
+        "reminder": "Did you add error logging in the catch block?"
+      },
+      {
+        "name": "error-context",
+        "condition": {
+          "pattern": "captureException"
+        },
+        "requirement": {
+          "pattern": "\\{[^}]*(tags|context|extra)"
+        },
+        "reminder": "Did you add context (tags, user info) to the error capture?"
+      },
+      {
+        "name": "async-error-handling",
+        "condition": {
+          "pattern": "async\\s+(function|\\()"
+        },
+        "requirement": {
+          "pattern": "try\\s*\\{|catch\\s*\\("
+        },
+        "reminder": "Did you wrap async operations in try-catch?"
+      }
+    ]
+  }
+}

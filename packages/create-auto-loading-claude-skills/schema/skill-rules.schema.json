@@ -1,0 +1,310 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/your-org/create-auto-loading-claude-skills/main/schema/skill-rules.schema.json",
+  "title": "Skill Rules Configuration",
+  "description": "Configuration for Claude Code auto-loading skill activation rules",
+  "type": "object",
+  "required": ["version", "skills"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema URL for IDE autocomplete"
+    },
+    "version": {
+      "type": "string",
+      "description": "Configuration schema version",
+      "default": "1.0"
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description of this configuration"
+    },
+    "settings": {
+      "type": "object",
+      "description": "Global settings for skill activation behavior",
+      "additionalProperties": false,
+      "properties": {
+        "maxSuggestions": {
+          "type": "integer",
+          "description": "Maximum number of skill suggestions to show per prompt",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 10
+        },
+        "cacheDirectory": {
+          "type": "string",
+          "description": "Directory for caching skill activation state",
+          "default": ".claude/cache"
+        },
+        "enableDebugLogging": {
+          "type": "boolean",
+          "description": "Enable debug logging for skill activation",
+          "default": false
+        },
+        "debugCategories": {
+          "type": "array",
+          "description": "Categories of debug messages to log (logs all if not specified)",
+          "items": {
+            "type": "string",
+            "enum": ["activation", "scoring", "validation", "state", "perf", "io", "error"]
+          },
+          "uniqueItems": true
+        },
+        "scoring": {
+          "type": "object",
+          "description": "Scoring weights for different match types",
+          "additionalProperties": false,
+          "properties": {
+            "keywordMatchScore": {
+              "type": "integer",
+              "description": "Score for keyword matches in prompt triggers",
+              "default": 10
+            },
+            "intentPatternScore": {
+              "type": "integer",
+              "description": "Score for intent pattern matches",
+              "default": 20
+            },
+            "filePathMatchScore": {
+              "type": "integer",
+              "description": "Score for file path pattern matches",
+              "default": 15
+            },
+            "fileContentMatchScore": {
+              "type": "integer",
+              "description": "Score for file content pattern matches",
+              "default": 15
+            }
+          }
+        },
+        "thresholds": {
+          "type": "object",
+          "description": "Threshold settings for skill activation",
+          "additionalProperties": false,
+          "properties": {
+            "recentActivationMinutes": {
+              "type": "integer",
+              "description": "Minutes to suppress re-activation of recently triggered skills",
+              "default": 5,
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "skills": {
+      "type": "object",
+      "description": "Skill definitions keyed by skill name",
+      "additionalProperties": {
+        "$ref": "#/$defs/SkillRule"
+      }
+    }
+  },
+  "$defs": {
+    "SkillRule": {
+      "type": "object",
+      "description": "Configuration for a single skill's activation rules",
+      "required": ["type", "enforcement", "priority", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Skill category: domain (specialized knowledge), guardrail (safety/compliance), workflow (process guidance)",
+          "enum": ["domain", "guardrail", "workflow"],
+          "default": "domain"
+        },
+        "enforcement": {
+          "type": "string",
+          "description": "How the skill is triggered: suggest (recommend), warn (alert), block (prevent), manual (user-invoked only)",
+          "enum": ["suggest", "warn", "block", "manual"],
+          "default": "suggest"
+        },
+        "priority": {
+          "type": "string",
+          "description": "Activation priority when multiple skills match",
+          "enum": ["critical", "high", "medium", "low"],
+          "default": "medium"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of what this skill does"
+        },
+        "activationStrategy": {
+          "type": "string",
+          "description": "Activation strategy for hybrid reliability architecture. Determines how the package interacts with native Claude Code features.",
+          "enum": ["guaranteed", "suggestive", "prompt_enhanced", "native_only"],
+          "default": "native_only"
+        },
+        "promptHook": {
+          "type": "string",
+          "description": "Path to prompt hook file for 'prompt_enhanced' strategy. The hook receives rich context gathered by the package and uses Haiku for semantic decisions."
+        },
+        "cooldownMinutes": {
+          "type": "integer",
+          "description": "Cooldown in minutes before this skill can be re-activated. Prevents suggestion spam for frequently-triggered skills.",
+          "minimum": 0
+        },
+        "promptTriggers": {
+          "type": "object",
+          "description": "Triggers based on user prompt content",
+          "additionalProperties": false,
+          "properties": {
+            "keywords": {
+              "type": "array",
+              "description": "Keywords that trigger this skill (case-insensitive)",
+              "items": {
+                "type": "string"
+              }
+            },
+            "intentPatterns": {
+              "type": "array",
+              "description": "Regex patterns to match user intent",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "fileTriggers": {
+          "type": "object",
+          "description": "Triggers based on files mentioned in prompt or edited files",
+          "additionalProperties": false,
+          "properties": {
+            "pathPatterns": {
+              "type": "array",
+              "description": "Glob patterns for file paths (e.g., '**/*.test.ts')",
+              "items": {
+                "type": "string"
+              }
+            },
+            "contentPatterns": {
+              "type": "array",
+              "description": "Regex patterns to match file content",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "shadowTriggers": {
+          "type": "object",
+          "description": "Triggers that suggest (not auto-load) for manual-only skills",
+          "additionalProperties": false,
+          "properties": {
+            "keywords": {
+              "type": "array",
+              "description": "Keywords that suggest this skill",
+              "items": {
+                "type": "string"
+              }
+            },
+            "intentPatterns": {
+              "type": "array",
+              "description": "Regex patterns that suggest this skill",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "preToolTriggers": {
+          "type": "object",
+          "description": "Triggers before tool execution (useful for guardrails)",
+          "additionalProperties": false,
+          "required": ["toolName"],
+          "properties": {
+            "toolName": {
+              "type": "string",
+              "description": "Name of the tool to intercept (e.g., 'Bash', 'Edit')"
+            },
+            "inputPatterns": {
+              "type": "array",
+              "description": "Regex patterns to match tool input",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "stopTriggers": {
+          "type": "object",
+          "description": "Triggers when Claude claims completion (useful for verification)",
+          "additionalProperties": false,
+          "properties": {
+            "keywords": {
+              "type": "array",
+              "description": "Keywords in completion message that trigger verification",
+              "items": {
+                "type": "string"
+              }
+            },
+            "promptEvaluation": {
+              "type": "string",
+              "description": "Condition to evaluate against the original prompt"
+            }
+          }
+        },
+        "validationRules": {
+          "type": "array",
+          "description": "Rules for validating skill completion",
+          "items": {
+            "$ref": "#/$defs/ValidationRule"
+          }
+        }
+      }
+    },
+    "ValidationRule": {
+      "type": "object",
+      "description": "Rule for validating that a skill requirement is met",
+      "required": ["name", "condition", "requirement", "reminder"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Human-readable name for this validation rule"
+        },
+        "condition": {
+          "type": "object",
+          "description": "When this rule applies",
+          "additionalProperties": false,
+          "properties": {
+            "pattern": {
+              "type": "string",
+              "description": "Regex pattern to match in file content"
+            },
+            "pathPattern": {
+              "type": "string",
+              "description": "Glob pattern for file paths this rule applies to"
+            }
+          }
+        },
+        "requirement": {
+          "type": "object",
+          "description": "What must be true for validation to pass",
+          "additionalProperties": false,
+          "properties": {
+            "pattern": {
+              "type": "string",
+              "description": "Regex pattern that must match in file content"
+            },
+            "fileExists": {
+              "type": "string",
+              "description": "Glob pattern for a file that must exist"
+            }
+          }
+        },
+        "reminder": {
+          "type": "string",
+          "description": "Message to show if validation fails"
+        },
+        "enforcement": {
+          "type": "string",
+          "description": "Action to take when validation fails: block (prevent execution) or reminder (gentle warning)",
+          "enum": ["block", "reminder"],
+          "default": "reminder"
+        }
+      }
+    }
+  }
+}

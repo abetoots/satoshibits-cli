@@ -1,0 +1,86 @@
+{
+  "version": "1.0",
+  "name": "backend-dev-guidelines",
+  "displayName": "Backend Development Guidelines",
+  "description": "Express/TypeScript/Prisma patterns for building scalable backend APIs",
+  "category": "development",
+  "tags": ["backend", "API", "express", "typescript", "prisma", "node"],
+  "author": "create-auto-loading-claude-skills",
+
+  "variables": {
+    "PROJECT_NAME": "Your Project",
+    "BACKEND_FRAMEWORK": "Express.js",
+    "DATABASE_ORM": "Prisma",
+    "ERROR_TRACKER": "Sentry"
+  },
+
+  "skillRule": {
+    "type": "domain",
+    "enforcement": "suggest",
+    "priority": "high",
+    "description": "Express/TypeScript/Prisma patterns for building scalable backend APIs",
+
+    "promptTriggers": {
+      "keywords": [
+        "controller",
+        "service",
+        "route",
+        "API",
+        "endpoint",
+        "database",
+        "Prisma",
+        "Express",
+        "middleware",
+        "validation",
+        "authentication"
+      ],
+      "intentPatterns": [
+        "(create|add|build|modify).*?(route|endpoint|controller|service)",
+        "(how to|best practice).*?(backend|API)",
+        "database.*?(query|operation|migration)",
+        "structure.*?(API|backend|service)"
+      ]
+    },
+
+    "fileTriggers": {
+      "pathPatterns": [
+        "src/api/**/*.ts",
+        "backend/**/*.ts",
+        "services/**/*.ts",
+        "server/**/*.ts",
+        "**/routes/**/*.ts",
+        "**/controllers/**/*.ts"
+      ],
+      "contentPatterns": [
+        "import.*express",
+        "export.*Controller",
+        "export.*Service",
+        "import.*Prisma",
+        "router\\."
+      ]
+    },
+
+    "validationRules": [
+      {
+        "name": "error-tracking",
+        "condition": {
+          "pattern": "try\\s*\\{"
+        },
+        "requirement": {
+          "pattern": "captureException|logger\\.error"
+        },
+        "reminder": "Did you add error tracking to catch blocks?"
+      },
+      {
+        "name": "validation-middleware",
+        "condition": {
+          "pattern": "router\\.(post|put|patch)"
+        },
+        "requirement": {
+          "pattern": "validate|validateRequest|zod\\.parse"
+        },
+        "reminder": "Did you add validation middleware for request body?"
+      }
+    ]
+  }
+}
