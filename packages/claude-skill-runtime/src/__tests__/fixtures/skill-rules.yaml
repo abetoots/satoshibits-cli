@@ -1,0 +1,67 @@
+version: "1.0"
+description: "Test skill rules configuration"
+settings:
+  maxSuggestions: 3
+  enableDebugLogging: false
+  scoring:
+    keywordMatchScore: 10
+    intentPatternScore: 20
+    filePathMatchScore: 15
+    fileContentMatchScore: 15
+  thresholds:
+    recentActivationMinutes: 5
+
+skills:
+  test-driven-development:
+    type: domain
+    enforcement: suggest
+    priority: high
+    description: "Use TDD when writing new features"
+    promptTriggers:
+      keywords:
+        - "write tests"
+        - "test first"
+        - "tdd"
+      intentPatterns:
+        - "implement.*with tests"
+        - "add.*test.*coverage"
+    fileTriggers:
+      pathPatterns:
+        - "**/*.test.ts"
+        - "**/*.spec.ts"
+
+  api-guidelines:
+    type: domain
+    enforcement: warn
+    priority: medium
+    description: "Follow API design guidelines"
+    fileTriggers:
+      pathPatterns:
+        - "src/api/**/*.ts"
+      contentPatterns:
+        - "express|fastify|hono"
+
+  manual-skill:
+    type: workflow
+    enforcement: manual
+    priority: low
+    description: "Manually triggered skill"
+    promptTriggers:
+      keywords:
+        - "manual"
+
+  critical-guardrail:
+    type: guardrail
+    enforcement: block
+    priority: critical
+    description: "Critical security guardrail"
+    promptTriggers:
+      keywords:
+        - "security"
+    validationRules:
+      - name: requires-auth-check
+        condition:
+          pathPattern: "src/api/.*\\.ts$"
+        requirement:
+          pattern: "auth|authenticate"
+        reminder: "API endpoints should include authentication"

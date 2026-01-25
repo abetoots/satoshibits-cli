@@ -1,0 +1,25 @@
+{
+  "version": "1.0",
+  "description": "Test skill rules configuration (JSON format)",
+  "settings": {
+    "maxSuggestions": 3,
+    "enableDebugLogging": false,
+    "scoring": {
+      "keywordMatchScore": 10,
+      "intentPatternScore": 20,
+      "filePathMatchScore": 15,
+      "fileContentMatchScore": 15
+    }
+  },
+  "skills": {
+    "json-test-skill": {
+      "type": "domain",
+      "enforcement": "suggest",
+      "priority": "medium",
+      "description": "Test skill from JSON config",
+      "promptTriggers": {
+        "keywords": ["json-test"]
+      }
+    }
+  }
+}
