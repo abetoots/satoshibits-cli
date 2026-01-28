@@ -12,8 +12,10 @@ const BACKUP_DIR = '.create-docs-backups';
 const MANIFEST_FILE = 'manifest.json';
 
 // read version from package.json
+// path differs between source (src/migrate/) and compiled (dist/src/migrate/)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const packageJsonPath = path.join(__dirname, '../../package.json');
+const isInDist = __dirname.includes(`${path.sep}dist${path.sep}`);
+const packageJsonPath = path.join(__dirname, isInDist ? '../../../package.json' : '../../package.json');
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8')) as { version: string };
 const CLI_VERSION: string = packageJson.version;
 

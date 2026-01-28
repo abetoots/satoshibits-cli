@@ -12,7 +12,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // templates are in the package root /templates directory
-const TEMPLATES_DIR = path.resolve(__dirname, '../../templates');
+// path differs between source (src/templates/) and compiled (dist/src/templates/)
+const isInDist = __dirname.includes(`${path.sep}dist${path.sep}`);
+const TEMPLATES_DIR = path.resolve(__dirname, isInDist ? '../../../templates' : '../../templates');
 
 // register handlebars helpers
 Handlebars.registerHelper('uppercase', (str: string) => str?.toUpperCase());

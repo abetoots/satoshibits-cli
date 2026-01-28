@@ -18,8 +18,8 @@ interface CreateDocsConfig {
   variance: string;
 }
 
-// path to compiled CLI
-const COMPILED_CLI_PATH = path.join(__dirname, "../dist/index.js");
+// path to compiled CLI (from tests/e2e/ -> package root -> dist/src/)
+const COMPILED_CLI_PATH = path.join(__dirname, "../../dist/src/index.js");
 
 describe("create-docs E2E", () => {
   // ensure CLI is built before running tests
