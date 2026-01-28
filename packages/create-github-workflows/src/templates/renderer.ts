@@ -12,8 +12,10 @@ import type { TemplateContext, DeployEnvironment } from '../types.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// templates directory is at package root (not in dist)
-const TEMPLATES_DIR = path.resolve(__dirname, '..', '..', 'templates');
+// templates directory is at package root
+// path differs between source (src/templates/) and compiled (dist/src/templates/)
+const isInDist = __dirname.includes(`${path.sep}dist${path.sep}`);
+const TEMPLATES_DIR = path.resolve(__dirname, isInDist ? '../../../templates' : '../../templates');
 
 /**
  * registers custom handlebars helpers

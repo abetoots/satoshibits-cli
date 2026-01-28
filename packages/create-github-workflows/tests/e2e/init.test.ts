@@ -31,8 +31,8 @@ interface GitHubWorkflow {
   jobs: Record<string, unknown>;
 }
 
-// path to compiled CLI
-const COMPILED_CLI_PATH = path.join(__dirname, "../../../dist/index.mjs");
+// path to compiled CLI (from tests/e2e/ -> package root -> dist/src/)
+const COMPILED_CLI_PATH = path.join(__dirname, "../../dist/src/index.mjs");
 
 /**
  * Helper to create a minimal project directory with git and package.json
