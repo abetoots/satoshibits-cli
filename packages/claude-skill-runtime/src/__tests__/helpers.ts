@@ -1,5 +1,5 @@
 /**
- * Shared test utilities for claude-skill-runtime tests
+ * Shared test utilities for @satoshibits/claude-skill-runtime tests
  */
 
 import fs from 'fs';

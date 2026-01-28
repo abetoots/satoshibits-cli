@@ -1,6 +1,6 @@
 {
   "$schema": "https://jsr.io/schema/config-file.v1.json",
-  "name": "claude-skill-runtime",
+  "name": "@satoshibits/claude-skill-runtime",
   "description": "Runtime library for Claude Code auto-loading skills - shared matching algorithms, config loading, and session state management",
   "version": "0.0.0",
   "exports": "./src/index.mts",
