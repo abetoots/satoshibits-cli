@@ -42,7 +42,7 @@ last_updated: "2024-01-15"
 
       const statusCounts = documents.reduce(
         (acc, doc) => {
-          acc[doc.status] = (acc[doc.status] || 0) + 1;
+          acc[doc.status] = (acc[doc.status] ?? 0) + 1;
           return acc;
         },
         {} as Record<string, number>

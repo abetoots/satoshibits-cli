@@ -8,5 +8,5 @@
     "types": ["vitest", "node"]
     // "lib": ["ESNext", "DOM"],
   },
-  "include": ["vitest.config.mts", "eslint.config.mts", "tests/**/*.ts"]
+  "include": ["vitest.config.mts", "eslint.config.mts"]
 }
