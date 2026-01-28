@@ -3,17 +3,18 @@
   "version": "1.0.3",
   "description": "CLI for generating standardized document templates (BRD, FRD, ADD, TSD)",
   "type": "module",
-  "main": "dist/index.js",
+  "main": "dist/src/index.js",
   "bin": {
-    "create-docs": "dist/index.js"
+    "create-docs": "dist/src/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf dist && tsc",
     "dev": "tsc --watch",
-    "start": "node dist/index.js",
-    "test": "vitest run",
-    "test:watch": "vitest watch",
-    "test:coverage": "vitest run --coverage",
+    "start": "node dist/src/index.js",
+    "test": "vitest run --exclude '**/e2e/**'",
+    "test:e2e": "vitest run tests/e2e",
+    "test:watch": "vitest watch --exclude '**/e2e/**'",
+    "test:coverage": "vitest run --coverage --exclude '**/e2e/**'",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build",

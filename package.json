@@ -9,7 +9,8 @@
     "prepare": "husky",
     "pre-commit": "turbo pre-commit",
     "test": "turbo test",
-    "ci:release": "turbo run build lint test && pnpm exec changeset version && pnpm exec changeset publish"
+    "test:e2e": "turbo test:e2e",
+    "ci:release": "turbo run build lint test test:e2e && pnpm exec changeset version && pnpm exec changeset publish"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.9",

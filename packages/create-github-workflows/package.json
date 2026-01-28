@@ -1,20 +1,21 @@
 {
   "name": "@satoshibits/create-github-workflows",
   "version": "1.2.0",
-  "main": "./dist/index.mjs",
-  "types": "./dist/index.d.mts",
-  "exports": "./dist/index.mjs",
+  "main": "./dist/src/index.mjs",
+  "types": "./dist/src/index.d.mts",
+  "exports": "./dist/src/index.mjs",
   "type": "module",
   "private": false,
   "bin": {
-    "create-github-workflows": "./dist/index.mjs"
+    "create-github-workflows": "./dist/src/index.mjs"
   },
   "scripts": {
     "build": "rm -rf dist && tsc",
     "lint": "pnpm exec eslint .",
     "prepublishOnly": "npm run build",
     "pre-commit": "pnpm exec lint-staged -c ./.lintstagedrc.mjs --concurrent false",
-    "test": "vitest --run"
+    "test": "vitest --run --exclude '**/e2e/**'",
+    "test:e2e": "vitest --run tests/e2e"
   },
   "files": [
     "./dist/**/*",
