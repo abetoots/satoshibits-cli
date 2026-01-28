@@ -14,6 +14,7 @@ import { DiscoveryCacheManager } from "../utils/discovery-cache.js";
 import { DocumentDiscovery } from "../utils/document-discovery.js";
 import { FileWriter } from "../utils/file-writer.js";
 import { ProjectDetector } from "../utils/project-detector.js";
+import { RUNTIME_VERSION } from "../utils/runtime-version.js";
 
 export async function initCommand(options: InitOptions) {
   console.log(chalk.blue.bold("\n🎯 Initializing Auto-Loading Skill System\n"));
@@ -284,7 +285,7 @@ export async function initCommand(options: InitOptions) {
       type: "module",
       private: true,
       dependencies: {
-        "@satoshibits/claude-skill-runtime": "^0.0.0",
+        "@satoshibits/claude-skill-runtime": RUNTIME_VERSION,
       },
     };
 

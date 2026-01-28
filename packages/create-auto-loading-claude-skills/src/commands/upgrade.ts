@@ -9,6 +9,7 @@ import path from "path";
 import type { UpgradeOptions } from "../types/index.js";
 
 import { PackageJson } from "../utils/project-detector.js";
+import { RUNTIME_VERSION } from "../utils/runtime-version.js";
 
 /**
  * Hook configuration from settings.json
@@ -105,7 +106,7 @@ export async function upgradeCommand(options: UpgradeOptions) {
       ) as PackageJson;
 
       const expectedDeps = {
-        "@satoshibits/claude-skill-runtime": "^0.0.0",
+        "@satoshibits/claude-skill-runtime": RUNTIME_VERSION,
       };
 
       // remove old dependencies that are now bundled in claude-skill-runtime
