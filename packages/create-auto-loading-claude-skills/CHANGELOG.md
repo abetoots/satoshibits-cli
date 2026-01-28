@@ -1,5 +1,11 @@
 # @satoshibits/create-auto-loading-claude-skills
 
+## 1.0.1
+
+### Patch Changes
+
+- b56aa2a: fix dependency name for claude-skill-runtime
+
 ## 1.0.0
 
 ### Major Changes
