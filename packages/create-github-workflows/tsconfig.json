@@ -1,12 +1,13 @@
 {
   "extends": "@repo/typescript-config/base.json",
-  "include": ["src"],
+  "include": ["src", "tests"],
   "compilerOptions": {
     "lib": ["ESNext"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "target": "ES2022",
-    "outDir": "dist"
+    "outDir": "dist",
+    "types": ["node", "vitest/globals"]
   },
   "references": [{ "path": "./tsconfig.node.json" }]
 }
