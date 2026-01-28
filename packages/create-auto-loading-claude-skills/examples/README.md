@@ -46,9 +46,9 @@ Minimal example showing:
 
 1. Install the package in your project:
 ```bash
-npm install create-auto-loading-claude-skills
+npm install @satoshibits/create-auto-loading-claude-skills
 # or
-pnpm add create-auto-loading-claude-skills
+pnpm add @satoshibits/create-auto-loading-claude-skills
 ```
 
 2. Copy an example to your project's `.claude/hooks/` directory:
@@ -56,7 +56,7 @@ pnpm add create-auto-loading-claude-skills
 cp examples/simple-validator.ts .claude/hooks/custom-validations.ts
 ```
 
-3. Configure the hook in `.claude/config.json`:
+3. Configure the hook in `.claude/settings.json`:
 ```json
 {
   "hooks": {
@@ -72,7 +72,7 @@ cp examples/simple-validator.ts .claude/hooks/custom-validations.ts
 ### Basic Pattern
 
 ```typescript
-import { createValidator } from 'create-auto-loading-claude-skills/helpers';
+import { createValidator } from '@satoshibits/create-auto-loading-claude-skills/helpers';
 
 const myValidator = createValidator({
   name: 'my-validator',
@@ -185,7 +185,7 @@ validate: ({ session, ui }) => {
 Use `createTestUI()` for testing:
 
 ```typescript
-import { createSession, createTestUI, runValidators } from 'create-auto-loading-claude-skills/helpers';
+import { createSession, createTestUI, runValidators } from '@satoshibits/create-auto-loading-claude-skills/helpers';
 
 const session = createSession(sessionId, projectDir);
 const ui = createTestUI();

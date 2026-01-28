@@ -11,9 +11,9 @@ import {
   createSession,
   createUI,
   runValidators
-} from 'create-auto-loading-claude-skills/helpers';
+} from '@satoshibits/create-auto-loading-claude-skills/helpers';
 
-import { sessionState } from 'create-auto-loading-claude-skills/helpers/internal';
+import { sessionState } from '@satoshibits/create-auto-loading-claude-skills/helpers/internal';
 
 interface StopHookInput {
   session_id: string;
