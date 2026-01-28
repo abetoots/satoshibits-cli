@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
-  "exports": "./dist/index.mjs",
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./package.json": "./package.json"
+  },
   "type": "module",
   "private": false,
   "scripts": {
@@ -15,7 +18,8 @@
   },
   "files": [
     "./dist/**/*",
-    "!./dist/**/*.test.*"
+    "!./dist/**/*.test.*",
+    "./package.json"
   ],
   "keywords": [
     "claude-skill-runtime"
