@@ -14,7 +14,7 @@
       "dependsOn": ["^pre-commit"]
     },
     "test": {
-      "dependsOn": ["^test"]
+      "dependsOn": ["build", "^test"]
     },
     "test:e2e": {
       "dependsOn": ["build"]
