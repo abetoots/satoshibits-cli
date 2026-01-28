@@ -1,27 +1,26 @@
 #!/usr/bin/env node
-
 import { program } from "commander";
 import { readFile } from "fs/promises";
 import { join } from "path";
 
 import type {
-  InitOptions,
   AddSkillOptions,
-  ValidateOptions,
-  UpgradeOptions,
+  InitOptions,
   SyncOptions,
+  UpgradeOptions,
+  ValidateOptions,
 } from "../types/index.js";
 
 // get package.json for version
 // path is ../../../ because compiled output is at dist/src/bin/cli.js
 const packageJsonContent = await readFile(
   join(import.meta.dirname, "../../../package.json"),
-  "utf8"
+  "utf8",
 );
 const packageJson = JSON.parse(packageJsonContent) as { version: string };
 
 program
-  .name("create-auto-loading-claude-skills")
+  .name("@satoshibits/create-auto-loading-claude-skills")
   .description("Scaffolding CLI for Claude Code auto-loading skill system")
   .version(packageJson.version);
 
@@ -30,7 +29,7 @@ program
   .description("Initialize skill system in current project")
   .option(
     "-t, --type <type>",
-    "Project type (backend/frontend/fullstack/custom)"
+    "Project type (backend/frontend/fullstack/custom)",
   )
   .option("-y, --yes", "Skip prompts, use defaults")
   .action(async (options: InitOptions) => {
@@ -49,7 +48,7 @@ program
   .option("-d, --description <desc>", "Skill description")
   .option(
     "-k, --keywords <keywords>",
-    "Comma-separated keywords for doc search"
+    "Comma-separated keywords for doc search",
   )
   .option("-i, --interactive", "Create skills from discovered documentation")
   .option("-f, --force", "Force cache refresh (ignore TTL)")
@@ -58,40 +57,44 @@ program
     "-v, --var <key=value>",
     "Template variable (can be used multiple times)",
     collectVar,
-    []
+    [],
   )
   .option(
     "-w, --wizard",
-    "Interactive classification wizard for trigger configuration"
+    "Interactive classification wizard for trigger configuration",
   )
-  .action(async (skillName: string | undefined, options: AddSkillOptions & { wizard?: boolean }) => {
-    // wizard mode: run classification wizard
-    if (options.wizard) {
-      if (!skillName) {
+  .action(
+    async (
+      skillName: string | undefined,
+      options: AddSkillOptions & { wizard?: boolean },
+    ) => {
+      // wizard mode: run classification wizard
+      if (options.wizard) {
+        if (!skillName) {
+          console.error(
+            "Error: skill-name is required when using --wizard flag",
+          );
+          process.exit(1);
+        }
+        const { addSkillWizardCommand } =
+          await import("../commands/add-skill-wizard.js");
+        await addSkillWizardCommand(skillName);
+        return;
+      }
+
+      const { addSkillCommand } = await import("../commands/add-skill.js");
+
+      // skill-name is required unless --interactive or --template flag is used
+      if (!skillName && !options.interactive && !options.template) {
         console.error(
-          "Error: skill-name is required when using --wizard flag"
+          "Error: skill-name is required (or use --interactive/--template flag)",
         );
         process.exit(1);
       }
-      const { addSkillWizardCommand } = await import(
-        "../commands/add-skill-wizard.js"
-      );
-      await addSkillWizardCommand(skillName);
-      return;
-    }
 
-    const { addSkillCommand } = await import("../commands/add-skill.js");
-
-    // skill-name is required unless --interactive or --template flag is used
-    if (!skillName && !options.interactive && !options.template) {
-      console.error(
-        "Error: skill-name is required (or use --interactive/--template flag)"
-      );
-      process.exit(1);
-    }
-
-    await addSkillCommand(skillName ?? "", options);
-  });
+      await addSkillCommand(skillName ?? "", options);
+    },
+  );
 
 program
   .command("validate")

@@ -1,6 +1,6 @@
 # Ownership Boundaries
 
-This document clarifies the separation of concerns between this package (`create-auto-loading-claude-skills`) and Claude Code (the upstream tool it extends).
+This document clarifies the separation of concerns between this package (`@satoshibits/create-auto-loading-claude-skills`) and Claude Code (the upstream tool it extends).
 
 ---
 
@@ -12,38 +12,42 @@ Native skill auto-loading via `description` matching is semantic but unreliable 
 
 ### The Swiss Cheese Model - Layered Reliability
 
-| Layer | Technology | Reliability | Role |
-|-------|-----------|-------------|------|
-| **Layer 1** | Package (Regex/Glob) | **Deterministic (100%)** | Guardrails & critical workflows |
-| **Layer 2** | Native (Description) | **Probabilistic (~70-80%)** | General assistance |
-| **Layer 3** | Native (`type: "prompt"`) | **Cognitive (High)** | Deep contextual decisions |
+| Layer       | Technology                | Reliability                 | Role                            |
+| ----------- | ------------------------- | --------------------------- | ------------------------------- |
+| **Layer 1** | Package (Regex/Glob)      | **Deterministic (100%)**    | Guardrails & critical workflows |
+| **Layer 2** | Native (Description)      | **Probabilistic (~70-80%)** | General assistance              |
+| **Layer 3** | Native (`type: "prompt"`) | **Cognitive (High)**        | Deep contextual decisions       |
 
 ---
 
 ## What Claude Code Natively Provides
 
 ### Skill Auto-Loading
+
 - Skills are auto-loaded via the `description` field in `SKILL.md` matching user intent
 - Discovery from `.claude/skills/*/SKILL.md` in project and personal directories
 
 ### Hook Events
-| Event | Description |
-|-------|-------------|
-| `UserPromptSubmit` | Before Claude sees user prompt |
-| `PreToolUse` | Before tool execution |
-| `PostToolUse` | After tool execution |
-| `Stop` | When Claude finishes responding |
-| `SessionStart` | Session initialization |
-| `SessionEnd` | Session cleanup |
-| `PreCompact` | Before context compaction |
-| `Notification` | System notifications |
-| `SubagentStop` | When subagent completes |
+
+| Event              | Description                     |
+| ------------------ | ------------------------------- |
+| `UserPromptSubmit` | Before Claude sees user prompt  |
+| `PreToolUse`       | Before tool execution           |
+| `PostToolUse`      | After tool execution            |
+| `Stop`             | When Claude finishes responding |
+| `SessionStart`     | Session initialization          |
+| `SessionEnd`       | Session cleanup                 |
+| `PreCompact`       | Before context compaction       |
+| `Notification`     | System notifications            |
+| `SubagentStop`     | When subagent completes         |
 
 ### Hook Types
+
 - `command`: Shell command execution
 - `prompt`: LLM evaluation (Haiku)
 
 ### Session Context
+
 - `session_id` passed to hooks
 - `working_directory` available in hook input
 
@@ -53,9 +57,9 @@ Native skill auto-loading via `description` matching is semantic but unreliable 
 
 Both tools use pattern matching, but for **different purposes**:
 
-| Tool | Purpose | Example Use Case |
-|------|---------|------------------|
-| **Hookify** | Create general-purpose hook rules | "Warn when editing .env files" |
+| Tool             | Purpose                                     | Example Use Case                                      |
+| ---------------- | ------------------------------------------- | ----------------------------------------------------- |
+| **Hookify**      | Create general-purpose hook rules           | "Warn when editing .env files"                        |
 | **This Package** | Decide WHEN to load skills based on context | "Load typescript-code-quality when editing .ts files" |
 
 These are **complementary, not competing**. No integration is needed between them.
@@ -64,19 +68,19 @@ These are **complementary, not competing**. No integration is needed between the
 
 ## What This Package Legitimately Owns
 
-| Component | Justification |
-|-----------|---------------|
-| `skill-rules.yaml` schema | Centralized configuration format not provided natively |
-| `activation_strategy` | Granular control: `guaranteed`, `suggestive`, `prompt_enhanced`, `native_only` |
-| Compiler Pattern (`sync`) | Generates `skill-rules.yaml` from `x-smart-triggers` in SKILL.md |
-| JSON hook output | Structured output (`additionalContext`, `updatedInput`, `decision`) for native integration |
-| Trigger matching algorithms | Multi-factor scoring, dual-condition matching (prompt + file) |
-| File modification tracking | Claude Code doesn't track edited files across prompts |
-| Activation history + cooldowns | Prevents skill suggestion spam (not native) |
-| Shadow triggers | Unique value - suggest skills without auto-loading (cost control) |
-| `decision: "block"` enforcement | Policy enforcement via native hook output |
-| CLI tooling | Management interface (`init`, `add-skill`, `sync`, `test`) |
-| Validation reminders | Feedback loop for skill compliance (not native) |
+| Component                       | Justification                                                                              |
+| ------------------------------- | ------------------------------------------------------------------------------------------ |
+| `skill-rules.yaml` schema       | Centralized configuration format not provided natively                                     |
+| `activation_strategy`           | Granular control: `guaranteed`, `suggestive`, `prompt_enhanced`, `native_only`             |
+| Compiler Pattern (`sync`)       | Generates `skill-rules.yaml` from `x-smart-triggers` in SKILL.md                           |
+| JSON hook output                | Structured output (`additionalContext`, `updatedInput`, `decision`) for native integration |
+| Trigger matching algorithms     | Multi-factor scoring, dual-condition matching (prompt + file)                              |
+| File modification tracking      | Claude Code doesn't track edited files across prompts                                      |
+| Activation history + cooldowns  | Prevents skill suggestion spam (not native)                                                |
+| Shadow triggers                 | Unique value - suggest skills without auto-loading (cost control)                          |
+| `decision: "block"` enforcement | Policy enforcement via native hook output                                                  |
+| CLI tooling                     | Management interface (`init`, `add-skill`, `sync`, `test`)                                 |
+| Validation reminders            | Feedback loop for skill compliance (not native)                                            |
 
 ### Session State Tracking
 
@@ -92,15 +96,16 @@ This is legitimate value-add, not duplication of upstream functionality.
 
 ## What Would Overstep Boundaries
 
-| Component | Issue | Status |
-|-----------|-------|--------|
-| Skill lifecycle/GC | Cannot control Claude's context window | **Removed** |
-| Runtime hook behavior | Should be in skill's own hooks | Templates only (users own installed copies) |
-| Context window management | Upstream responsibility | Not implemented |
+| Component                 | Issue                                  | Status                                      |
+| ------------------------- | -------------------------------------- | ------------------------------------------- |
+| Skill lifecycle/GC        | Cannot control Claude's context window | **Removed**                                 |
+| Runtime hook behavior     | Should be in skill's own hooks         | Templates only (users own installed copies) |
+| Context window management | Upstream responsibility                | Not implemented                             |
 
 ### Why Lifecycle Was Removed
 
 The `skill-lifecycle.ts` module attempted to implement garbage collection for skills:
+
 - Track activation times
 - Unload skills after timeout/completion
 
@@ -119,6 +124,7 @@ src/templates/hooks/        → .claude/hooks/  (user's project)
 ```
 
 This follows standard scaffolding patterns (like `create-react-app`). Once copied:
+
 - Users own the installed files
 - Users can customize them
 - This package doesn't control runtime behavior
@@ -131,13 +137,13 @@ This is the correct pattern - not an ownership violation.
 
 All triggers in `skill-rules.yaml` serve one purpose: **deciding WHEN to suggest or load a skill**.
 
-| Trigger Type | What It Detects | Loading Behavior |
-|--------------|-----------------|------------------|
-| `promptTriggers` | Keywords/patterns in user prompt | Auto-load (based on enforcement) |
-| `fileTriggers` | Paths/content of modified files | Auto-load (based on enforcement) |
-| `preToolTriggers` | Tool about to be used | Just-in-time loading |
-| `stopTriggers` | Claude claiming completion | Verification skill loading |
-| `shadowTriggers` | Same as prompt triggers | Suggest only (never auto-load) |
+| Trigger Type      | What It Detects                  | Loading Behavior                 |
+| ----------------- | -------------------------------- | -------------------------------- |
+| `promptTriggers`  | Keywords/patterns in user prompt | Auto-load (based on enforcement) |
+| `fileTriggers`    | Paths/content of modified files  | Auto-load (based on enforcement) |
+| `preToolTriggers` | Tool about to be used            | Just-in-time loading             |
+| `stopTriggers`    | Claude claiming completion       | Verification skill loading       |
+| `shadowTriggers`  | Same as prompt triggers          | Suggest only (never auto-load)   |
 
 Once loaded, the skill's own hooks (defined in SKILL.md frontmatter) handle runtime behavior.
 
@@ -174,7 +180,7 @@ Stop        → [Stop hook]             → stopTriggers matching     → Verifi
                               │ hooks into (JSON output)
                               │
 ┌─────────────────────────────────────────────────────────────────┐
-│              create-auto-loading-claude-skills                   │
+│              @satoshibits/create-auto-loading-claude-skills      │
 │              (Workflow Orchestration & Reliability Engine)       │
 ├─────────────────────────────────────────────────────────────────┤
 │  INPUT                                                           │
@@ -226,6 +232,7 @@ This package is a **Reliability Engine** that:
 6. **Syncs** trigger definitions from SKILL.md to centralized rules (Compiler Pattern)
 
 It does **not**:
+
 - Control Claude's context window
 - Manage skill runtime behavior
 - Replace native features (it augments them with reliability guarantees)
@@ -233,11 +240,11 @@ It does **not**:
 
 ### Activation Strategy Guide
 
-| Strategy | Package Behavior | Use Case |
-|----------|------------------|----------|
-| `guaranteed` | Inject skill via `additionalContext` | Critical workflows that MUST activate |
-| `suggestive` | Add hints via `updatedInput` | Helpful skills, boost native matching |
-| `prompt_enhanced` | Gather context → feed to Haiku hook | Semantic decisions with rich context |
-| `native_only` | Do nothing (default) | General-purpose skills |
+| Strategy          | Package Behavior                     | Use Case                              |
+| ----------------- | ------------------------------------ | ------------------------------------- |
+| `guaranteed`      | Inject skill via `additionalContext` | Critical workflows that MUST activate |
+| `suggestive`      | Add hints via `updatedInput`         | Helpful skills, boost native matching |
+| `prompt_enhanced` | Gather context → feed to Haiku hook  | Semantic decisions with rich context  |
+| `native_only`     | Do nothing (default)                 | General-purpose skills                |
 
 When in doubt, remember: **"RELIABILITY where native is PROBABILISTIC."**

@@ -5,7 +5,7 @@
   "description": "React/TypeScript patterns for building modern, accessible UIs",
   "category": "development",
   "tags": ["frontend", "react", "typescript", "ui", "components", "hooks"],
-  "author": "create-auto-loading-claude-skills",
+  "author": "@satoshibits/create-auto-loading-claude-skills",
 
   "variables": {
     "PROJECT_NAME": "Your Project",

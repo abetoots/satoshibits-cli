@@ -5,7 +5,7 @@
   "description": "Express/TypeScript/Prisma patterns for building scalable backend APIs",
   "category": "development",
   "tags": ["backend", "API", "express", "typescript", "prisma", "node"],
-  "author": "create-auto-loading-claude-skills",
+  "author": "@satoshibits/create-auto-loading-claude-skills",
 
   "variables": {
     "PROJECT_NAME": "Your Project",

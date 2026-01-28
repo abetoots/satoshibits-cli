@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/your-org/create-auto-loading-claude-skills/main/schema/skill-rules.schema.json",
+  "$id": "https://raw.githubusercontent.com/satoshibits-cli/packages/create-auto-loading-claude-skills/main/schema/skill-rules.schema.json",
   "title": "Skill Rules Configuration",
   "description": "Configuration for Claude Code auto-loading skill activation rules",
   "type": "object",
@@ -47,7 +47,15 @@
           "description": "Categories of debug messages to log (logs all if not specified)",
           "items": {
             "type": "string",
-            "enum": ["activation", "scoring", "validation", "state", "perf", "io", "error"]
+            "enum": [
+              "activation",
+              "scoring",
+              "validation",
+              "state",
+              "perf",
+              "io",
+              "error"
+            ]
           },
           "uniqueItems": true
         },
@@ -133,7 +141,12 @@
         "activationStrategy": {
           "type": "string",
           "description": "Activation strategy for hybrid reliability architecture. Determines how the package interacts with native Claude Code features.",
-          "enum": ["guaranteed", "suggestive", "prompt_enhanced", "native_only"],
+          "enum": [
+            "guaranteed",
+            "suggestive",
+            "prompt_enhanced",
+            "native_only"
+          ],
           "default": "native_only"
         },
         "promptHook": {

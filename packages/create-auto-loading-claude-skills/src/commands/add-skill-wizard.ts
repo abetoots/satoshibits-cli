@@ -5,8 +5,8 @@ import prompts from "prompts";
 import fs from "fs";
 import path from "path";
 
-import type { SkillRule, SkillConfig } from "@satoshibits/claude-skill-runtime";
 import type { WizardOptions } from "../types/index.js";
+import type { SkillConfig, SkillRule } from "@satoshibits/claude-skill-runtime";
 
 interface WizardAnswers {
   skillType: "domain" | "workflow" | "strategic";
@@ -133,7 +133,14 @@ export async function addSkillWizardCommand(
         { title: "Use SHADOW triggers (suggest only)", value: "shadow" },
         { title: "Cancel", value: "cancel" },
       ],
-    })) as { alternative: "auto-load" | "manual-only" | "shadow" | "cancel" | undefined };
+    })) as {
+      alternative:
+        | "auto-load"
+        | "manual-only"
+        | "shadow"
+        | "cancel"
+        | undefined;
+    };
 
     if (alternative === "cancel" || alternative === undefined) {
       console.log(chalk.dim("\nAborted.\n"));
@@ -599,7 +606,7 @@ function saveSkillRule(
   skillsDir: string,
 ): void {
   const schemaUrl =
-    "https://raw.githubusercontent.com/your-org/create-auto-loading-claude-skills/main/schema/skill-rules.schema.json";
+    "https://raw.githubusercontent.com/satoshibits-cli/packages/create-auto-loading-claude-skills/main/schema/skill-rules.schema.json";
   const yamlPath = path.join(skillsDir, "skill-rules.yaml");
   const jsonPath = path.join(skillsDir, "skill-rules.json");
 

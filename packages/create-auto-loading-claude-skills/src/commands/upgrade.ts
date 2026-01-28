@@ -7,6 +7,7 @@ import fs from "fs";
 import path from "path";
 
 import type { UpgradeOptions } from "../types/index.js";
+
 import { PackageJson } from "../utils/project-detector.js";
 
 /**
@@ -30,9 +31,7 @@ export async function upgradeCommand(options: UpgradeOptions) {
   // 1. Check if .claude/ exists
   if (!fs.existsSync(claudeDir)) {
     console.log(chalk.red("❌ Error: .claude/ directory not found"));
-    console.log(
-      chalk.dim("   Run: npx create-auto-loading-claude-skills init\n"),
-    );
+    console.log(chalk.dim("   Run: npx cl-auto-skills init\n"));
     process.exit(1);
   }
 
@@ -40,9 +39,7 @@ export async function upgradeCommand(options: UpgradeOptions) {
   if (!fs.existsSync(hooksDir)) {
     console.log(chalk.red("❌ Error: .claude/hooks/ directory not found"));
     console.log(
-      chalk.dim(
-        "   Nothing to upgrade. Run: npx create-auto-loading-claude-skills init\n",
-      ),
+      chalk.dim("   Nothing to upgrade. Run: npx cl-auto-skills init\n"),
     );
     process.exit(1);
   }
@@ -224,9 +221,7 @@ export async function upgradeCommand(options: UpgradeOptions) {
     console.log(`  1. Test hooks: Ask Claude a question to verify activation`);
     console.log(`  2. Review backup: ${chalk.dim(".claude/hooks-backup-*/")}`);
     console.log(
-      `  3. Validate config: ${chalk.cyan(
-        "npx create-auto-loading-claude-skills validate",
-      )}\n`,
+      `  3. Validate config: ${chalk.cyan("npx cl-auto-skills validate")}\n`,
     );
   } catch (error) {
     spinner.fail(chalk.red("Upgrade failed"));

@@ -5,8 +5,8 @@ import prompts from "prompts";
 import fs from "fs";
 import path from "path";
 
-import type { SkillConfig, SkillRule } from "@satoshibits/claude-skill-runtime";
 import type { ValidateOptions } from "../types/index.js";
+import type { SkillConfig, SkillRule } from "@satoshibits/claude-skill-runtime";
 
 interface ValidationIssue {
   severity: "error" | "warning" | "info";
@@ -24,9 +24,7 @@ export async function validateCommand(options: ValidateOptions) {
   // 1. Check if .claude/skills exists
   if (!fs.existsSync(skillsDir)) {
     console.log(chalk.red("❌ Error: .claude/skills/ directory not found"));
-    console.log(
-      chalk.dim("   Run: npx create-auto-loading-claude-skills init\n"),
-    );
+    console.log(chalk.dim("   Run: npx cl-auto-skills init\n"));
     process.exit(1);
   }
 
@@ -437,7 +435,7 @@ async function autoFixIssues(
     const yamlPath = path.join(skillsDir, "skill-rules.yaml");
     const jsonPath = path.join(skillsDir, "skill-rules.json");
     const schemaUrl =
-      "https://raw.githubusercontent.com/your-org/create-auto-loading-claude-skills/main/schema/skill-rules.schema.json";
+      "https://raw.githubusercontent.com/satoshibits-cli/packages/create-auto-loading-claude-skills/main/schema/skill-rules.schema.json";
 
     // write yaml only
     const yamlContent =

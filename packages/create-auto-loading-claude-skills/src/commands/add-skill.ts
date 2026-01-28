@@ -1,27 +1,21 @@
 // eslint-disable-next-line import-x/no-named-as-default -- prompts library exports default function named 'prompts'
-import prompts from "prompts";
+import { createDefaultConfig } from "@satoshibits/claude-skill-runtime";
 import chalk from "chalk";
-import ora from "ora";
-import path from "path";
-import fs from "fs";
 import yaml from "js-yaml";
+import ora from "ora";
+import prompts from "prompts";
+import fs from "fs";
+import path from "path";
 
-import {
-  createDefaultConfig,
-  type SkillRule,
-  type SkillConfig,
-} from "@satoshibits/claude-skill-runtime";
 import type { AddSkillOptions } from "../types/index.js";
+import type { DocumentSuggestion } from "../utils/discovery-cache.js";
+import type { TemplateInfo } from "../utils/template-catalog.js";
+import type { SkillConfig, SkillRule } from "@satoshibits/claude-skill-runtime";
+
+import { DiscoveryCacheManager } from "../utils/discovery-cache.js";
 import { DocumentDiscovery } from "../utils/document-discovery.js";
 import { FileWriter } from "../utils/file-writer.js";
-import {
-  DiscoveryCacheManager,
-  type DocumentSuggestion,
-} from "../utils/discovery-cache.js";
-import {
-  TemplateCatalog,
-  type TemplateInfo,
-} from "../utils/template-catalog.js";
+import { TemplateCatalog } from "../utils/template-catalog.js";
 
 /**
  * Choice item for prompts multiselect
@@ -56,9 +50,9 @@ function parseVariables(varArgs: string[] = []): Record<string, string> {
   const variables: Record<string, string> = {};
 
   for (const arg of varArgs) {
-    const [key, ...valueParts] = arg.split('=');
+    const [key, ...valueParts] = arg.split("=");
     if (key && valueParts.length > 0) {
-      variables[key.trim()] = valueParts.join('=').trim();
+      variables[key.trim()] = valueParts.join("=").trim();
     }
   }
 
@@ -67,7 +61,7 @@ function parseVariables(varArgs: string[] = []): Record<string, string> {
 
 export async function addSkillCommand(
   skillName: string,
-  options: AddSkillOptions
+  options: AddSkillOptions,
 ) {
   const cwd = process.cwd();
   const cacheManager = new DiscoveryCacheManager(cwd);
@@ -84,13 +78,13 @@ export async function addSkillCommand(
         // run discovery inline
         const discovery = new DocumentDiscovery(cwd);
         const standardDocs = [
-          'CONTRIBUTING',
-          'CODE_OF_CONDUCT',
-          'ARCHITECTURE',
-          'API',
-          'TESTING',
-          'DEPLOYMENT',
-          'SECURITY'
+          "CONTRIBUTING",
+          "CODE_OF_CONDUCT",
+          "ARCHITECTURE",
+          "API",
+          "TESTING",
+          "DEPLOYMENT",
+          "SECURITY",
         ];
 
         const foundDocs: Record<string, string[]> = {};
@@ -110,7 +104,7 @@ export async function addSkillCommand(
         spinner.succeed(
           options.force
             ? "Cache refreshed"
-            : "Cache was stale, refreshed automatically"
+            : "Cache was stale, refreshed automatically",
         );
       } catch (error) {
         spinner.fail("Failed to refresh cache");
@@ -121,20 +115,20 @@ export async function addSkillCommand(
     if (!cache || cache.suggestions.length === 0) {
       console.log(chalk.yellow("\n⚠️  No discovered documentation found."));
       console.log(
-        chalk.dim("Run this command after init to use discovered docs.\n")
+        chalk.dim("Run this command after init to use discovered docs.\n"),
       );
       return;
     }
 
     console.log(
-      chalk.blue.bold("\n📚 Creating Skills from Discovered Documentation\n")
+      chalk.blue.bold("\n📚 Creating Skills from Discovered Documentation\n"),
     );
     console.log(
       chalk.dim(
         `Discovered ${cache.suggestions.length} document${
           cache.suggestions.length > 1 ? "s" : ""
-        } on ${new Date(cache.discoveredAt).toLocaleDateString()}\n`
-      )
+        } on ${new Date(cache.discoveredAt).toLocaleDateString()}\n`,
+      ),
     );
 
     // Let user select which docs to create skills from
@@ -144,7 +138,7 @@ export async function addSkillCommand(
       message: "Select documents to create skills from:",
       choices: cache.suggestions.map((sug) => ({
         title: `${sug.docPath} → ${sug.suggestedSkillName} ${chalk.dim(
-          `(${sug.confidence}%)`
+          `(${sug.confidence}%)`,
         )}`,
         value: sug,
         selected: sug.confidence > 80,
@@ -160,7 +154,7 @@ export async function addSkillCommand(
     // Create skill for each selected document
     for (const suggestion of selected) {
       console.log(
-        chalk.dim(`\nCreating skill: ${suggestion.suggestedSkillName}...`)
+        chalk.dim(`\nCreating skill: ${suggestion.suggestedSkillName}...`),
       );
 
       // use all matching files if available, otherwise just the primary doc
@@ -175,7 +169,7 @@ export async function addSkillCommand(
         docPaths,
         description,
         suggestion.suggestedKeywords,
-        cwd
+        cwd,
       );
 
       // add minimal activation rule for this skill
@@ -195,8 +189,8 @@ export async function addSkillCommand(
         chalk.green(
           `✓ Created ${suggestion.suggestedSkillName}${
             docPaths.length > 1 ? ` (${docPaths.length} resources)` : ""
-          }`
-        )
+          }`,
+        ),
       );
     }
 
@@ -204,20 +198,20 @@ export async function addSkillCommand(
       chalk.green.bold(
         `\n✨ Created ${selected.length} skill${
           selected.length > 1 ? "s" : ""
-        }!\n`
-      )
+        }!\n`,
+      ),
     );
     console.log(chalk.dim("Next steps:"));
     console.log(chalk.dim(`  1. Review: .claude/skills/<skill-name>/SKILL.md`));
     console.log(
-      chalk.dim(`  2. Customize trigger patterns in skill-rules.yaml`)
+      chalk.dim(`  2. Customize trigger patterns in skill-rules.yaml`),
     );
     console.log(
       chalk.dim(
         `  3. Test by asking Claude about ${
           selected[0]?.suggestedKeywords[0] ?? "your project"
-        }\n`
-      )
+        }\n`,
+      ),
     );
     return;
   }
@@ -238,8 +232,8 @@ export async function addSkillCommand(
       chalk.dim(
         `${templates.length} template${
           templates.length > 1 ? "s" : ""
-        } available\n`
-      )
+        } available\n`,
+      ),
     );
 
     // group by category
@@ -256,7 +250,7 @@ export async function addSkillCommand(
       for (const template of categoryTemplates) {
         choices.push({
           title: `  ${template.manifest.displayName} - ${chalk.dim(
-            template.manifest.description
+            template.manifest.description,
           )}`,
           value: template,
         });
@@ -286,17 +280,13 @@ export async function addSkillCommand(
       // merge: user variables override defaults, PROJECT_NAME as fallback
       const variables = {
         PROJECT_NAME: path.basename(cwd),
-        ...userVariables
+        ...userVariables,
       };
 
       catalog.install(template, cwd, variables);
 
       // add to skill-rules.yaml
-      addToSkillRules(
-        template.manifest.name,
-        template.manifest.skillRule,
-        cwd
-      );
+      addToSkillRules(template.manifest.name, template.manifest.skillRule, cwd);
 
       spinner.text = `Installed ${template.manifest.displayName}`;
     }
@@ -305,8 +295,8 @@ export async function addSkillCommand(
       chalk.green(
         `Installed ${selected.length} template${
           selected.length > 1 ? "s" : ""
-        }!\n`
-      )
+        }!\n`,
+      ),
     );
 
     console.log(chalk.dim("Installed skills:"));
@@ -320,7 +310,7 @@ export async function addSkillCommand(
     console.log(chalk.dim("Next steps:"));
     console.log(chalk.dim(`  1. Review: .claude/skills/<skill-name>/SKILL.md`));
     console.log(
-      chalk.dim(`  2. Customize trigger patterns in skill-rules.yaml\n`)
+      chalk.dim(`  2. Customize trigger patterns in skill-rules.yaml\n`),
     );
     return;
   }
@@ -356,7 +346,7 @@ export async function addSkillCommand(
         type: "confirm",
         name: "confirm",
         message: chalk.yellow(
-          "This will overwrite the existing SKILL.md. Continue?"
+          "This will overwrite the existing SKILL.md. Continue?",
         ),
         initial: false,
       })) as { confirm: boolean | undefined };
@@ -410,7 +400,7 @@ export async function addSkillCommand(
   const selectedDocs = await promptDocumentSelection(
     exactMatches,
     keywordMatches,
-    existing.resources ?? []
+    existing.resources ?? [],
   );
 
   if (selectedDocs === null) {
@@ -429,13 +419,13 @@ export async function addSkillCommand(
   console.log(chalk.dim(`  1. Review: .claude/skills/${skillName}/SKILL.md`));
   console.log(
     chalk.dim(
-      `  2. Add to skill-rules.yaml (trigger patterns and validation rules)`
-    )
+      `  2. Add to skill-rules.yaml (trigger patterns and validation rules)`,
+    ),
   );
   console.log(
     chalk.dim(
-      `  3. Test: Ask Claude about ${keywords.slice(0, 2).join(" or ")}\n`
-    )
+      `  3. Test: Ask Claude about ${keywords.slice(0, 2).join(" or ")}\n`,
+    ),
   );
 }
 
@@ -471,7 +461,7 @@ function guessKeywords(skillName: string): string {
 async function promptDocumentSelection(
   exactMatches: string[],
   keywordMatches: KeywordMatch[],
-  existingResources: ExistingResource[]
+  existingResources: ExistingResource[],
 ): Promise<string[] | null> {
   if (exactMatches.length === 0 && keywordMatches.length === 0) {
     console.log(chalk.dim("\nNo related documentation found in docs/"));
@@ -500,7 +490,7 @@ async function promptDocumentSelection(
         title: `${match.path} ${chalk.dim(
           `(${match.confidence.toFixed(0)}% - ${match.matchedKeywords
             .slice(0, 3)
-            .join(", ")})`
+            .join(", ")})`,
         )}`,
         value: match.path,
         selected: match.confidence > 70,
@@ -535,7 +525,7 @@ function generateSkill(
   selectedDocs: string[],
   description: string,
   keywords: string[],
-  projectDir: string
+  projectDir: string,
 ): void {
   const skillDir = path.join(projectDir, ".claude", "skills", skillName);
   const resourceDir = path.join(skillDir, "resources");
@@ -607,7 +597,7 @@ ${selectedDocs
         // fallback: copy file if symlink fails (e.g., on Windows)
         fs.copyFileSync(docFullPath, linkPath);
         console.log(
-          chalk.dim(`   Note: Copied ${doc} (symlink not supported)`)
+          chalk.dim(`   Note: Copied ${doc} (symlink not supported)`),
         );
       }
     }
@@ -615,7 +605,7 @@ ${selectedDocs
 }
 
 const SCHEMA_URL =
-  "https://raw.githubusercontent.com/your-org/create-auto-loading-claude-skills/main/schema/skill-rules.schema.json";
+  "https://raw.githubusercontent.com/satoshibits-cli/packages/create-auto-loading-claude-skills/main/schema/skill-rules.schema.json";
 
 /**
  * Write YAML config (YAML is the single source of truth)
@@ -623,7 +613,7 @@ const SCHEMA_URL =
 function writeSkillConfig(
   config: SkillConfig,
   yamlPath: string,
-  jsonPath: string
+  jsonPath: string,
 ): void {
   // yaml is the single source of truth
   const yamlContent =
@@ -637,8 +627,8 @@ function writeSkillConfig(
         "\n⚠️  Deprecation: skill-rules.json is deprecated.\n" +
           "   YAML is now the canonical format. Your JSON config will still be read,\n" +
           "   but new changes will only be written to skill-rules.yaml.\n" +
-          "   Consider removing skill-rules.json after verifying skill-rules.yaml is correct.\n"
-      )
+          "   Consider removing skill-rules.json after verifying skill-rules.yaml is correct.\n",
+      ),
     );
   }
 }
@@ -649,19 +639,19 @@ function writeSkillConfig(
 function addToSkillRules(
   skillName: string,
   skillRule: SkillRule,
-  projectDir: string
+  projectDir: string,
 ): void {
   const yamlPath = path.join(
     projectDir,
     ".claude",
     "skills",
-    "skill-rules.yaml"
+    "skill-rules.yaml",
   );
   const jsonPath = path.join(
     projectDir,
     ".claude",
     "skills",
-    "skill-rules.json"
+    "skill-rules.json",
   );
 
   const yamlExists = fs.existsSync(yamlPath);

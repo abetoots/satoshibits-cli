@@ -17,11 +17,11 @@ This package is a **Reliability Engine** that provides **deterministic guarantee
 
 ### The Swiss Cheese Model - Layered Reliability
 
-| Layer | Technology | Reliability | Role |
-|-------|-----------|-------------|------|
-| **Layer 1** | Package (Regex/Glob) | **Deterministic (100%)** | Guardrails & critical workflows |
-| **Layer 2** | Native (Description) | **Probabilistic (~70-80%)** | General assistance |
-| **Layer 3** | Native (`type: "prompt"`) | **Cognitive (High)** | Deep contextual decisions |
+| Layer       | Technology                | Reliability                 | Role                            |
+| ----------- | ------------------------- | --------------------------- | ------------------------------- |
+| **Layer 1** | Package (Regex/Glob)      | **Deterministic (100%)**    | Guardrails & critical workflows |
+| **Layer 2** | Native (Description)      | **Probabilistic (~70-80%)** | General assistance              |
+| **Layer 3** | Native (`type: "prompt"`) | **Cognitive (High)**        | Deep contextual decisions       |
 
 The result: **90%+ activation rate** in relevant contexts, up from ~20% with native-only.
 
@@ -32,7 +32,7 @@ The result: **90%+ activation rate** in relevant contexts, up from ~20% with nat
 Install production-ready skills in seconds:
 
 ```bash
-npx create-auto-loading-claude-skills add-skill --template
+npx cl-auto-skills add-skill --template
 ```
 
 - **3 starter templates** covering backend, frontend, and error handling
@@ -45,7 +45,7 @@ npx create-auto-loading-claude-skills add-skill --template
 Transform existing documentation into skills automatically:
 
 ```bash
-npx create-auto-loading-claude-skills add-skill --interactive
+npx cl-auto-skills add-skill --interactive
 ```
 
 - **Scans all `.md` and `.mdx` files** in your project (root and `docs/` directory)
@@ -88,7 +88,7 @@ After Claude finishes, the system validates edited files against activated skill
 ### Installation
 
 ```bash
-npx create-auto-loading-claude-skills init
+npx cl-auto-skills init
 ```
 
 This creates:
@@ -105,7 +105,7 @@ The init command automatically discovers project documentation (CONTRIBUTING.md,
 **Option 1: Install from Template Catalog** (Fastest)
 
 ```bash
-npx create-auto-loading-claude-skills add-skill --template
+npx cl-auto-skills add-skill --template
 ```
 
 Browse and install production-ready skills:
@@ -119,7 +119,7 @@ Templates support variable substitution - customize for your project during inst
 **Option 2: Create from Discovered Docs** (Project-Specific)
 
 ```bash
-npx create-auto-loading-claude-skills add-skill --interactive
+npx cl-auto-skills add-skill --interactive
 ```
 
 Automatically creates skills from your existing documentation (CONTRIBUTING.md, STYLE_GUIDE.md, API.md, etc.). The system intelligently groups multiple files of the same type into a single skill with multiple resources.
@@ -127,7 +127,7 @@ Automatically creates skills from your existing documentation (CONTRIBUTING.md, 
 **Option 3: Create Custom Skill** (Advanced)
 
 ```bash
-npx create-auto-loading-claude-skills add-skill backend-dev-guidelines
+npx cl-auto-skills add-skill backend-dev-guidelines
 ```
 
 This generates a standard `SKILL.md` file in `.claude/skills/backend-dev-guidelines/` for you to populate with your project's patterns.
@@ -136,10 +136,10 @@ This generates a standard `SKILL.md` file in `.claude/skills/backend-dev-guideli
 
 The package supports **two workflows** for defining activation rules. Both are valid and can coexist:
 
-| Workflow | Method | Best For |
-|----------|--------|----------|
-| **Direct YAML** | Edit `skill-rules.yaml` directly | Getting started, quick iteration, standalone guardrails |
-| **Co-located** | `x-smart-triggers` in SKILL.md → `sync` | Team-shared skills, version control, scaling |
+| Workflow        | Method                                  | Best For                                                |
+| --------------- | --------------------------------------- | ------------------------------------------------------- |
+| **Direct YAML** | Edit `skill-rules.yaml` directly        | Getting started, quick iteration, standalone guardrails |
+| **Co-located**  | `x-smart-triggers` in SKILL.md → `sync` | Team-shared skills, version control, scaling            |
 
 > **Note**: The `sync` command preserves manual entries. You can mix both approaches freely.
 
@@ -167,7 +167,7 @@ skills:
     type: guardrail
     enforcement: block
     priority: critical
-    activationStrategy: guaranteed  # Package injects directly
+    activationStrategy: guaranteed # Package injects directly
     description: Applies Terraform execution plan
     promptTriggers:
       intentPatterns:
@@ -183,7 +183,7 @@ skills:
     type: domain
     enforcement: suggest
     priority: high
-    activationStrategy: suggestive  # Package adds hints
+    activationStrategy: suggestive # Package adds hints
     description: Express/Prisma/TypeScript patterns for backend development
     promptTriggers:
       keywords:
@@ -228,10 +228,11 @@ x-smart-triggers:
 Then run `sync` to generate the centralized rules:
 
 ```bash
-npx create-auto-loading-claude-skills sync
+npx cl-auto-skills sync
 ```
 
 This treats `skill-rules.yaml` as a **build artifact**. Benefits:
+
 - Trigger definitions live with the skill content they control
 - Changes are reviewable in PRs alongside skill content
 - `sync-status` command enables CI validation
@@ -242,12 +243,12 @@ See [ADR-004](docs/adr/004-dual-source-architecture.md) for detailed guidance on
 
 Control how each skill interacts with native Claude Code features:
 
-| Strategy | Behavior | Use Case |
-|----------|----------|----------|
-| `guaranteed` | Package injects skill via `additionalContext` | Critical workflows that MUST activate |
-| `suggestive` | Package adds hints via `updatedInput` | Helpful skills, boost native matching |
-| `prompt_enhanced` | Package gathers context → feeds to Haiku hook | Semantic decisions with rich context |
-| `native_only` | Package does nothing (default) | General-purpose skills |
+| Strategy          | Behavior                                      | Use Case                              |
+| ----------------- | --------------------------------------------- | ------------------------------------- |
+| `guaranteed`      | Package injects skill via `additionalContext` | Critical workflows that MUST activate |
+| `suggestive`      | Package adds hints via `updatedInput`         | Helpful skills, boost native matching |
+| `prompt_enhanced` | Package gathers context → feeds to Haiku hook | Semantic decisions with rich context  |
+| `native_only`     | Package does nothing (default)                | General-purpose skills                |
 
 For critical guardrails, use `guaranteed`. For general development skills, `suggestive` or `native_only` is usually sufficient.
 
@@ -379,7 +380,7 @@ Enable debug logging to troubleshoot skill activation and validation:
 ```yaml
 settings:
   enableDebugLogging: true
-  debugCategories:  # optional: filter by category
+  debugCategories: # optional: filter by category
     - activation
     - scoring
     - validation
@@ -389,15 +390,15 @@ Logs are written to `.claude/cache/debug.log` (automatically gitignored). The lo
 
 **Available Categories:**
 
-| Category | Description | Example |
-|----------|-------------|---------|
-| `activation` | Skill matching decisions | "skill 'backend-dev' matched: keyword 'API' (+10)" |
-| `scoring` | Detailed scoring breakdown | "promptScore=30, fileScore=15, total=45" |
-| `validation` | Stop hook validation | "rule 'error-handling' failed for 2 files" |
-| `state` | Session state changes | "added file 'src/api/users.ts' to modified files" |
-| `perf` | Timing information | "prompt matching completed in 12ms" |
-| `io` | File/cache operations | "loaded session abc123 (5 files, 2 skills)" |
-| `error` | Hook/config errors | "invalid regex in skill 'backend-dev': unclosed group" |
+| Category     | Description                | Example                                                |
+| ------------ | -------------------------- | ------------------------------------------------------ |
+| `activation` | Skill matching decisions   | "skill 'backend-dev' matched: keyword 'API' (+10)"     |
+| `scoring`    | Detailed scoring breakdown | "promptScore=30, fileScore=15, total=45"               |
+| `validation` | Stop hook validation       | "rule 'error-handling' failed for 2 files"             |
+| `state`      | Session state changes      | "added file 'src/api/users.ts' to modified files"      |
+| `perf`       | Timing information         | "prompt matching completed in 12ms"                    |
+| `io`         | File/cache operations      | "loaded session abc123 (5 files, 2 skills)"            |
+| `error`      | Hook/config errors         | "invalid regex in skill 'backend-dev': unclosed group" |
 
 **Viewing Logs:**
 
@@ -425,7 +426,7 @@ Begin with highly specific keywords and patterns. If skills don't activate when 
 Before creating custom skills, check the template catalog:
 
 ```bash
-npx create-auto-loading-claude-skills add-skill --template
+npx cl-auto-skills add-skill --template
 ```
 
 Templates provide:
@@ -442,7 +443,7 @@ See [TEMPLATE_GUIDE.md](TEMPLATE_GUIDE.md) for contributing new templates.
 Use the validation command:
 
 ```bash
-npx create-auto-loading-claude-skills validate
+npx cl-auto-skills validate
 ```
 
 Test with different prompt phrasings:
@@ -463,14 +464,14 @@ This package **augments** Claude Code's native skill system rather than replacin
 
 ### Ownership Boundaries
 
-| This Package Owns | Claude Code Owns |
-|-------------------|------------------|
-| `activation_strategy` per skill | Skill execution and runtime behavior |
-| Compiler Pattern (`sync` command) | Context window management |
-| JSON hook output for native integration | Native hooks defined in SKILL.md |
-| Trigger matching (prompt, file, tool, stop) | Session lifecycle |
-| Session state (modified files, activations) | Skill content injection |
-| `decision: "block"` enforcement | Token usage/costs |
+| This Package Owns                           | Claude Code Owns                     |
+| ------------------------------------------- | ------------------------------------ |
+| `activation_strategy` per skill             | Skill execution and runtime behavior |
+| Compiler Pattern (`sync` command)           | Context window management            |
+| JSON hook output for native integration     | Native hooks defined in SKILL.md     |
+| Trigger matching (prompt, file, tool, stop) | Session lifecycle                    |
+| Session state (modified files, activations) | Skill content injection              |
+| `decision: "block"` enforcement             | Token usage/costs                    |
 
 Hook templates installed by `init` are **copied to your project** and become yours to customize. This follows standard scaffolding patterns (like create-react-app). The package doesn't control runtime behavior—you do.
 
@@ -557,12 +558,12 @@ The system provides two validation methods that work together:
 1. **YAML-Based Validation** - Declarative pattern matching in skill-rules.yaml
 2. **Code-Based Validation** - Imperative TypeScript for complex logic
 
-| Aspect | YAML-Based | Code-Based |
-|--------|-----------|-----------|
-| **Use For** | Single-skill pattern checks | Cross-skill logic, complex rules |
-| **Complexity** | Simple condition → requirement | Full programming logic |
-| **Setup** | Add to skill-rules.yaml | Write .claude/hooks/stop-custom.ts |
-| **Example** | "Async functions need try-catch" | "Frontend + backend = check API consistency" |
+| Aspect         | YAML-Based                       | Code-Based                                   |
+| -------------- | -------------------------------- | -------------------------------------------- |
+| **Use For**    | Single-skill pattern checks      | Cross-skill logic, complex rules             |
+| **Complexity** | Simple condition → requirement   | Full programming logic                       |
+| **Setup**      | Add to skill-rules.yaml          | Write .claude/hooks/stop-custom.ts           |
+| **Example**    | "Async functions need try-catch" | "Frontend + backend = check API consistency" |
 
 ### YAML-Based Validation (The Normal Loop)
 
@@ -582,6 +583,7 @@ validationRules:
 ```
 
 **Fields:**
+
 - `condition` - When to check (file path + content patterns)
 - `requirement` - What must be present
 - `reminder` - Message shown if requirement is missing
@@ -614,21 +616,24 @@ For complex scenarios YAML can't handle:
 **Quick Example:**
 
 ```typescript
-import { createValidator, runValidators } from 'create-auto-loading-claude-skills/helpers';
+import {
+  createValidator,
+  runValidators,
+} from "@satoshibits/create-auto-loading-claude-skills/helpers";
 
 const testReminder = createValidator({
-  name: 'test-reminder',
+  name: "test-reminder",
   validate: ({ session, ui }) => {
     if (session.hasModifiedFiles(/\.(ts|tsx)$/)) {
       ui.addReminder({
-        message: 'Code modified. Run: npm test',
-        priority: 'low'
+        message: "Code modified. Run: npm test",
+        priority: "low",
       });
     }
-  }
+  },
 });
 
-export default async function(session, ui) {
+export default async function (session, ui) {
   await runValidators([testReminder], session, ui);
 }
 ```
@@ -639,31 +644,31 @@ export default async function(session, ui) {
 
 ```typescript
 // Session API
-session.isSkillActive('frontend-dev-guidelines')  // Check if skill active
-session.getActivatedSkills()                      // All activated skills
-session.getModifiedFiles()                        // Files with content
-session.hasModifiedFiles(/\.tsx$/)                // Pattern matching
+session.isSkillActive("frontend-dev-guidelines"); // Check if skill active
+session.getActivatedSkills(); // All activated skills
+session.getModifiedFiles(); // Files with content
+session.hasModifiedFiles(/\.tsx$/); // Pattern matching
 
 // UI API
 ui.addReminder({
-  message: 'Your reminder',
-  priority: 'medium',  // 'critical' | 'high' | 'medium' | 'low'
-  file: 'src/api/users.ts'
-})
+  message: "Your reminder",
+  priority: "medium", // 'critical' | 'high' | 'medium' | 'low'
+  file: "src/api/users.ts",
+});
 
 // Validator builder
-createValidator({ name, validate })
-runValidators([validator1, validator2], session, ui)
+createValidator({ name, validate });
+runValidators([validator1, validator2], session, ui);
 ```
 
 **Tier 2: Pre-Built Validators** - Production-ready
 
 ```typescript
-import { validators } from 'create-auto-loading-claude-skills/helpers';
+import { validators } from "@satoshibits/create-auto-loading-claude-skills/helpers";
 
 // Enforces layered architecture
 await validators.layeredArchitecture(session, ui, {
-  layers: ['controllers', 'services', 'repositories']
+  layers: ["controllers", "services", "repositories"],
 });
 
 // Detects violations:
@@ -677,29 +682,29 @@ await validators.layeredArchitecture(session, ui, {
 ```typescript
 // Cross-skill validation
 const apiChecker = createValidator({
-  name: 'api-consistency',
+  name: "api-consistency",
   validate: ({ session, ui }) => {
-    if (session.isSkillActive('frontend') &&
-        session.isSkillActive('backend')) {
+    if (session.isSkillActive("frontend") && session.isSkillActive("backend")) {
       ui.addReminder({
-        message: 'Both frontend and backend modified. Verify API contract consistency.',
-        priority: 'medium'
+        message:
+          "Both frontend and backend modified. Verify API contract consistency.",
+        priority: "medium",
       });
     }
-  }
+  },
 });
 
 // Tool orchestration
 const linterReminder = createValidator({
-  name: 'linter-reminder',
+  name: "linter-reminder",
   validate: ({ session, ui }) => {
     if (session.hasModifiedFiles(/\.tsx?$/)) {
       ui.addReminder({
-        message: 'Run: npm run lint && npm run type-check',
-        priority: 'low'
+        message: "Run: npm run lint && npm run type-check",
+        priority: "low",
       });
     }
-  }
+  },
 });
 ```
 
@@ -723,7 +728,7 @@ const linterReminder = createValidator({
 Initialize the auto-loading skills framework:
 
 ```bash
-npx create-auto-loading-claude-skills init
+npx cl-auto-skills init
 ```
 
 Automatically discovers project documentation and sets up hooks. Use `--type`, `--config`, or `--yes` flags for customization (run `init --help` for details).
@@ -734,16 +739,16 @@ Add skills using templates, interactive discovery, wizard classification, or cus
 
 ```bash
 # Browse template catalog
-npx create-auto-loading-claude-skills add-skill --template
+npx cl-auto-skills add-skill --template
 
 # Create from discovered docs
-npx create-auto-loading-claude-skills add-skill --interactive
+npx cl-auto-skills add-skill --interactive
 
 # Classification wizard (recommended for new skills)
-npx create-auto-loading-claude-skills add-skill my-skill --wizard
+npx cl-auto-skills add-skill my-skill --wizard
 
 # Custom skill
-npx create-auto-loading-claude-skills add-skill my-skill --description "Custom patterns" --keywords "api,auth"
+npx cl-auto-skills add-skill my-skill --description "Custom patterns" --keywords "api,auth"
 ```
 
 **Wizard Mode (`--wizard`)**: Interactive classification wizard that guides you through determining the optimal loading strategy for a skill:
@@ -761,7 +766,7 @@ Templates support variable substitution with `--var` flags. Run `add-skill --hel
 Generate `skill-rules.yaml` from `x-smart-triggers` frontmatter in SKILL.md files (the "Compiler Pattern"):
 
 ```bash
-npx create-auto-loading-claude-skills sync
+npx cl-auto-skills sync
 ```
 
 This treats `skill-rules.yaml` as a **build artifact** rather than a manually-edited file. Define triggers in your SKILL.md files, then run `sync` to generate centralized rules.
@@ -791,7 +796,7 @@ Run `claude-skills sync` to generate the corresponding entry in `skill-rules.yam
 Check if `skill-rules.yaml` is out of sync with SKILL.md frontmatter:
 
 ```bash
-npx create-auto-loading-claude-skills sync-status
+npx cl-auto-skills sync-status
 ```
 
 Returns exit code 1 if regeneration is needed. Useful in CI pipelines.
@@ -801,8 +806,8 @@ Returns exit code 1 if regeneration is needed. Useful in CI pipelines.
 Validate configuration and auto-fix issues:
 
 ```bash
-npx create-auto-loading-claude-skills validate
-npx create-auto-loading-claude-skills validate --fix
+npx cl-auto-skills validate
+npx cl-auto-skills validate --fix
 ```
 
 Detects orphaned skill references and unregistered skills.
@@ -812,7 +817,7 @@ Detects orphaned skill references and unregistered skills.
 Upgrade to latest version:
 
 ```bash
-npx create-auto-loading-claude-skills upgrade
+npx cl-auto-skills upgrade
 ```
 
 Creates backup by default. Use `--no-backup` to skip.
@@ -824,7 +829,6 @@ The template catalog includes production-ready skills following best practices:
 **Development**
 
 - **backend-dev-guidelines** - Express/TypeScript/Prisma patterns for scalable backend APIs
-
   - Three-layer architecture (routes → controllers → services → repositories)
   - Error handling with Sentry, validation with Zod
   - Global error middleware patterns

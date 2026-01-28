@@ -1,5 +1,5 @@
 /**
- * create-auto-loading-claude-skills
+ * @satoshibits/create-auto-loading-claude-skills
  *
  * Public API exports for programmatic usage and custom validators.
  *
@@ -11,7 +11,7 @@
  *   createUI,
  *   type Session,
  *   type UI,
- * } from 'create-auto-loading-claude-skills';
+ * } from '@satoshibits/create-auto-loading-claude-skills';
  *
  * const myValidator = createValidator({
  *   name: 'my-custom-validator',
@@ -31,7 +31,7 @@ export {
   createTestUI,
   createValidator,
   runValidators,
-} from './helpers/primitives/index.js';
+} from "./helpers/primitives/index.js";
 
 // types for validators
 export type {
@@ -42,10 +42,10 @@ export type {
   ValidatorFn,
   ValidatorConfig,
   ValidatorContext,
-} from './helpers/primitives/index.js';
+} from "./helpers/primitives/index.js";
 
 // pre-built validators
-export { validators } from './helpers/validators/index.js';
+export { validators } from "./helpers/validators/index.js";
 
 // core types from runtime library (for advanced users)
 export type {
@@ -59,7 +59,7 @@ export type {
   ShadowSuggestion,
   LogCategory,
   DebugLogger,
-} from './helpers/internal/index.js';
+} from "./helpers/internal/index.js";
 
 // utilities for advanced usage
 export {
@@ -67,4 +67,4 @@ export {
   RuleMatcher,
   sessionState,
   validateRegexPatterns,
-} from './helpers/internal/index.js';
+} from "./helpers/internal/index.js";

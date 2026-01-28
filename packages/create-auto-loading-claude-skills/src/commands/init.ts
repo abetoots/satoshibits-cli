@@ -9,6 +9,7 @@ import fs from "fs";
 import path from "path";
 
 import type { InitOptions } from "../types/index.js";
+
 import { DiscoveryCacheManager } from "../utils/discovery-cache.js";
 import { DocumentDiscovery } from "../utils/document-discovery.js";
 import { FileWriter } from "../utils/file-writer.js";
@@ -330,7 +331,7 @@ export async function initCommand(options: InitOptions) {
 
     // YAML is the single source of truth
     const schemaUrl =
-      "https://raw.githubusercontent.com/your-org/create-auto-loading-claude-skills/main/schema/skill-rules.schema.json";
+      "https://raw.githubusercontent.com/satoshibits-cli/packages/create-auto-loading-claude-skills/main/schema/skill-rules.schema.json";
     const yamlContent =
       `# yaml-language-server: $schema=${schemaUrl}\n` + yaml.dump(skillRules);
     writer.write(".claude/skills/skill-rules.yaml", yamlContent);
@@ -401,17 +402,13 @@ export async function initCommand(options: InitOptions) {
       }
 
       console.log(
-        `  1. ${chalk.cyan(
-          "npx create-auto-loading-claude-skills add-skill --interactive",
-        )}`,
+        `  1. ${chalk.cyan("npx cl-auto-skills add-skill --interactive")}`,
       );
       console.log(chalk.dim(`     Create skills from your discovered docs\n`));
 
       if (templateCount > 0) {
         console.log(
-          `  2. ${chalk.cyan(
-            "npx create-auto-loading-claude-skills add-skill --template",
-          )}`,
+          `  2. ${chalk.cyan("npx cl-auto-skills add-skill --template")}`,
         );
         console.log(
           chalk.dim(`     Browse and install from template catalog\n`),
@@ -443,25 +440,19 @@ export async function initCommand(options: InitOptions) {
         );
 
         console.log(
-          `  1. ${chalk.cyan(
-            "npx create-auto-loading-claude-skills add-skill --template",
-          )}`,
+          `  1. ${chalk.cyan("npx cl-auto-skills add-skill --template")}`,
         );
         console.log(
           chalk.dim(`     Browse and install from template catalog\n`),
         );
 
         console.log(
-          `  2. ${chalk.cyan(
-            "npx create-auto-loading-claude-skills add-skill <name>",
-          )}`,
+          `  2. ${chalk.cyan("npx cl-auto-skills add-skill <name>")}`,
         );
         console.log(chalk.dim(`     Create a custom skill\n`));
       } else {
         console.log(
-          `  1. ${chalk.cyan(
-            "npx create-auto-loading-claude-skills add-skill <name>",
-          )}`,
+          `  1. ${chalk.cyan("npx cl-auto-skills add-skill <name>")}`,
         );
         console.log(chalk.dim(`     Create a custom skill\n`));
       }
@@ -473,7 +464,7 @@ export async function initCommand(options: InitOptions) {
       );
       console.log(
         `  ${templateCount > 0 ? "4" : "3"}. Validate: ${chalk.cyan(
-          "npx create-auto-loading-claude-skills validate",
+          "npx cl-auto-skills validate",
         )}`,
       );
     }

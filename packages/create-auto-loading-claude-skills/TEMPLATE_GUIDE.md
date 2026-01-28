@@ -25,7 +25,7 @@ Welcome to the template contribution guide! This document explains how to create
 A **template** is a pre-built, reusable skill that users can install via:
 
 ```bash
-npx create-auto-loading-claude-skills add-skill --template
+npx cl-auto-skills add-skill --template
 ```
 
 Templates provide:
@@ -541,7 +541,7 @@ Add as needed:
 
 **Good Example Structure**:
 
-````markdown
+```markdown
 ### Controller Pattern
 
 **Bad**: No error handling
@@ -575,7 +575,7 @@ async function getUser(req, res, next) {
 - Always wrap in try-catch
 - Return proper status codes
 - Log errors before handling
-````
+```
 
 ---
 
@@ -684,10 +684,10 @@ Tags help users discover templates:
    cd /tmp/test-project
 
    # Initialize
-   npx create-auto-loading-claude-skills init
+   npx cl-auto-skills init
 
    # Install your template
-   npx create-auto-loading-claude-skills add-skill --template
+   npx cl-auto-skills add-skill --template
    # Select your template from the list
 
    # Verify files created
@@ -750,8 +750,8 @@ Before submitting, verify:
 1. **Fork the Repository**:
 
    ```bash
-   git clone https://github.com/your-username/create-auto-loading-claude-skills
-   cd create-auto-loading-claude-skills
+   git clone https://github.com/abetoots/satoshibits-cli.git
+   cd satoshibits-cli/packages/create-auto-loading-claude-skills
    ```
 
 2. **Create a Branch**:
@@ -792,7 +792,6 @@ Before submitting, verify:
    ```
 
    Then create a Pull Request with:
-
    - **Title**: `feat(templates): add [template-name] skill`
    - **Description**: Explain what the template provides, why it's valuable, and how it was tested
 

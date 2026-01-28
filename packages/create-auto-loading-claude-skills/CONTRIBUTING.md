@@ -16,8 +16,8 @@ Thank you for your interest in contributing! This guide provides everything you 
 1. **Clone the repository**
 
 ```bash
-git clone https://github.com/yourusername/create-auto-loading-claude-skills.git
-cd create-auto-loading-claude-skills
+git clone https://github.com/abetoots/satoshibits-cli
+cd satoshibits-cli/packages/create-auto-loading-claude-skills
 ```
 
 2. **Install dependencies**
@@ -113,13 +113,11 @@ The system has two main components:
 The system implements a **BEFORE → DURING → AFTER** feedback loop:
 
 1. **BEFORE (UserPromptSubmit)**
-
    - Analyzes prompt + file context
    - Matches against skill rules
    - Injects suggestions into Claude's context
 
 2. **DURING (PostToolUse)**
-
    - Tracks file modifications
    - Normalizes and persists paths
    - Builds session context

@@ -25,9 +25,9 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 
-import type { SkillRule, SkillConfig } from "@satoshibits/claude-skill-runtime";
 import type { SmartTriggers } from "../parsers/frontmatter-parser.js";
-import type { SyncOptions, SyncMetadata } from "../types/index.js";
+import type { SyncMetadata, SyncOptions } from "../types/index.js";
+import type { SkillConfig, SkillRule } from "@satoshibits/claude-skill-runtime";
 
 import {
   inferSkillName,
@@ -38,7 +38,7 @@ import {
 /**
  * Extended SkillConfig with sync metadata for tracking auto-synced vs manual skills
  */
-interface SkillRulesConfig extends Omit<SkillConfig, 'description'> {
+interface SkillRulesConfig extends Omit<SkillConfig, "description"> {
   description?: string;
   settings?: Record<string, unknown>;
   _sync?: SyncMetadata;
@@ -139,9 +139,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   if (skillFiles.length === 0) {
     spinner.warn("No SKILL.md files found in .claude/commands/");
     console.log(
-      chalk.dim(
-        "Create skills using: create-auto-loading-claude-skills add-skill <name>",
-      ),
+      chalk.dim("Create skills using: cl-auto-skills add-skill <name>"),
     );
     return;
   }

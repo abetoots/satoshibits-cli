@@ -5,7 +5,7 @@
   "description": "Comprehensive error tracking, logging, and validation patterns",
   "category": "quality",
   "tags": ["error-handling", "logging", "sentry", "validation", "debugging"],
-  "author": "create-auto-loading-claude-skills",
+  "author": "@satoshibits/create-auto-loading-claude-skills",
 
   "variables": {
     "PROJECT_NAME": "Your Project",
@@ -40,12 +40,7 @@
     },
 
     "fileTriggers": {
-      "pathPatterns": [
-        "**/*.ts",
-        "**/*.tsx",
-        "**/*.js",
-        "**/*.jsx"
-      ],
+      "pathPatterns": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"],
       "contentPatterns": [
         "try\\s*\\{",
         "catch\\s*\\(",
