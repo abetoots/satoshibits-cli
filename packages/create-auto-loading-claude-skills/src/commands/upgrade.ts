@@ -108,7 +108,7 @@ export async function upgradeCommand(options: UpgradeOptions) {
       ) as PackageJson;
 
       const expectedDeps = {
-        "claude-skill-runtime": "^0.0.0",
+        "@satoshibits/claude-skill-runtime": "^0.0.0",
       };
 
       // remove old dependencies that are now bundled in claude-skill-runtime
