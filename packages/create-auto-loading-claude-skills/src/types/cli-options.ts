@@ -49,4 +49,6 @@ export interface SyncMetadata {
   checksum: string;
   syncedSkills: string[];
   manualSkills: string[];
+  /** tracks which scope each synced skill came from */
+  skillScopes?: Record<string, "personal" | "project">;
 }

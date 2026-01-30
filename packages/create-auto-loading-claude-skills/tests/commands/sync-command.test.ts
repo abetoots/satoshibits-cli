@@ -12,13 +12,18 @@ import { checkSyncStatus, syncCommand } from "../../src/commands/sync.js";
 // the originalCwd is restored in afterEach to avoid affecting other tests.
 describe("sync command", () => {
   let testDir: string;
+  let fakeHomeDir: string;
   let originalCwd: string;
 
   beforeEach(() => {
-    // create temp directory
+    // create temp directories for project and fake home
     testDir = fs.mkdtempSync(path.join(os.tmpdir(), "sync-test-"));
+    fakeHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), "sync-home-"));
     originalCwd = process.cwd();
     process.chdir(testDir);
+
+    // mock os.homedir() to use fake home directory
+    vi.spyOn(os, "homedir").mockReturnValue(fakeHomeDir);
 
     // suppress console output during tests
     // eslint-disable-next-line @typescript-eslint/no-empty-function
@@ -28,6 +33,7 @@ describe("sync command", () => {
   afterEach(() => {
     process.chdir(originalCwd);
     fs.rmSync(testDir, { recursive: true, force: true });
+    fs.rmSync(fakeHomeDir, { recursive: true, force: true });
     vi.restoreAllMocks();
   });
 
@@ -359,6 +365,209 @@ x-smart-triggers:
       const status = await checkSyncStatus(testDir);
       expect(status.isStale).toBe(false);
       expect(status.message).toContain("No skill-rules.yaml found");
+    });
+  });
+
+  describe("personal scope skill discovery", () => {
+    it("should discover skills from personal scope (~/.claude/skills/)", async () => {
+      // create personal skill
+      const personalSkillDir = path.join(fakeHomeDir, ".claude", "skills", "personal-tool");
+      fs.mkdirSync(personalSkillDir, { recursive: true });
+
+      const personalSkillContent = `---
+name: personal-tool
+description: A personal tool skill
+x-smart-triggers:
+  activationStrategy: suggestive
+  promptTriggers:
+    keywords:
+      - personal
+---
+
+# Personal Tool
+`;
+
+      fs.writeFileSync(path.join(personalSkillDir, "SKILL.md"), personalSkillContent);
+
+      await syncCommand({ verbose: false });
+
+      // check that personal skill was synced
+      const configPath = path.join(testDir, ".claude", "skills", "skill-rules.yaml");
+      expect(fs.existsSync(configPath)).toBe(true);
+
+      const config = yaml.load(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
+      const skills = config.skills as Record<string, unknown>;
+
+      expect(skills["personal-tool"]).toBeDefined();
+
+      // check sync metadata tracks scope
+      const sync = config._sync as Record<string, unknown>;
+      expect(sync.skillScopes).toBeDefined();
+      expect((sync.skillScopes as Record<string, string>)["personal-tool"]).toBe("personal");
+    });
+
+    it("should have project skills override personal skills with same name", async () => {
+      // create personal skill
+      const personalSkillDir = path.join(fakeHomeDir, ".claude", "skills", "override-test");
+      fs.mkdirSync(personalSkillDir, { recursive: true });
+
+      const personalSkillContent = `---
+name: override-test
+description: Personal version
+x-smart-triggers:
+  activationStrategy: suggestive
+  promptTriggers:
+    keywords:
+      - personal-keyword
+---
+
+# Personal Override Test
+`;
+
+      fs.writeFileSync(path.join(personalSkillDir, "SKILL.md"), personalSkillContent);
+
+      // create project skill with same name
+      const projectSkillDir = path.join(testDir, ".claude", "commands", "override-test");
+      fs.mkdirSync(projectSkillDir, { recursive: true });
+
+      const projectSkillContent = `---
+name: override-test
+description: Project version
+x-smart-triggers:
+  activationStrategy: guaranteed
+  promptTriggers:
+    keywords:
+      - project-keyword
+---
+
+# Project Override Test
+`;
+
+      fs.writeFileSync(path.join(projectSkillDir, "SKILL.md"), projectSkillContent);
+
+      await syncCommand({ verbose: false });
+
+      // check that project version was used
+      const configPath = path.join(testDir, ".claude", "skills", "skill-rules.yaml");
+      const config = yaml.load(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
+      const skills = config.skills as Record<string, Record<string, unknown>>;
+
+      expect(skills["override-test"]).toBeDefined();
+      // project uses "guaranteed", personal uses "suggestive"
+      expect(skills["override-test"]!.activationStrategy).toBe("guaranteed");
+      // project has "project-keyword", personal has "personal-keyword"
+      expect((skills["override-test"]!.promptTriggers as Record<string, string[]>).keywords).toContain("project-keyword");
+      expect((skills["override-test"]!.promptTriggers as Record<string, string[]>).keywords).not.toContain("personal-keyword");
+
+      // check scope is tracked as project
+      const sync = config._sync as Record<string, unknown>;
+      expect((sync.skillScopes as Record<string, string>)["override-test"]).toBe("project");
+    });
+
+    it("should sync skills from both scopes when names are different", async () => {
+      // create personal skill
+      const personalSkillDir = path.join(fakeHomeDir, ".claude", "skills", "personal-only");
+      fs.mkdirSync(personalSkillDir, { recursive: true });
+
+      const personalSkillContent = `---
+name: personal-only
+x-smart-triggers:
+  activationStrategy: suggestive
+---
+
+# Personal Only
+`;
+
+      fs.writeFileSync(path.join(personalSkillDir, "SKILL.md"), personalSkillContent);
+
+      // create project skill with different name
+      const projectSkillDir = path.join(testDir, ".claude", "commands", "project-only");
+      fs.mkdirSync(projectSkillDir, { recursive: true });
+
+      const projectSkillContent = `---
+name: project-only
+x-smart-triggers:
+  activationStrategy: guaranteed
+---
+
+# Project Only
+`;
+
+      fs.writeFileSync(path.join(projectSkillDir, "SKILL.md"), projectSkillContent);
+
+      await syncCommand({ verbose: false });
+
+      // check that both skills were synced
+      const configPath = path.join(testDir, ".claude", "skills", "skill-rules.yaml");
+      const config = yaml.load(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
+      const skills = config.skills as Record<string, unknown>;
+
+      expect(skills["personal-only"]).toBeDefined();
+      expect(skills["project-only"]).toBeDefined();
+
+      // check scopes are tracked correctly
+      const sync = config._sync as Record<string, unknown>;
+      const scopes = sync.skillScopes as Record<string, string>;
+      expect(scopes["personal-only"]).toBe("personal");
+      expect(scopes["project-only"]).toBe("project");
+    });
+
+    it("should handle empty personal skills directory gracefully", async () => {
+      // create empty personal skills directory
+      const personalDir = path.join(fakeHomeDir, ".claude", "skills");
+      fs.mkdirSync(personalDir, { recursive: true });
+
+      // create project skill
+      const projectSkillDir = path.join(testDir, ".claude", "commands", "project-skill");
+      fs.mkdirSync(projectSkillDir, { recursive: true });
+
+      const projectSkillContent = `---
+name: project-skill
+x-smart-triggers:
+  activationStrategy: suggestive
+---
+
+# Project Skill
+`;
+
+      fs.writeFileSync(path.join(projectSkillDir, "SKILL.md"), projectSkillContent);
+
+      await syncCommand({ verbose: false });
+
+      // should work without errors and sync project skill
+      const configPath = path.join(testDir, ".claude", "skills", "skill-rules.yaml");
+      const config = yaml.load(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
+      const skills = config.skills as Record<string, unknown>;
+
+      expect(skills["project-skill"]).toBeDefined();
+    });
+
+    it("should handle non-existent personal skills directory gracefully", async () => {
+      // don't create any personal directory - it shouldn't exist
+
+      // create project skill
+      const projectSkillDir = path.join(testDir, ".claude", "commands", "project-skill");
+      fs.mkdirSync(projectSkillDir, { recursive: true });
+
+      const projectSkillContent = `---
+name: project-skill
+x-smart-triggers:
+  activationStrategy: suggestive
+---
+
+# Project Skill
+`;
+
+      fs.writeFileSync(path.join(projectSkillDir, "SKILL.md"), projectSkillContent);
+
+      await syncCommand({ verbose: false });
+
+      // should work without errors
+      const configPath = path.join(testDir, ".claude", "skills", "skill-rules.yaml");
+      const config = yaml.load(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
+      const skills = config.skills as Record<string, unknown>;
+
+      expect(skills["project-skill"]).toBeDefined();
     });
   });
 });

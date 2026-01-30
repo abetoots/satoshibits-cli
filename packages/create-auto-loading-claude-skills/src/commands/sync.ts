@@ -23,6 +23,7 @@ import yaml from "js-yaml";
 import ora from "ora";
 import crypto from "crypto";
 import fs from "fs";
+import os from "os";
 import path from "path";
 
 import type { SmartTriggers } from "../parsers/frontmatter-parser.js";
@@ -79,29 +80,53 @@ function computeChecksum(skills: Record<string, Partial<SkillRule>>): string {
 }
 
 /**
- * Find all SKILL.md files in .claude/commands/
+ * Skill file with scope information
  */
-async function findSkillFiles(rootDir: string): Promise<string[]> {
+interface SkillFile {
+  path: string;
+  scope: "personal" | "project";
+}
+
+/**
+ * Find all SKILL.md files in ~/.claude/skills/ (personal) and .claude/commands/ (project)
+ * Project skills take precedence over personal skills with the same name
+ */
+async function findSkillFiles(rootDir: string): Promise<SkillFile[]> {
+  const results: SkillFile[] = [];
+
+  // 1. personal scope: ~/.claude/skills/
+  const personalDir = path.join(os.homedir(), ".claude", "skills");
+  if (fs.existsSync(personalDir)) {
+    const personalPatterns = [
+      path.join(personalDir, "**/SKILL.md"),
+      path.join(personalDir, "**/skill.md"),
+    ];
+    for (const pattern of personalPatterns) {
+      const matches = await glob(pattern, { nocase: true });
+      results.push(...matches.map((p) => ({ path: p, scope: "personal" as const })));
+    }
+  }
+
+  // 2. project scope: .claude/commands/ (takes precedence)
   const commandsDir = path.join(rootDir, ".claude", "commands");
-
-  if (!fs.existsSync(commandsDir)) {
-    return [];
+  if (fs.existsSync(commandsDir)) {
+    const projectPatterns = [
+      path.join(commandsDir, "**/SKILL.md"),
+      path.join(commandsDir, "**/skill.md"),
+    ];
+    for (const pattern of projectPatterns) {
+      const matches = await glob(pattern, { nocase: true });
+      results.push(...matches.map((p) => ({ path: p, scope: "project" as const })));
+    }
   }
 
-  // find all SKILL.md files (case-insensitive)
-  const patterns = [
-    path.join(commandsDir, "**/SKILL.md"),
-    path.join(commandsDir, "**/skill.md"),
-  ];
-
-  const files: string[] = [];
-  for (const pattern of patterns) {
-    const matches = await glob(pattern, { nocase: true });
-    files.push(...matches);
-  }
-
-  // dedupe and sort
-  return [...new Set(files)].sort();
+  // dedupe by path and sort
+  const seen = new Set<string>();
+  return results.filter((f) => {
+    if (seen.has(f.path)) return false;
+    seen.add(f.path);
+    return true;
+  }).sort((a, b) => a.path.localeCompare(b.path));
 }
 
 /**
@@ -132,19 +157,24 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   const skillsDir = path.join(cwd, ".claude", "skills");
   const configPath = path.join(skillsDir, "skill-rules.yaml");
 
-  // 1. find skill files
+  // 1. find skill files from both personal and project scopes
   const spinner = ora("Scanning for SKILL.md files...").start();
   const skillFiles = await findSkillFiles(cwd);
 
   if (skillFiles.length === 0) {
-    spinner.warn("No SKILL.md files found in .claude/commands/");
+    spinner.warn("No SKILL.md files found in ~/.claude/skills/ or .claude/commands/");
     console.log(
       chalk.dim("Create skills using: cl-auto-skills add-skill <name>"),
     );
     return;
   }
 
-  spinner.succeed(`Found ${skillFiles.length} skill file(s)`);
+  const personalCount = skillFiles.filter((f) => f.scope === "personal").length;
+  const projectCount = skillFiles.filter((f) => f.scope === "project").length;
+  spinner.succeed(
+    `Found ${skillFiles.length} skill file(s)` +
+      (personalCount > 0 ? chalk.dim(` (${personalCount} personal, ${projectCount} project)`) : ""),
+  );
 
   // 2. load existing config
   const existingConfig = loadExistingConfig(configPath);
@@ -162,12 +192,17 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   };
 
   const syncedRules: Record<string, Partial<SkillRule>> = {};
+  // track which scope each skill came from for precedence
+  const skillScopes: Record<string, "personal" | "project"> = {};
 
-  for (const filePath of skillFiles) {
-    const relativePath = path.relative(cwd, filePath);
+  for (const skillFile of skillFiles) {
+    const { path: filePath, scope } = skillFile;
+    const relativePath = scope === "personal"
+      ? path.relative(os.homedir(), filePath)
+      : path.relative(cwd, filePath);
 
     if (verbose) {
-      console.log(chalk.dim(`  Parsing ${relativePath}...`));
+      console.log(chalk.dim(`  Parsing ${relativePath} (${scope})...`));
     }
 
     const content = fs.readFileSync(filePath, "utf8");
@@ -196,6 +231,16 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
       continue;
     }
 
+    // handle scope precedence: project skills override personal skills
+    const existingScope = skillScopes[skillName];
+    if (existingScope === "project" && scope === "personal") {
+      // project already has this skill, skip personal version
+      if (verbose) {
+        console.log(chalk.dim(`    Skipped (project scope takes precedence)`));
+      }
+      continue;
+    }
+
     // convert to skill rule
     const description =
       parsed.frontmatter?.standard.description ?? `Skill: ${skillName}`;
@@ -206,13 +251,20 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     rule.enforcement ??= inferEnforcement(triggers);
     rule.priority ??= inferPriority(triggers);
 
+    // if personal skill is being overridden by project skill, remove from synced list first
+    if (existingScope === "personal" && scope === "project") {
+      const idx = result.synced.indexOf(skillName);
+      if (idx !== -1) result.synced.splice(idx, 1);
+    }
+
     syncedRules[skillName] = rule;
+    skillScopes[skillName] = scope;
     result.synced.push(skillName);
 
     if (verbose) {
       console.log(
         chalk.green(
-          `    ✓ ${skillName} (${rule.activationStrategy ?? "native_only"})`,
+          `    ✓ ${skillName} (${rule.activationStrategy ?? "native_only"}, ${scope})`,
         ),
       );
     }
@@ -260,6 +312,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
       checksum,
       syncedSkills: Object.keys(syncedRules),
       manualSkills: newManualSkills,
+      skillScopes,
     },
   };
 
@@ -399,14 +452,23 @@ export async function checkSyncStatus(
   // find current skill files and compute checksum
   const skillFiles = await findSkillFiles(rootDir);
   const currentRules: Record<string, Partial<SkillRule>> = {};
+  const skillScopes: Record<string, "personal" | "project"> = {};
 
-  for (const filePath of skillFiles) {
+  for (const skillFile of skillFiles) {
+    const { path: filePath, scope } = skillFile;
     const content = fs.readFileSync(filePath, "utf8");
     const parsed = parseFrontmatter(content, filePath);
 
     if (parsed.success && parsed.frontmatter?.smartTriggers) {
       const skillName =
         parsed.frontmatter.standard.name ?? inferSkillName(filePath);
+
+      // apply same scope precedence as syncCommand: project wins
+      const existingScope = skillScopes[skillName];
+      if (existingScope === "project" && scope === "personal") {
+        continue;
+      }
+
       const description =
         parsed.frontmatter.standard.description ?? `Skill: ${skillName}`;
       const rule = smartTriggersToSkillRule(
@@ -419,6 +481,7 @@ export async function checkSyncStatus(
       rule.enforcement ??= inferEnforcement(parsed.frontmatter.smartTriggers);
       rule.priority ??= inferPriority(parsed.frontmatter.smartTriggers);
       currentRules[skillName] = rule;
+      skillScopes[skillName] = scope;
     }
   }
 
