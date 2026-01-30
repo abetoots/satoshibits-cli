@@ -1,5 +1,17 @@
 # @satoshibits/create-auto-loading-claude-skills
 
+## 1.1.0
+
+### Minor Changes
+
+- 3230c3b: enhance skill discovery with scope tracking for personal and project skills
+
+### Patch Changes
+
+- cd66254: derive runtime version from installed package for consistency
+- Updated dependencies [86f2646]
+  - @satoshibits/claude-skill-runtime@1.0.1
+
 ## 1.0.1
 
 ### Patch Changes
