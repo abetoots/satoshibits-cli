@@ -16,7 +16,25 @@ concurrency:
 
 jobs:
   # ═══════════════════════════════════════════════════════════
-  # Job 1: Validate Code Quality and Business Logic
+  # Job 1: Security Checks (Secrets Detection)
+  # ═══════════════════════════════════════════════════════════
+  security-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: $\{{ secrets.GITHUB_TOKEN }}
+
+  # ═══════════════════════════════════════════════════════════
+  # Job 2: Validate Code Quality and Business Logic
   # ═══════════════════════════════════════════════════════════
   validate:
     runs-on: ubuntu-latest
@@ -45,6 +63,9 @@ jobs:
 
       - name: Install dependencies
         run: {{{installCmd packageManager}}}
+
+      - name: Run security audit
+        run: {{{auditCmd packageManager}}}
 
 {{#if isMonorepo}}
       - name: Build shared packages
@@ -76,6 +97,8 @@ jobs:
   # ═══════════════════════════════════════════════════════════
   # Summary: What This Workflow Validates
   # ═══════════════════════════════════════════════════════════
+  # ✅ Secret detection (Gitleaks)
+  # ✅ Dependency security audit
   # ✅ Code quality (lint, types)
   # ✅ Business logic (unit tests)
   #

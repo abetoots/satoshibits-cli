@@ -107,6 +107,20 @@ function registerHelpers(): void {
     }
   });
 
+  // audit command helper based on package manager
+  Handlebars.registerHelper('auditCmd', (packageManager: string) => {
+    switch (packageManager) {
+      case 'pnpm':
+        return 'pnpm audit --audit-level=high';
+      case 'yarn':
+        return 'yarn audit --level high';
+      case 'bun':
+        return 'bun pm audit --audit-level=high';
+      default:
+        return 'npm audit --audit-level=high';
+    }
+  });
+
   // get platform config for a specific environment
   // pass deployEnvironments explicitly for stable context
   Handlebars.registerHelper(
