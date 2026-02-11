@@ -1,0 +1,324 @@
+# =============================================================================
+# CONCERN: Failure Domain Isolation
+# =============================================================================
+# This concern validates that every component in a distributed system has a
+# declared failure domain and documented blast radius. Without explicit
+# boundaries, a failure in one component can cascade unpredictably through
+# the entire system.
+#
+# WHY THIS MATTERS:
+# In distributed systems, the question is not IF a component will fail, but
+# WHEN and HOW FAR the failure spreads. Without declared failure domains,
+# teams cannot reason about blast radius, cannot design containment
+# strategies, and cannot prioritize recovery actions during incidents.
+#
+# TYPICAL MANIFESTATION:
+# - ADD lists microservices but doesn't declare which can fail independently
+# - Component fails and takes down unrelated services via shared database
+# - No documentation of what happens to Service B when Service A is down
+# =============================================================================
+
+concern:
+  id: "failure-domain-isolation"
+  version: "1.0"
+  name: "Failure Domain Isolation"
+  category: "core"
+  severity: "error"
+
+  description: |
+    Every component in a distributed system must document:
+    1. Its failure domain (what boundary contains its failures)
+    2. Its blast radius (what other components are affected when it fails)
+    3. How failures propagate (synchronously, asynchronously, or both)
+    4. What the outcome of propagation is (cascading, contained, degraded)
+    5. What isolation mechanisms prevent cascade
+
+    Failure domains should be explicit, not implicit. Shared resources
+    (databases, message brokers, config stores) often create hidden
+    coupling between components that appear independent.
+
+# -----------------------------------------------------------------------------
+# TRIGGERS: When to load this concern
+# -----------------------------------------------------------------------------
+triggers:
+  any_of:
+    - microservices
+    - distributed
+    - multi-component
+    - event-driven
+
+  escalate_if:
+    - payments        # payment service failure must be contained
+    - approval-gates  # approval service failure shouldn't block all workflows
+
+# -----------------------------------------------------------------------------
+# EVALUATION: The reasoning task
+# -----------------------------------------------------------------------------
+evaluation:
+  question: |
+    Systematically identify every component in the documented system,
+    then evaluate whether failure domains and blast radius are documented.
+
+    STEP 1: IDENTIFY COMPONENTS AND THEIR BOUNDARIES
+    Scan all documents for distinct components:
+    - Microservices or service modules
+    - Databases and data stores
+    - Message brokers and event streams
+    - External dependencies (third-party APIs)
+    - Shared infrastructure (load balancers, API gateways, DNS)
+    - Background workers and scheduled jobs
+
+    For each component, identify:
+    - What resources does it own exclusively?
+    - What resources does it share with other components?
+    - What are its upstream dependencies?
+    - What are its downstream dependents?
+
+    STEP 2: MAP FAILURE DOMAINS
+    A failure domain is a boundary within which failures are contained.
+    For each component, determine:
+    - Is the failure domain explicitly declared?
+    - What shared resources create hidden coupling?
+    - Can this component fail without affecting others?
+
+    Look for: failure domain, blast radius, isolation, bulkhead,
+    independent deployment, shared nothing, shared database
+
+    STEP 3: EVALUATE BLAST RADIUS
+    For each component, determine what happens when it fails:
+    - Which other components are directly affected?
+    - Are there indirect/transitive effects?
+    - Is the failure synchronous (caller blocks) or async (delayed impact)?
+    - What is the outcome: cascading failure, contained failure, or graceful degradation?
+
+    STEP 4: EVALUATE ISOLATION MECHANISMS
+    For each component, identify what prevents cascade:
+    - Circuit breakers on callers
+    - Bulkhead patterns (separate thread pools, connection pools)
+    - Async decoupling (message queues between components)
+    - Fallback behavior (cached responses, degraded mode)
+    - Independent databases (no shared-database coupling)
+
+    STEP 5: ASSESS CRITICALITY AND PRIORITIZE
+    Not all components are equally important:
+    - Critical: failure causes revenue loss or data corruption
+    - Standard: failure causes feature degradation
+    - Non-critical: failure is tolerable for extended periods
+
+    Ensure critical components have the strongest isolation guarantees.
+
+  checklist:
+    - id: "domain-declaration"
+      question: "Does each component explicitly declare its failure domain?"
+    - id: "blast-radius"
+      question: "Is the blast radius documented for each component's failure?"
+    - id: "shared-resources"
+      question: "Are shared resources (databases, brokers) identified as coupling points?"
+    - id: "isolation-mechanisms"
+      question: "Are isolation mechanisms documented for preventing cascade?"
+    - id: "criticality-assessment"
+      question: "Are components classified by criticality with appropriate isolation?"
+
+  evidence_required:
+    - field: "component_name"
+      type: "string"
+      description: "Name of the component (e.g., 'PaymentService', 'OrderDatabase', 'RabbitMQ Broker')"
+      required: true
+
+    - field: "criticality"
+      type: "enum"
+      values:
+        - "critical"
+        - "standard"
+        - "non-critical"
+      description: "How critical is this component to overall system operation"
+      required: true
+
+    - field: "failure_domain"
+      type: "string | null"
+      description: "The declared failure domain boundary (e.g., 'Payment subsystem', 'isolated - no shared state', 'shares OrderDB with OrderService')"
+      required: true
+
+    - field: "blast_radius"
+      type: "string | null"
+      description: "What is affected when this component fails (e.g., 'Only payment processing; orders queue for later', 'All services using shared DB')"
+      required: true
+
+    - field: "propagation_mode"
+      type: "enum"
+      values:
+        - "sync"
+        - "async"
+        - "both"
+        - "unknown"
+      description: "How does failure propagate to other components (sync = caller blocks, async = delayed impact)"
+      required: true
+
+    - field: "propagation_outcome"
+      type: "enum"
+      values:
+        - "cascading"
+        - "contained"
+        - "degraded"
+        - "unknown"
+      description: "What is the result of failure propagation (cascading = unbounded spread, contained = isolated, degraded = graceful reduction)"
+      required: true
+
+    - field: "impacted_components"
+      type: "array"
+      description: "List of components directly affected by this component's failure (e.g., ['OrderService', 'NotificationService', 'ReportingDashboard'])"
+      required: true
+
+    - field: "isolation_mechanisms"
+      type: "string | null"
+      description: "What prevents cascade (e.g., 'Circuit breaker on callers, async via message queue, separate database')"
+      required: true
+
+    - field: "fallback_behavior"
+      type: "string | null"
+      description: "What callers do when this component is unavailable (e.g., 'Return cached data', 'Queue requests', 'Show maintenance page')"
+      required: true
+
+    - field: "source_location"
+      type: "string"
+      description: "Exact location where this is documented (e.g., 'ADD Section 3.1, Component Overview')"
+      required: true
+
+    - field: "confidence"
+      type: "enum"
+      values: ["high", "medium", "low"]
+      description: "Your confidence that this assessment is accurate"
+      required: true
+
+  failure_condition: |
+    Report as ERROR when ANY of the following are true:
+
+    1. failure_domain is NULL for any component - no declared isolation boundary
+
+    2. blast_radius is NULL for any component classified as "critical"
+
+    3. propagation_outcome is "cascading" or "unknown" for any component -
+       unbounded failure spread is unacceptable
+
+    4. propagation_mode is "unknown" - team hasn't analyzed how failures spread
+
+    5. A shared resource (database, broker) is identified but no isolation
+       mechanism is documented for it
+
+    6. impacted_components is empty for a component that has known downstream
+       dependents (indicates failure analysis hasn't been performed)
+
+    7. A "critical" component has no documented isolation_mechanisms
+
+    Report as WARNING when:
+
+    1. failure_domain is declared but blast_radius is vague
+       (e.g., "limited impact" without specifics)
+
+    2. propagation_outcome is "degraded" but fallback_behavior is NULL
+       (degradation is claimed but not specified)
+
+    3. isolation_mechanisms reference patterns (circuit breaker, bulkhead)
+       but don't specify configuration
+
+    4. Components share a database but claim independent failure domains
+       without documenting how database failure is isolated
+
+    5. criticality is not explicitly assessed - all components treated equally
+
+  recommendation_template: |
+    ## Gap: {component_name} - Missing Failure Domain Documentation
+
+    **Location:** {source_location}
+    **Criticality:** {criticality}
+    **Current Blast Radius:** {blast_radius}
+
+    ### Required Documentation
+
+    Add explicit documentation covering:
+
+    1. **Failure Domain Declaration**
+       - What boundary contains this component's failures?
+       - What resources are exclusive vs. shared?
+       - Example: "PaymentService operates in the payment failure domain.
+         It has its own database and communicates via async messages."
+
+    2. **Blast Radius Mapping**
+       - What happens when this component is completely unavailable?
+       - Which components are directly affected? Transitively?
+       - Example: "PaymentService failure affects: order completion (queued),
+         refund processing (delayed). Does NOT affect: order browsing, search."
+
+    3. **Isolation Mechanisms**
+       - How is cascade prevented?
+       - Example: "OrderService uses circuit breaker (5 failures/60s) when
+         calling PaymentService. On open circuit, orders are accepted with
+         'payment-pending' status and retried via background job."
+
+    4. **Fallback Behavior**
+       - What do callers experience during failure?
+       - Example: "Users see 'Payment processing delayed' message.
+         Order is confirmed with payment retried within 1 hour."
+
+# -----------------------------------------------------------------------------
+# EXAMPLES: Help the LLM understand what to look for
+# -----------------------------------------------------------------------------
+examples:
+  well_documented:
+    - source: "ADD Section 3.2"
+      text: |
+        "The PaymentService operates in an isolated failure domain:
+        - Own database (payment_db, separate from order_db)
+        - Communicates with OrderService via async events (RabbitMQ)
+        - No synchronous dependencies on other internal services
+
+        Blast radius: PaymentService failure affects payment processing only.
+        Orders continue to be created with 'payment-pending' status.
+        OrderService has a circuit breaker (5 failures/60s) on payment calls.
+        When circuit opens, payments are queued and retried hourly."
+      assessment: |
+        component_name: "PaymentService"
+        criticality: "critical"
+        failure_domain: "Isolated - own database, async communication"
+        blast_radius: "Payment processing only; orders queue with payment-pending"
+        propagation_mode: "async"
+        propagation_outcome: "degraded"
+        impacted_components: ["OrderService (degraded - queues payments)"]
+        isolation_mechanisms: "Separate database, async via RabbitMQ, circuit breaker on callers"
+        fallback_behavior: "Orders accepted with payment-pending, retried hourly"
+
+  poorly_documented:
+    - source: "ADD Section 2.1"
+      text: |
+        "The system consists of OrderService, PaymentService, and
+        NotificationService. All services use the shared application database."
+      assessment: |
+        component_name: "OrderService"
+        criticality: "critical"
+        failure_domain: null
+        blast_radius: null
+        propagation_mode: "unknown"
+        propagation_outcome: "unknown"
+        impacted_components: []
+        isolation_mechanisms: null
+        fallback_behavior: null
+        gap: "Shared database creates hidden coupling. If PaymentService causes
+              database lock contention or schema migration issues, OrderService
+              and NotificationService are also affected. No failure domains declared."
+
+# -----------------------------------------------------------------------------
+# METADATA
+# -----------------------------------------------------------------------------
+metadata:
+  created: "2026-02"
+  last_updated: "2026-02"
+  author: "Multi-Expert Consensus (Claude, Gemini, ChatGPT)"
+  related_concerns:
+    - "resilience-triad"           # circuit breakers are isolation mechanisms
+    - "state-ownership-clarity"    # shared state creates hidden failure domains
+    - "durable-persistence"        # what happens to persistent state when domain fails?
+  references:
+    - "Release It! 2nd Edition (Nygard) - Failure Domains and Bulkheads"
+    - "Building Microservices, 2nd Edition (Newman) - Isolation and Autonomy"
+    - "AWS Well-Architected: Reliability - Fault Isolation"
+    - "Google SRE Book: Managing Critical State"

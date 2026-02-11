@@ -1,0 +1,71 @@
+{
+  "name": "@satoshibits/doc-lint",
+  "version": "0.0.0",
+  "main": "./dist/src/index.mjs",
+  "types": "./dist/src/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.mts",
+      "import": "./dist/src/index.mjs",
+      "default": "./dist/src/index.mjs"
+    }
+  },
+  "type": "module",
+  "private": false,
+  "bin": {
+    "doc-lint": "./dist/src/bin/cli.js"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc",
+    "lint": "pnpm exec eslint .",
+    "prepublishOnly": "npm run build",
+    "pre-commit": "pnpm exec lint-staged -c ./.lintstagedrc.mjs --concurrent false",
+    "test": "vitest --run"
+  },
+  "files": [
+    "./dist/**/*",
+    "./concerns/**/*",
+    "!./dist/**/*.test.*"
+  ],
+  "keywords": [
+    "doc-lint",
+    "documentation",
+    "linting",
+    "validation",
+    "architecture",
+    "cli"
+  ],
+  "author": {
+    "name": "Abe M. Caymo",
+    "email": "caymo.abesuni@gmail.com",
+    "url": "https://github.com/abetoots"
+  },
+  "license": "ISC",
+  "description": "Documentation linter that assembles evaluation prompts from concern schemas",
+  "dependencies": {
+    "chalk": "^5.6.2",
+    "commander": "^14.0.2",
+    "js-yaml": "^4.1.1"
+  },
+  "optionalDependencies": {
+    "@anthropic-ai/sdk": "^0.39.0"
+  },
+  "devDependencies": {
+    "@eslint/compat": "^1.2.0",
+    "@repo/typescript-config": "workspace:^",
+    "@satoshibits/eslint-config": "workspace:^",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.7.4",
+    "@typescript-eslint/utils": "^8.26.1",
+    "eslint": "^9.22.0",
+    "jiti": "^2.4.2",
+    "lint-staged": "^15.2.10",
+    "typescript": "^5.7.3",
+    "vitest": "^3.1.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/abetoots/satoshibits-cli.git"
+  },
+  "homepage": "https://github.com/abetoots/satoshibits-cli/packages/doc-lint"
+}

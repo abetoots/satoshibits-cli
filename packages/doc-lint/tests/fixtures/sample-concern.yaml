@@ -1,0 +1,26 @@
+concern:
+  id: "test-concern"
+  version: "1.0"
+  name: "Test Concern"
+  category: "core"
+  severity: "error"
+  description: |
+    This is a test concern for unit testing.
+
+triggers:
+  any_of:
+    - test-signal
+    - other-signal
+
+evaluation:
+  question: |
+    Evaluate the test documentation for test-concern.
+
+  evidence_required:
+    - field: "test_field"
+      type: "string"
+      description: "A test field"
+      required: true
+
+  failure_condition: |
+    Report as ERROR when test_field is missing.

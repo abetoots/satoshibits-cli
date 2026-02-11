@@ -1,0 +1,429 @@
+# =============================================================================
+# INTERACTION MATRIX: Async Workflows × Approval Gates
+# =============================================================================
+# This interaction check identifies failure modes that emerge ONLY when
+# approval workflows are processed asynchronously. These gaps are invisible
+# when reviewing async and approval concerns separately.
+#
+# WHY THIS MATTERS:
+# Synchronous approval is simple: request → approve/reject → done.
+# Async approval introduces temporal complexity: messages can be delayed,
+# duplicated, lost, or arrive out of order. Each of these creates failure
+# modes that must be explicitly handled.
+#
+# TYPICAL MANIFESTATION:
+# - FRD describes an "approval workflow"
+# - ADD describes "async message processing" or "event-driven architecture"
+# - Neither document addresses what happens when these interact badly
+# =============================================================================
+
+interaction:
+  id: "async-times-approval"
+  version: "1.0"
+  name: "Async Workflows × Approval Gates"
+  category: "interaction"
+  severity: "error"
+  
+  description: |
+    When approval workflows are processed asynchronously (via message queues,
+    event streams, or eventual consistency), failure modes emerge that don't
+    exist in synchronous systems. This interaction matrix forces explicit
+    reasoning about each failure mode.
+
+# -----------------------------------------------------------------------------
+# TRIGGERS: When to load this interaction check
+# -----------------------------------------------------------------------------
+triggers:
+  # Load when ALL of these signals are present
+  all_of:
+    - async-workflows    # OR: message-queue, event-driven, eventual-consistency
+    - approval-gates     # OR: authorization, workflow-approval, human-in-loop
+    
+  # Alternative signal combinations that imply this interaction
+  alternative_triggers:
+    - all_of: [message-queue, authorization]
+    - all_of: [event-driven, workflow-approval]
+    - all_of: [eventual-consistency, human-in-loop]
+
+# -----------------------------------------------------------------------------
+# FAILURE MODES: The specific risks this interaction creates
+# -----------------------------------------------------------------------------
+failure_modes:
+  - id: "duplicate-approval"
+    name: "Duplicate Approval Processing"
+    severity: "error"
+    
+    description: |
+      An approval message is delivered more than once (at-least-once delivery,
+      retry after timeout, network duplicate). Without protection, the same
+      approval could be processed multiple times, potentially:
+      - Incrementing counters twice
+      - Triggering downstream actions twice
+      - Creating duplicate audit records
+      - Advancing workflow state incorrectly
+    
+    question: |
+      Is there documentation of how duplicate approval messages are detected
+      and handled? Specifically:
+      1. How are duplicate approval events identified? (message ID, approval ID, etc.)
+      2. What happens when a duplicate is detected?
+      3. Is the duplicate detection window documented?
+    
+    evidence_required:
+      - field: "duplicate_detection_mechanism"
+        type: "string | null"
+      - field: "duplicate_behavior"
+        type: "string | null"
+      - field: "detection_window"
+        type: "string | null"
+      - field: "source_location"
+        type: "string | null"
+    
+    failure_examples:
+      - "User approves expense report. Message is delivered twice due to 
+         at-least-once semantics. Report is marked approved twice, triggering
+         two reimbursement payments."
+      - "Manager approval event is retried after timeout. Both original and
+         retry succeed, creating two approval audit records."
+
+  - id: "approval-timeout"
+    name: "Approval Validity Timeout"
+    severity: "error"
+    
+    description: |
+      Approval messages can be delayed in queues. If an approval arrives after
+      the request has expired or the context has changed, processing it could
+      be incorrect or dangerous. Questions:
+      - Is there a validity window for approvals?
+      - What happens when an expired approval arrives?
+      - How is "stale approval" detected?
+    
+    question: |
+      Is there documentation of approval validity windows and expiration handling?
+      Specifically:
+      1. Do approvals have a TTL or validity window?
+      2. What happens if an approval message is delayed beyond validity?
+      3. How is the approval timestamp validated against the request state?
+    
+    evidence_required:
+      - field: "validity_window"
+        type: "string | null"
+        description: "How long is an approval valid? (e.g., '24 hours', '7 days')"
+      - field: "expiration_behavior"
+        type: "string | null"
+        description: "What happens when expired approval arrives?"
+      - field: "timestamp_validation"
+        type: "string | null"
+        description: "How is approval freshness verified?"
+      - field: "source_location"
+        type: "string | null"
+    
+    failure_examples:
+      - "Purchase request for $1000 is submitted. Manager is on vacation.
+         Two weeks later, manager approves. Price has increased to $1500.
+         Stale approval processes at new price."
+      - "Access request approved after employee has left the company.
+         Approval processed, granting access to terminated employee."
+
+  - id: "orphaned-workflow"
+    name: "Orphaned Workflow State"
+    severity: "error"
+    
+    description: |
+      An approval message is lost (queue failure, poison message, processing
+      crash). The workflow remains stuck in "pending approval" indefinitely.
+      Without explicit handling, these orphaned workflows accumulate and
+      may never complete.
+    
+    question: |
+      Is there documentation of recovery mechanisms for lost approval messages?
+      Specifically:
+      1. How are "stuck" workflows detected?
+      2. Is there a timeout after which pending approvals are escalated or cancelled?
+      3. What is the recovery/retry mechanism for lost messages?
+      4. Is there monitoring/alerting for orphaned workflows?
+    
+    evidence_required:
+      - field: "stuck_detection_mechanism"
+        type: "string | null"
+        description: "How are stuck workflows identified?"
+      - field: "escalation_timeout"
+        type: "string | null"
+        description: "How long before escalation/cancellation?"
+      - field: "recovery_mechanism"
+        type: "string | null"
+        description: "How are lost approvals recovered?"
+      - field: "monitoring"
+        type: "string | null"
+        description: "Is there alerting for orphaned workflows?"
+      - field: "source_location"
+        type: "string | null"
+    
+    failure_examples:
+      - "Approval message goes to dead letter queue due to malformed payload.
+         No monitoring on DLQ. Workflow sits in 'pending_approval' for months."
+      - "Approver's response lost due to network partition. No retry mechanism.
+         Request never completes, user never notified."
+
+  - id: "race-condition"
+    name: "Concurrent Approval Race Condition"
+    severity: "error"
+    
+    description: |
+      Multiple approvers can act on the same request simultaneously. In async
+      systems, their responses may arrive in any order or even be processed
+      concurrently. Without explicit handling:
+      - Both approve → which approval "wins"?
+      - One approves, one rejects → which takes precedence?
+      - Partial approval (need 2 of 3) → how is count maintained atomically?
+    
+    question: |
+      Is there documentation of concurrent approval handling?
+      Specifically:
+      1. Can multiple approvers act on the same request?
+      2. If yes, how are concurrent approvals serialized or reconciled?
+      3. For multi-approver workflows, how is the approval count maintained atomically?
+      4. What happens if approve and reject arrive simultaneously?
+    
+    evidence_required:
+      - field: "multi_approver_supported"
+        type: "boolean | null"
+      - field: "concurrency_control"
+        type: "string | null"
+        description: "How are concurrent approvals handled? (locking, optimistic concurrency, etc.)"
+      - field: "conflict_resolution"
+        type: "string | null"
+        description: "What happens on approve/reject conflict?"
+      - field: "atomic_counting"
+        type: "string | null"
+        description: "For N-of-M approval, how is count maintained?"
+      - field: "source_location"
+        type: "string | null"
+    
+    failure_examples:
+      - "Two managers approve same request simultaneously. Both increments
+         succeed due to race. Approval count shows 4/3 required."
+      - "Manager A approves at 10:00:01, Manager B rejects at 10:00:02.
+         Due to async processing, rejection is processed first, then approval
+         overwrites it. Request proceeds despite rejection."
+
+  - id: "order-inversion"
+    name: "Message Order Inversion"
+    severity: "warn"
+    
+    description: |
+      In distributed systems, message ordering is not guaranteed. A rejection
+      sent after an approval might arrive first. A cancellation might arrive
+      after the approval has been processed. Without explicit ordering or
+      version checking, later events can be "undone" by earlier ones.
+    
+    question: |
+      Is there documentation of message ordering guarantees or compensation?
+      Specifically:
+      1. Are approval/rejection messages ordered? (FIFO queue, sequence numbers)
+      2. If not ordered, how is "latest state" determined?
+      3. Is there version/timestamp checking before processing?
+      4. What happens if a "cancel" arrives after "approved"?
+    
+    evidence_required:
+      - field: "ordering_guarantee"
+        type: "string | null"
+        description: "Is message ordering guaranteed? How?"
+      - field: "version_checking"
+        type: "string | null"
+        description: "Is there version/timestamp validation?"
+      - field: "out_of_order_handling"
+        type: "string | null"
+        description: "What happens when messages arrive out of order?"
+      - field: "source_location"
+        type: "string | null"
+    
+    failure_examples:
+      - "User cancels request at 10:00. Approver (working offline) submits
+         approval at 10:05 which was composed at 9:55. Approval arrives,
+         processed, cancellation ignored because request is now 'approved'."
+
+# -----------------------------------------------------------------------------
+# EVALUATION: Combined assessment
+# -----------------------------------------------------------------------------
+evaluation:
+  preamble: |
+    This interaction check examines documentation for an approval workflow
+    that operates asynchronously. You must evaluate whether EACH of the
+    failure modes below is explicitly addressed in the documentation.
+    
+    IMPORTANT: These failure modes do not exist in synchronous approval systems.
+    They emerge specifically from the combination of async + approval. Do not
+    assume that standard async patterns (like idempotency) fully address
+    approval-specific concerns like validity windows or multi-approver races.
+
+  combined_question: |
+    Given the documented system uses both asynchronous processing and approval
+    workflows, evaluate whether the following failure modes are addressed:
+    
+    1. DUPLICATE APPROVAL: Can an approval be processed twice? How is this prevented?
+    
+    2. APPROVAL TIMEOUT: Can an approval arrive "too late"? What happens?
+    
+    3. ORPHANED WORKFLOW: If an approval is lost, how is this detected and recovered?
+    
+    4. RACE CONDITION: Can multiple approvers conflict? How is this resolved?
+    
+    5. ORDER INVERSION: Can messages arrive out of order? How is "latest" determined?
+    
+    For each failure mode:
+    - State whether it is ADDRESSED, PARTIALLY ADDRESSED, or NOT ADDRESSED
+    - Cite the specific documentation location
+    - If not addressed, explain the risk
+
+  output_format: |
+    {
+      "interaction_id": "async-times-approval",
+      "interaction_version": "1.0",
+      "overall_assessment": "pass | partial | fail",
+      "failure_modes": [
+        {
+          "id": "duplicate-approval",
+          "status": "addressed | partial | not-addressed",
+          "evidence": { ... fields from evidence_required ... },
+          "risk_if_unaddressed": "string describing potential impact"
+        },
+        // ... repeat for each failure mode
+      ],
+      "gaps": [
+        {
+          "failure_mode": "string",
+          "description": "what's missing",
+          "severity": "error | warn",
+          "recommendation": "what to document"
+        }
+      ],
+      "cross_references": [
+        {
+          "from": "document:section",
+          "to": "document:section",
+          "relationship": "string describing how they relate"
+        }
+      ]
+    }
+
+  failure_condition: |
+    Report as ERROR when:
+    - "duplicate-approval" is not-addressed (HIGH RISK: data corruption, double-processing)
+    - "approval-timeout" is not-addressed AND system handles time-sensitive approvals
+    - "orphaned-workflow" is not-addressed (workflows will accumulate indefinitely)
+    - "race-condition" is not-addressed AND multi-approver is supported
+    
+    Report as WARNING when:
+    - "order-inversion" is not-addressed (lower risk, often acceptable)
+    - Any failure mode is "partial" (documented but incomplete)
+    - Failure mode is addressed but mechanism is unclear
+
+# -----------------------------------------------------------------------------
+# RECOMMENDATIONS: Templates for fixing gaps
+# -----------------------------------------------------------------------------
+recommendations:
+  duplicate_approval: |
+    ## Document: Duplicate Approval Handling
+    
+    Add to ADD/FRD:
+    
+    ```
+    ### Duplicate Approval Protection
+    
+    Approval events are deduplicated using the `approval_id` field.
+    
+    - **Detection:** Before processing, check if approval_id exists in 
+      processed_approvals table
+    - **Behavior:** If duplicate detected, return success without reprocessing
+    - **Window:** Approval IDs retained for [X days] before cleanup
+    - **Audit:** Duplicate attempts are logged for monitoring
+    ```
+
+  approval_timeout: |
+    ## Document: Approval Validity Window
+    
+    Add to ADD/FRD:
+    
+    ```
+    ### Approval Validity
+    
+    Approvals must be processed within their validity window.
+    
+    - **Window:** Approvals are valid for [X hours/days] from request creation
+    - **Validation:** Approval timestamp compared against request.created_at
+    - **Expired Handling:** Expired approvals are rejected with 
+      APPROVAL_EXPIRED error; user notified to re-request if needed
+    - **Grace Period:** [Optional: X minutes grace for clock skew]
+    ```
+
+  orphaned_workflow: |
+    ## Document: Orphaned Workflow Recovery
+    
+    Add to ADD/FRD:
+    
+    ```
+    ### Stuck Workflow Detection & Recovery
+    
+    Workflows pending approval are monitored for timeouts.
+    
+    - **Detection:** Cron job runs every [X hours] checking for workflows
+      in 'pending_approval' state longer than [Y hours]
+    - **Escalation:** After [Y hours], workflow is escalated to [backup approver/admin]
+    - **Cancellation:** After [Z hours], workflow is auto-cancelled with notification
+    - **Monitoring:** Alert triggered when pending workflows exceed [threshold]
+    - **DLQ:** Dead letter queue monitored; messages replayed or manually handled
+    ```
+
+  race_condition: |
+    ## Document: Concurrent Approval Handling
+    
+    Add to ADD/FRD:
+    
+    ```
+    ### Multi-Approver Concurrency
+    
+    When multiple approvers can act on the same request:
+    
+    - **Serialization:** Approvals processed with optimistic locking on 
+      workflow.version field
+    - **Conflict:** If version mismatch, approval is rejected with 
+      CONCURRENT_MODIFICATION; approver sees current state
+    - **Counting:** For N-of-M approval, count maintained via atomic 
+      increment with version check
+    - **Precedence:** First valid approval/rejection wins; subsequent 
+      conflicting actions rejected
+    ```
+
+  order_inversion: |
+    ## Document: Message Ordering
+    
+    Add to ADD:
+    
+    ```
+    ### Approval Message Ordering
+    
+    Approval events may arrive out of order.
+    
+    - **Ordering:** [FIFO queue per request_id / No ordering guarantee]
+    - **Version Check:** Each approval carries request.version; stale 
+      approvals (version < current) are discarded
+    - **Timestamp:** Approval.timestamp compared; older-than-current discarded
+    - **Compensation:** [If applicable: describe saga/compensation for 
+      out-of-order processing]
+    ```
+
+# -----------------------------------------------------------------------------
+# METADATA
+# -----------------------------------------------------------------------------
+metadata:
+  created: "2026-02"
+  last_updated: "2026-02"
+  author: "Multi-Expert Consensus (Claude, Gemini, ChatGPT)"
+  related_concerns:
+    - "idempotency-boundaries"  # Duplicate approval is a special case
+    - "durable-persistence"      # Orphaned workflow relates to state persistence
+  references:
+    - "Enterprise Integration Patterns: Idempotent Receiver"
+    - "Designing Distributed Systems: Workflow Orchestration"
+    - "Temporal.io: Workflow Timeouts and Retries"

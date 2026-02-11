@@ -1,0 +1,415 @@
+# =============================================================================
+# INTERACTION MATRIX: Retry Policy × Payments
+# =============================================================================
+# This interaction check identifies failure modes that emerge ONLY when
+# retry policies are applied to payment operations. These gaps are invisible
+# when reviewing retry and payment concerns separately.
+#
+# WHY THIS MATTERS:
+# Retry policies are essential for reliability. Payments require correctness.
+# When combined naively, retries create: partial completions (charged but not
+# fulfilled), inconsistent state (payment recorded, order not), refund ambiguity
+# (which attempt to refund?), and timeout confusion (did the charge go through?).
+#
+# NOTE: This interaction focuses BEYOND idempotency. The idempotency-boundaries
+# concern handles duplicate charge prevention. This matrix handles the second-
+# order effects: what happens to the surrounding system state when retries occur.
+#
+# TYPICAL MANIFESTATION:
+# - Payment succeeds but response times out → retry → second charge attempt
+# - First attempt partially completes (charge OK, inventory not reserved)
+# - Refund requested but unclear which payment attempt to refund
+# - Retry succeeds but original also succeeded → two valid payment records
+# =============================================================================
+
+interaction:
+  id: "retry-times-payment"
+  version: "1.0"
+  name: "Retry Policy × Payments"
+  category: "interaction"
+  severity: "error"
+
+  description: |
+    When retry policies are applied to payment operations, failure modes emerge
+    that don't exist when reviewing retry or payment logic separately. This
+    interaction matrix focuses on second-order effects beyond idempotency:
+    partial completion, state inconsistency, refund correlation, and timeout
+    ambiguity. Even with idempotency keys, these gaps can cause data
+    inconsistency and financial discrepancies.
+
+# -----------------------------------------------------------------------------
+# TRIGGERS: When to load this interaction check
+# -----------------------------------------------------------------------------
+triggers:
+  all_of:
+    - payments
+    - retry-policy
+
+  alternative_triggers:
+    - all_of: [payments, external-api]
+    - all_of: [payments, resilience-triad]
+
+# -----------------------------------------------------------------------------
+# FAILURE MODES: The specific risks this interaction creates
+# -----------------------------------------------------------------------------
+failure_modes:
+  - id: "partial-completion"
+    name: "Partial Completion on Retry"
+    severity: "error"
+
+    description: |
+      A payment operation involves multiple steps (charge, record, reserve
+      inventory, send confirmation). When the operation fails mid-way and is
+      retried, some steps may have completed while others haven't. Without
+      explicit handling:
+      - Customer charged but order not created
+      - Order created but inventory not reserved
+      - Payment recorded in payment service but not in order service
+      - Confirmation sent for a failed payment
+
+    question: |
+      Is there documentation of how partial completion is handled during
+      payment retries? Specifically:
+      1. What steps compose a payment operation?
+      2. Which steps are atomic vs. non-atomic?
+      3. If the operation fails mid-way, which steps are rolled back?
+      4. Is there a saga/compensation pattern for partial completions?
+
+    evidence_required:
+      - field: "payment_steps"
+        type: "array"
+        description: "Ordered list of steps in the payment operation"
+      - field: "atomicity_boundary"
+        type: "string | null"
+        description: "Which steps are within a transaction boundary?"
+      - field: "compensation_mechanism"
+        type: "string | null"
+        description: "How are partially-completed steps reversed?"
+      - field: "partial_state_handling"
+        type: "string | null"
+        description: "What state is the system left in after partial failure?"
+      - field: "source_location"
+        type: "string | null"
+
+    failure_examples:
+      - "Payment charged via Stripe. Response timeout. Retry sends second charge.
+         Meanwhile, first charge succeeded. Order service only records second
+         payment. Customer charged twice, one charge is orphaned."
+      - "Payment charged successfully. Inventory reservation fails (out of stock).
+         Retry attempts full operation including re-charge. Idempotency key
+         prevents double charge but inventory still unavailable. System stuck:
+         charged but cannot fulfill."
+
+  - id: "inconsistent-state"
+    name: "Cross-Service State Inconsistency"
+    severity: "error"
+
+    description: |
+      Payment operations often span multiple services (payment service, order
+      service, inventory service). Retries may succeed in some services but
+      fail in others, creating inconsistent state across the system. Without
+      explicit reconciliation:
+      - Payment service says "paid", order service says "pending"
+      - Inventory reserved but payment not recorded
+      - Multiple services have different views of the same transaction
+
+    question: |
+      Is there documentation of how cross-service state consistency is
+      maintained during payment retries? Specifically:
+      1. Which services are involved in a payment transaction?
+      2. How is consistency ensured across these services?
+      3. Is there a reconciliation mechanism for detecting inconsistencies?
+      4. How often does reconciliation run?
+
+    evidence_required:
+      - field: "involved_services"
+        type: "array"
+        description: "Services that participate in the payment operation"
+      - field: "consistency_mechanism"
+        type: "string | null"
+        description: "How is cross-service consistency ensured? (saga, 2PC, eventual)"
+      - field: "reconciliation_process"
+        type: "string | null"
+        description: "How are inconsistencies detected and resolved?"
+      - field: "reconciliation_frequency"
+        type: "string | null"
+        description: "How often does reconciliation run? (real-time, hourly, daily)"
+      - field: "source_location"
+        type: "string | null"
+
+    failure_examples:
+      - "Payment service successfully charges customer. Network timeout before
+         order service records payment. Order service retries and creates
+         duplicate order. Payment service has one charge, order service has
+         two order records."
+      - "Retry succeeds in payment service (idempotent - returns cached result).
+         But order service processes it as a new request. Payment shows one
+         charge, order service shows two fulfillment requests."
+
+  - id: "refund-ambiguity"
+    name: "Refund Correlation Ambiguity"
+    severity: "error"
+
+    description: |
+      When retries create multiple payment attempts (even if only one succeeds
+      via idempotency), refund processing becomes ambiguous:
+      - Which payment attempt should be refunded?
+      - If idempotency prevented duplicate charges, is there a charge to refund?
+      - If timeout caused retry but original succeeded, which reference to use?
+      - Are partial refunds possible if only some items were fulfilled?
+
+    question: |
+      Is there documentation of how refunds are correlated with payment
+      attempts when retries are involved? Specifically:
+      1. How is the "canonical" payment reference determined after retries?
+      2. How does the refund system identify which charge to reverse?
+      3. What happens if a refund is requested during an in-flight retry?
+      4. Are partial refunds documented for partial fulfillment scenarios?
+
+    evidence_required:
+      - field: "canonical_payment_reference"
+        type: "string | null"
+        description: "How is the authoritative payment ID determined after retries?"
+      - field: "refund_correlation"
+        type: "string | null"
+        description: "How does refund system map to the correct charge?"
+      - field: "in_flight_refund_handling"
+        type: "string | null"
+        description: "What happens if refund requested during retry?"
+      - field: "partial_refund_support"
+        type: "string | null"
+        description: "Can partial amounts be refunded?"
+      - field: "source_location"
+        type: "string | null"
+
+    failure_examples:
+      - "Customer requests refund. System has two payment records (original +
+         retry, both with same idempotency key). Refund system doesn't know
+         which charge_id to use for the Stripe refund API call."
+      - "Refund requested while retry is in-flight. Refund processes against
+         original charge. Retry then succeeds (new charge, idempotency key
+         expired). Customer now has an un-refunded charge."
+
+  - id: "timeout-ambiguity"
+    name: "Payment Timeout Ambiguity"
+    severity: "error"
+
+    description: |
+      Payment API calls can timeout without indicating success or failure.
+      The payment may have succeeded at the gateway but the response was lost.
+      Retry behavior in this scenario is critical:
+      - Does the system retry (risking double charge)?
+      - Does it fail (leaving customer charged but order not processed)?
+      - Does it check payment status before retrying?
+      - What is the user experience during this uncertainty?
+
+    question: |
+      Is there documentation of how payment timeouts are handled?
+      Specifically:
+      1. What happens when a payment API call times out?
+      2. Does the system check payment status before retrying?
+      3. How long does the system wait before declaring timeout?
+      4. What does the user see during payment uncertainty?
+
+    evidence_required:
+      - field: "timeout_behavior"
+        type: "string | null"
+        description: "What happens when payment call times out?"
+      - field: "status_check_before_retry"
+        type: "boolean | null"
+        description: "Does system verify payment status before retrying?"
+      - field: "timeout_duration"
+        type: "string | null"
+        description: "How long before a payment call is considered timed out?"
+      - field: "user_experience"
+        type: "string | null"
+        description: "What does the user see during payment uncertainty?"
+      - field: "source_location"
+        type: "string | null"
+
+    failure_examples:
+      - "Payment call to Stripe times out after 30s. System retries immediately
+         without checking charge status. First call actually succeeded (Stripe
+         processed in 31s). Second call has different idempotency key (generated
+         per attempt). Customer charged twice."
+      - "Payment times out. System shows user 'Payment failed, please retry.'
+         User clicks retry (new idempotency key). Meanwhile, original payment
+         succeeded. User now has two charges for the same order."
+
+# -----------------------------------------------------------------------------
+# EVALUATION: Combined assessment
+# -----------------------------------------------------------------------------
+evaluation:
+  preamble: |
+    This interaction check examines documentation for payment operations that
+    use retry policies. You must evaluate whether EACH failure mode below is
+    explicitly addressed in the documentation.
+
+    IMPORTANT: This check goes BEYOND idempotency. Even with perfect
+    idempotency keys, the following failure modes can still occur because
+    they involve cross-service state, temporal ambiguity, and user experience.
+
+  combined_question: |
+    Given the documented system uses both retry policies and payment processing,
+    evaluate whether the following failure modes are addressed:
+
+    1. PARTIAL COMPLETION: If a payment operation fails mid-way, what happens
+       to the steps that already completed?
+
+    2. INCONSISTENT STATE: When retries cause different services to have
+       different views of a transaction, how is this detected and resolved?
+
+    3. REFUND AMBIGUITY: After retries, how does the system determine which
+       payment to refund?
+
+    4. TIMEOUT AMBIGUITY: When a payment call times out, how does the system
+       determine if the charge actually went through?
+
+    For each failure mode:
+    - State whether it is ADDRESSED, PARTIALLY ADDRESSED, or NOT ADDRESSED
+    - Cite the specific documentation location
+    - If not addressed, explain the risk
+
+  output_format: |
+    {
+      "interaction_id": "retry-times-payment",
+      "interaction_version": "1.0",
+      "overall_assessment": "pass | partial | fail",
+      "failure_modes": [
+        {
+          "id": "partial-completion",
+          "status": "addressed | partial | not-addressed",
+          "evidence": { ... fields from evidence_required ... },
+          "risk_if_unaddressed": "string describing potential impact"
+        }
+      ],
+      "gaps": [
+        {
+          "failure_mode": "string",
+          "description": "what's missing",
+          "severity": "error | warn",
+          "recommendation": "what to document"
+        }
+      ],
+      "cross_references": [
+        {
+          "from": "document:section",
+          "to": "document:section",
+          "relationship": "string describing how they relate"
+        }
+      ]
+    }
+
+  failure_condition: |
+    Report as ERROR when:
+    - "partial-completion" is not-addressed (HIGH RISK: charged but not fulfilled)
+    - "inconsistent-state" is not-addressed (HIGH RISK: financial discrepancy)
+    - "refund-ambiguity" is not-addressed AND refunds are supported
+    - "timeout-ambiguity" is not-addressed (HIGH RISK: silent double charges)
+
+    Report as WARNING when:
+    - Any failure mode is "partial" (documented but incomplete)
+    - Failure mode is addressed but mechanism details are vague
+    - Idempotency is documented but second-order effects are not considered
+    - Reconciliation exists but frequency is not specified
+
+# -----------------------------------------------------------------------------
+# RECOMMENDATIONS: Templates for fixing gaps
+# -----------------------------------------------------------------------------
+recommendations:
+  partial_completion: |
+    ## Document: Partial Completion Handling for Payments
+
+    Add to ADD/FRD:
+
+    ```
+    ### Payment Operation Atomicity
+
+    The payment flow consists of: [list steps].
+
+    Atomic boundary: [which steps are in a single transaction]
+    Non-atomic steps: [which steps can fail independently]
+
+    Compensation on partial failure:
+    - If charge succeeds but order creation fails: [reverse charge / queue order retry]
+    - If charge succeeds but inventory fails: [hold charge / release after timeout]
+    - Saga pattern: [describe compensation steps]
+    ```
+
+  inconsistent_state: |
+    ## Document: Cross-Service Payment Reconciliation
+
+    Add to ADD:
+
+    ```
+    ### Payment State Reconciliation
+
+    Services involved: [list services and their payment-related state]
+
+    Consistency model: [saga / eventual consistency / 2PC]
+
+    Reconciliation:
+    - Frequency: [real-time / every N minutes / daily]
+    - Mechanism: [compare payment service records with order service records]
+    - Discrepancy handling: [alert / auto-correct / manual review queue]
+    - SLA: Inconsistencies resolved within [N hours]
+    ```
+
+  refund_ambiguity: |
+    ## Document: Refund-to-Payment Correlation
+
+    Add to ADD/FRD:
+
+    ```
+    ### Refund Processing After Retries
+
+    Canonical payment reference: [how the authoritative charge ID is determined]
+    - After successful retry: use [original charge_id / last successful charge_id]
+    - Idempotent scenario: [gateway returns same charge_id for all attempts]
+
+    Refund mapping:
+    - Refund API uses charge_id from [payment_records.canonical_charge_id]
+    - In-flight retry handling: [block refund until retry resolves / refund original]
+    - Partial refund: [supported / not supported] based on [fulfillment status]
+    ```
+
+  timeout_ambiguity: |
+    ## Document: Payment Timeout Handling
+
+    Add to ADD:
+
+    ```
+    ### Payment Timeout Strategy
+
+    Timeout: [N seconds] for payment gateway calls.
+
+    On timeout:
+    1. Do NOT immediately retry
+    2. Query payment gateway for charge status (GET /charges?idempotency_key=X)
+    3. If charge found: proceed as successful (no retry needed)
+    4. If charge not found: safe to retry with same idempotency key
+    5. If status check also times out: [queue for manual review / retry after delay]
+
+    User experience during uncertainty:
+    - Show: "Processing your payment..." (not "Payment failed")
+    - Auto-refresh status every [N seconds]
+    - If unresolved after [N minutes]: show "We're verifying your payment"
+    ```
+
+# -----------------------------------------------------------------------------
+# METADATA
+# -----------------------------------------------------------------------------
+metadata:
+  created: "2026-02"
+  last_updated: "2026-02"
+  author: "Multi-Expert Consensus (Claude, Gemini, ChatGPT)"
+  related_concerns:
+    - "idempotency-boundaries"     # prerequisite: idempotency keys prevent duplicate charges
+    - "resilience-triad"           # retry policy configuration
+    - "state-ownership-clarity"    # who owns the payment state?
+    - "durable-persistence"        # payment workflow resume points
+  references:
+    - "Stripe API: Idempotent Requests and Timeout Handling"
+    - "Designing Data-Intensive Applications, Ch. 12 - Transactions (Kleppmann)"
+    - "Saga Pattern: Application Transactions Using Microservices"
+    - "Pat Helland: Life Beyond Distributed Transactions"

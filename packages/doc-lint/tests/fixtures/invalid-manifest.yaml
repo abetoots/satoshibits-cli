@@ -1,0 +1,10 @@
+version: "1.0"
+
+project:
+  name: "Bad Project"
+
+documents:
+  required: []
+
+signals:
+  declared: []

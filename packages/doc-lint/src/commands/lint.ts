@@ -1,0 +1,72 @@
+import * as path from "node:path";
+
+import { assemble, lint } from "../core/evaluator.js";
+import { formatAssembleHuman, formatLintHuman } from "../formatters/human.js";
+import { formatAssembleJson, formatLintJson } from "../formatters/json.js";
+import { SdkEngine } from "../core/engine/sdk-engine.js";
+
+import type { LintOptions } from "../types/index.js";
+
+export async function lintCommand(
+  projectPath: string | undefined,
+  options: LintOptions,
+): Promise<number> {
+  const resolved = path.resolve(projectPath ?? ".");
+
+  const filterConcernIds = options.concerns
+    ? options.concerns.split(",").map((s) => s.trim())
+    : undefined;
+
+  // dry-run mode: show matched concerns without evaluating
+  if (options.dryRun) {
+    const result = assemble({
+      projectPath: resolved,
+      configPath: options.config,
+      contradiction: options.contradiction,
+      filterConcernIds,
+    });
+
+    const dryRunFormat = options.format ?? "human";
+    if (dryRunFormat === "json") {
+      console.log(formatAssembleJson(result));
+    } else {
+      console.log(await formatAssembleHuman(result));
+    }
+    return 0;
+  }
+
+  // validate and create evaluation engine
+  const engineName = options.engine ?? "sdk";
+  if (engineName !== "sdk") {
+    console.error(`Unknown engine: "${String(engineName)}". Supported engines: sdk`);
+    return 2;
+  }
+  const engine = new SdkEngine();
+
+  const onProgress = options.verbose
+    ? (message: string) => {
+        console.error(message);
+      }
+    : undefined;
+
+  const result = await lint({
+    projectPath: resolved,
+    configPath: options.config,
+    contradiction: options.contradiction,
+    filterConcernIds,
+    engine,
+    verbose: options.verbose,
+    onProgress,
+  });
+
+  const format = options.format ?? "human";
+
+  if (format === "json") {
+    console.log(formatLintJson(result));
+  } else {
+    console.log(await formatLintHuman(result));
+  }
+
+  // exit code: 1 if errors found, 0 otherwise
+  return result.summary.errors > 0 ? 1 : 0;
+}

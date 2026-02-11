@@ -1,0 +1,59 @@
+#!/usr/bin/env node
+import { program } from "commander";
+import { readFile } from "fs/promises";
+import { join } from "path";
+
+import { getPackageRoot } from "../core/paths.js";
+
+import type { AssembleOptions, LintOptions } from "../types/index.js";
+
+const packageJsonContent = await readFile(
+  join(getPackageRoot(), "package.json"),
+  "utf8",
+);
+const packageJson = JSON.parse(packageJsonContent) as { version: string };
+
+program
+  .name("doc-lint")
+  .description("Documentation linter - assembles evaluation prompts from concern schemas")
+  .version(packageJson.version);
+
+program
+  .command("assemble [path]")
+  .description("Assemble evaluation prompts (no LLM call)")
+  .option("-c, --config <file>", "Path to doc-lint.yaml")
+  .option("-f, --format <format>", "Output format (human|json)", "json")
+  .option("--no-contradiction", "Skip contradiction scanner")
+  .option("--concerns <ids>", "Only specific concerns (comma-separated)")
+  .action(async (projectPath: string | undefined, options: AssembleOptions) => {
+    const { assembleCommand } = await import("../commands/assemble.js");
+    const exitCode = await assembleCommand(projectPath, options);
+    process.exit(exitCode);
+  });
+
+program
+  .command("lint [path]")
+  .description("Assemble + evaluate (requires engine)")
+  .option("--engine <engine>", "Evaluation engine (default: sdk)", "sdk")
+  .option("-c, --config <file>", "Path to doc-lint.yaml")
+  .option("-f, --format <format>", "Output format (human|json)", "human")
+  .option("--no-contradiction", "Skip contradiction scanner")
+  .option("--concerns <ids>", "Only specific concerns (comma-separated)")
+  .option("--dry-run", "Show matched concerns, don't evaluate")
+  .option("--verbose", "Detailed progress")
+  .action(async (projectPath: string | undefined, options: LintOptions) => {
+    const { lintCommand } = await import("../commands/lint.js");
+    const exitCode = await lintCommand(projectPath, options);
+    process.exit(exitCode);
+  });
+
+program
+  .command("list")
+  .description("List all bundled concerns with trigger signals")
+  .action(async () => {
+    const { listCommand } = await import("../commands/list.js");
+    await listCommand();
+    process.exit(0);
+  });
+
+program.parse();

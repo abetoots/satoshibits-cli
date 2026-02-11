@@ -1,0 +1,350 @@
+# =============================================================================
+# CONCERN: Resilience Triad (Timeout / Retry / Circuit Breaker)
+# =============================================================================
+# This concern validates that every external dependency has explicitly
+# documented timeout, retry, and circuit breaker policies. These three
+# mechanisms form a "triad" - without all three, the system is vulnerable
+# to cascading failures, resource exhaustion, or silent degradation.
+#
+# WHY THIS MATTERS:
+# A missing timeout means indefinite hangs. A missing retry policy means
+# transient failures become permanent. A missing circuit breaker means a
+# failing dependency can take down the entire system through resource
+# exhaustion. These are the top 3 causes of cascading outages.
+#
+# TYPICAL MANIFESTATION:
+# - ADD says "calls Payment Gateway" but no timeout specified
+# - Retry count documented but no backoff strategy or circuit breaker
+# - Timeout documented but retry budget exceeds total timeout
+# =============================================================================
+
+concern:
+  id: "resilience-triad"
+  version: "1.0"
+  name: "Resilience Triad: Timeout / Retry / Circuit Breaker"
+  category: "core"
+  severity: "error"
+
+  description: |
+    Every external dependency must document all three legs of the resilience triad:
+    1. Timeout: Maximum wait time before abandoning a call
+    2. Retry: Policy for re-attempting failed calls (count, backoff, conditions)
+    3. Circuit Breaker: Threshold for stopping calls to a failing dependency
+
+    These three mechanisms must be coherent: the total timeout must accommodate
+    the retry budget (retry_count * per_attempt_timeout + backoff delays).
+    Without all three, the system is vulnerable to cascading failures.
+
+# -----------------------------------------------------------------------------
+# TRIGGERS: When to load this concern
+# -----------------------------------------------------------------------------
+triggers:
+  any_of:
+    - external-api
+    - external-dependency
+    - microservices
+    - distributed
+
+  escalate_if:
+    - payments        # financial impact if dependency hangs
+    - approval-gates  # business process blocked if dependency unavailable
+
+# -----------------------------------------------------------------------------
+# EVALUATION: The reasoning task
+# -----------------------------------------------------------------------------
+evaluation:
+  question: |
+    Systematically identify every external dependency in the documented system,
+    then evaluate whether all three resilience mechanisms are documented.
+
+    STEP 1: IDENTIFY EXTERNAL DEPENDENCIES
+    Scan all documents for components that depend on external systems:
+    - Third-party APIs (payment gateways, identity providers, notification services)
+    - Internal microservices called over the network
+    - Databases and data stores (especially remote/managed)
+    - Message brokers and event streams
+    - External file storage (S3, blob storage)
+    - DNS, certificate authorities, secret managers
+    - Any service where network latency or failure is possible
+
+    STEP 2: FOR EACH DEPENDENCY, EVALUATE THE TRIAD
+
+    a) TIMEOUT
+       - Is a timeout explicitly documented?
+       - What is the timeout value? (connection timeout, read timeout, total timeout)
+       - Is there a per-attempt timeout vs. total operation timeout?
+       - Look for: timeout, deadline, max-wait, TTL
+
+    b) RETRY
+       - Is a retry policy explicitly documented?
+       - What triggers a retry? (which error codes, timeout, network error)
+       - How many retries? What backoff strategy? (fixed, exponential, jitter)
+       - Are retries idempotent-safe? (link to idempotency-boundaries concern)
+       - Look for: retry, backoff, exponential, jitter, max-attempts
+
+    c) CIRCUIT BREAKER
+       - Is a circuit breaker pattern documented?
+       - What is the failure threshold? (e.g., 5 failures in 60 seconds)
+       - What happens when the circuit opens? (fail-fast, return default, degrade)
+       - How does the circuit recover? (half-open state, probe interval)
+       - Look for: circuit breaker, bulkhead, fail-fast, half-open, fallback
+
+    STEP 3: VALIDATE TRIAD COHERENCE
+    For each dependency where all three are documented, verify they are coherent:
+    - total_timeout >= retry_count * per_attempt_timeout + total_backoff_delay
+    - If total_timeout < retry budget, retries will be cut short by timeout
+    - Circuit breaker threshold should account for retry multiplication
+
+    Example incoherence:
+    - Timeout: 5 seconds
+    - Retry: 3 attempts with 2s backoff
+    - Required minimum: 3 * 5s + 2 * 2s = 19s total, but timeout is only 5s
+
+    STEP 4: EVALUATE FALLBACK BEHAVIOR
+    When the circuit opens or all retries are exhausted:
+    - What does the caller experience?
+    - Is degraded behavior documented?
+    - Are there explicit fallback strategies?
+
+    STEP 5: FLAG GAPS
+    Any dependency missing one or more legs of the triad is a gap.
+    Pay special attention to dependencies where:
+    - Only timeouts are documented (no retry/CB)
+    - Retry is documented without idempotency consideration
+    - No fallback behavior is specified for when the dependency is unavailable
+
+  checklist:
+    - id: "timeout-coverage"
+      question: "Does every external dependency have an explicit timeout documented?"
+    - id: "retry-coverage"
+      question: "Does every external dependency have a retry policy with count, backoff, and trigger conditions?"
+    - id: "circuit-breaker-coverage"
+      question: "Does every external dependency have a circuit breaker with threshold, open behavior, and recovery?"
+    - id: "triad-coherence"
+      question: "Are timeout, retry, and circuit breaker values coherent with each other?"
+    - id: "fallback-behavior"
+      question: "Is fallback behavior documented for when a dependency is unavailable?"
+
+  evidence_required:
+    - field: "dependency_name"
+      type: "string"
+      description: "Name of the external dependency (e.g., 'Stripe Payment API', 'UserService')"
+      required: true
+
+    - field: "dependency_type"
+      type: "enum"
+      values:
+        - "third-party-api"
+        - "internal-service"
+        - "database"
+        - "message-broker"
+        - "file-storage"
+        - "infrastructure"
+        - "other"
+      description: "Category of the external dependency"
+      required: true
+
+    - field: "timeout_documented"
+      type: "boolean"
+      description: "Is a timeout explicitly documented for this dependency?"
+      required: true
+
+    - field: "timeout_values"
+      type: "string | null"
+      description: "Documented timeout values (e.g., 'connection: 3s, read: 10s, total: 30s')"
+      required: true
+
+    - field: "retry_documented"
+      type: "boolean"
+      description: "Is a retry policy explicitly documented?"
+      required: true
+
+    - field: "retry_policy"
+      type: "string | null"
+      description: "Documented retry policy (e.g., '3 attempts, exponential backoff 1s/2s/4s, on 5xx and timeout')"
+      required: true
+
+    - field: "circuit_breaker_documented"
+      type: "boolean"
+      description: "Is a circuit breaker pattern documented?"
+      required: true
+
+    - field: "circuit_breaker_policy"
+      type: "string | null"
+      description: "Documented circuit breaker policy (e.g., 'open after 5 failures in 60s, half-open probe every 30s')"
+      required: true
+
+    - field: "fallback_behavior"
+      type: "enum"
+      values:
+        - "fail-fast"
+        - "return-default"
+        - "return-cache"
+        - "degrade-gracefully"
+        - "queue-for-later"
+        - "undefined"
+      description: "What happens when the dependency is unavailable and all retries/CB are exhausted"
+      required: true
+
+    - field: "triad_gap"
+      type: "string | null"
+      description: "Which legs of the triad are missing or incoherent (e.g., 'missing circuit breaker', 'timeout < retry budget')"
+      required: true
+
+    - field: "source_location"
+      type: "string"
+      description: "Exact location where this is documented (e.g., 'ADD Section 6.1, paragraph 2')"
+      required: true
+
+    - field: "confidence"
+      type: "enum"
+      values: ["high", "medium", "low"]
+      description: "Your confidence that this assessment is accurate"
+      required: true
+
+  failure_condition: |
+    Report as ERROR when ANY of the following are true:
+
+    1. Any leg of the triad is undocumented for an external dependency:
+       - timeout_documented is FALSE
+       - retry_documented is FALSE
+       - circuit_breaker_documented is FALSE
+
+    2. Timeout is documented but has no specific value (vague language like
+       "appropriate timeout" or "will time out eventually")
+
+    3. Retry is documented without specifying:
+       - Maximum retry count
+       - Backoff strategy
+       - Which failures trigger retries
+
+    4. Circuit breaker is documented but missing:
+       - Failure threshold (count and window)
+       - Open-circuit behavior
+       - Recovery mechanism (half-open)
+
+    5. Triad incoherence: total_timeout < retry_count * per_attempt_timeout + backoff
+       (retries will be silently cut short by timeout)
+
+    6. A payment or approval-gate dependency has ANY missing triad leg
+
+    Report as WARNING when:
+
+    1. fallback_behavior is "undefined" for any dependency
+
+    2. Circuit breaker threshold is documented but seems too high
+       (e.g., 100 failures before opening - likely too permissive)
+
+    3. Retry policy exists but no mention of idempotency consideration
+       (retries without idempotency may cause duplicate side effects)
+
+    4. Only two of three triad legs are documented (partial coverage)
+
+    5. Triad values are documented but coherence is not explicitly stated
+       (team may not have verified the math)
+
+  recommendation_template: |
+    ## Gap: {dependency_name} - Incomplete Resilience Triad
+
+    **Location:** {source_location}
+    **Dependency Type:** {dependency_type}
+    **Missing:** {triad_gap}
+
+    ### Required Documentation
+
+    Add explicit documentation covering all three legs:
+
+    1. **Timeout**
+       - Connection timeout: [value]
+       - Read/response timeout: [value]
+       - Total operation timeout: [value]
+       - Example: "Connection timeout: 3s, read timeout: 10s, total: 30s"
+
+    2. **Retry Policy**
+       - Max attempts: [count]
+       - Backoff: [fixed/exponential/exponential+jitter]
+       - Retry conditions: [which errors trigger retry]
+       - Idempotency: [link to idempotency strategy]
+       - Example: "3 attempts, exponential backoff (1s, 2s, 4s) with jitter,
+         retry on 5xx and timeout, idempotent via X-Idempotency-Key"
+
+    3. **Circuit Breaker**
+       - Failure threshold: [count in window]
+       - Open behavior: [fail-fast/return-default/degrade]
+       - Recovery: [half-open probe interval]
+       - Example: "Open after 5 failures in 60s, fail-fast with cached response,
+         probe every 30s to detect recovery"
+
+    4. **Coherence Check**
+       - Verify: total_timeout >= retry_count * per_attempt_timeout + backoff
+       - Document the calculation explicitly
+
+# -----------------------------------------------------------------------------
+# EXAMPLES: Help the LLM understand what to look for
+# -----------------------------------------------------------------------------
+examples:
+  well_documented:
+    - source: "ADD Section 6.1"
+      text: |
+        "The PaymentService calls Stripe API with: connection timeout 3s,
+        read timeout 10s. On 5xx or timeout, retry up to 3 times with
+        exponential backoff (1s, 2s, 4s) plus jitter. Circuit breaker opens
+        after 5 failures in 60s; when open, return cached exchange rates and
+        queue payment for later. Half-open probe every 30s.
+        Total budget: 3 * 10s + 1s + 2s + 4s = 37s < 45s total timeout."
+      assessment: |
+        timeout_documented: true
+        timeout_values: "connection: 3s, read: 10s, total: 45s"
+        retry_documented: true
+        retry_policy: "3 attempts, exponential backoff 1s/2s/4s + jitter, on 5xx and timeout"
+        circuit_breaker_documented: true
+        circuit_breaker_policy: "open after 5 failures in 60s, half-open probe every 30s"
+        fallback_behavior: "queue-for-later"
+        triad_gap: null
+
+  poorly_documented:
+    - source: "ADD Section 4.3"
+      text: |
+        "The notification service calls the email provider. Retries are
+        attempted on failure."
+      assessment: |
+        timeout_documented: false
+        timeout_values: null
+        retry_documented: false (vague - no count, backoff, or trigger conditions)
+        retry_policy: null
+        circuit_breaker_documented: false
+        circuit_breaker_policy: null
+        fallback_behavior: "undefined"
+        triad_gap: "All three legs missing or vague. No timeout, no retry details, no circuit breaker."
+
+  incoherent_triad:
+    - source: "ADD Section 5.2"
+      text: |
+        "Calls UserService with 5s timeout. Retry 3 times with 2s fixed delay.
+        Circuit breaker opens after 10 failures in 30s."
+      assessment: |
+        timeout_documented: true
+        timeout_values: "5s total"
+        retry_documented: true
+        retry_policy: "3 attempts, 2s fixed delay"
+        circuit_breaker_documented: true
+        circuit_breaker_policy: "open after 10 failures in 30s"
+        fallback_behavior: "undefined"
+        triad_gap: "Incoherent: retry budget = 3 * 5s + 2 * 2s = 19s but timeout is 5s. Retries 2 and 3 will always be cut short."
+
+# -----------------------------------------------------------------------------
+# METADATA
+# -----------------------------------------------------------------------------
+metadata:
+  created: "2026-02"
+  last_updated: "2026-02"
+  author: "Multi-Expert Consensus (Claude, Gemini, ChatGPT)"
+  related_concerns:
+    - "idempotency-boundaries"    # retries must be idempotent-safe
+    - "failure-domain-isolation"   # circuit breaker prevents cascade across domains
+    - "api-contract-consistency"   # timeout/retry claims should match API spec
+  references:
+    - "Release It! 2nd Edition (Nygard) - Stability Patterns"
+    - "Microsoft Azure Architecture: Circuit Breaker Pattern"
+    - "AWS Well-Architected: Reliability Pillar - Retry with Backoff"
+    - "Polly (.NET) / Resilience4j (Java) - Resilience Libraries"

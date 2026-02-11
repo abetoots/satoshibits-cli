@@ -1,0 +1,402 @@
+# =============================================================================
+# INTERACTION MATRIX: Webhooks × Security
+# =============================================================================
+# This interaction check identifies security failure modes that emerge when
+# webhook endpoints are exposed to external systems. These gaps are invisible
+# when reviewing webhook handling and security concerns separately.
+#
+# WHY THIS MATTERS:
+# Webhooks are inbound API calls from external systems (payment providers,
+# CI/CD, SaaS platforms). Unlike outbound calls where you control the client,
+# webhook endpoints must defend against malicious actors who can:
+# - Forge webhook events (event spoofing)
+# - Replay previously valid events (replay attacks)
+# - Modify event payloads in transit (payload tampering)
+# - Exploit timing windows in signature verification (timing attacks)
+#
+# TYPICAL MANIFESTATION:
+# - ADD describes webhook handler but no signature verification
+# - FRD mentions "webhook integration" but security model undocumented
+# - Signature verification exists but no replay protection (replayable)
+# - HMAC comparison vulnerable to timing side-channel
+# =============================================================================
+
+interaction:
+  id: "webhook-times-security"
+  version: "1.0"
+  name: "Webhooks × Security"
+  category: "interaction"
+  severity: "error"
+
+  description: |
+    When systems receive webhook events from external providers, security
+    failure modes emerge that don't exist for internal event processing.
+    Webhook endpoints are publicly accessible attack surfaces that must
+    defend against spoofing, replay, tampering, and timing attacks.
+    This interaction matrix forces explicit reasoning about each attack vector.
+
+# -----------------------------------------------------------------------------
+# TRIGGERS: When to load this interaction check
+# -----------------------------------------------------------------------------
+triggers:
+  all_of:
+    - webhooks
+    - external-api
+
+  alternative_triggers:
+    - all_of: [webhooks, payments]
+    - all_of: [webhooks, security]
+    - all_of: [inbound-events, external-api]
+
+# -----------------------------------------------------------------------------
+# FAILURE MODES: The specific risks this interaction creates
+# -----------------------------------------------------------------------------
+failure_modes:
+  - id: "event-spoofing"
+    name: "Event Spoofing"
+    severity: "error"
+
+    description: |
+      An attacker sends forged webhook events to the endpoint, impersonating
+      the legitimate provider. Without signature verification, the system
+      will process these events as authentic, potentially:
+      - Creating fake payment confirmations
+      - Triggering unauthorized state transitions
+      - Injecting malicious data into the system
+      - Bypassing business logic that depends on external events
+
+    question: |
+      Is there documentation of how webhook events are authenticated?
+      Specifically:
+      1. How does the system verify that an event came from the legitimate provider?
+      2. What authentication mechanism is used? (HMAC, asymmetric signature, mTLS, API key)
+      3. What happens when verification fails?
+      4. Is the webhook secret management documented? (rotation, storage)
+
+    evidence_required:
+      - field: "auth_mechanism"
+        type: "enum | null"
+        values:
+          - "hmac-sha256"
+          - "hmac-sha512"
+          - "asymmetric-signature"
+          - "mtls"
+          - "api-key"
+          - "ip-allowlist"
+          - "bearer-token"
+          - "none"
+          - null
+        description: "How is the webhook sender authenticated?"
+      - field: "verification_process"
+        type: "string | null"
+        description: "How is the signature/auth verified? (e.g., 'HMAC-SHA256 of raw body with webhook secret')"
+      - field: "failure_behavior"
+        type: "string | null"
+        description: "What happens when verification fails? (reject with 401, log, alert)"
+      - field: "secret_management"
+        type: "string | null"
+        description: "How are webhook secrets stored and rotated?"
+      - field: "source_location"
+        type: "string | null"
+
+    failure_examples:
+      - "Webhook endpoint accepts any POST request without verifying the
+         Stripe-Signature header. Attacker sends forged 'payment_intent.succeeded'
+         event. System marks order as paid without actual payment."
+      - "Webhook secret hardcoded in source code. Secret leaked via GitHub
+         commit. Attacker forges valid signatures for arbitrary events."
+
+  - id: "replay-attack"
+    name: "Replay Attack"
+    severity: "error"
+
+    description: |
+      An attacker captures a legitimate webhook event (via network sniffing,
+      log access, or man-in-the-middle) and re-sends it later. Even with
+      valid signatures, the event should not be processed again if:
+      - It was already processed (idempotency)
+      - It is too old (timestamp validation)
+      - It has been revoked or superseded
+
+    question: |
+      Is there documentation of replay attack prevention for webhooks?
+      Specifically:
+      1. Is there timestamp validation on incoming events?
+      2. What is the acceptable time window for events?
+      3. Is there event ID tracking to detect replays?
+      4. How is the deduplication store maintained?
+
+    evidence_required:
+      - field: "timestamp_validation"
+        type: "boolean | null"
+        description: "Are incoming event timestamps validated against a tolerance window?"
+      - field: "tolerance_window"
+        type: "string | null"
+        description: "How old can an event be and still be accepted? (e.g., '5 minutes')"
+      - field: "event_id_tracking"
+        type: "boolean | null"
+        description: "Are event IDs stored to detect replays?"
+      - field: "dedup_store"
+        type: "string | null"
+        description: "Where are processed event IDs stored? (e.g., 'Redis set with 24h TTL')"
+      - field: "source_location"
+        type: "string | null"
+
+    failure_examples:
+      - "Attacker captures a valid 'payment.succeeded' webhook from network
+         logs. Event has valid HMAC signature. Replays it 3 days later.
+         No timestamp check or event ID tracking. System processes it again,
+         creating a duplicate payment record."
+      - "Event ID tracking exists in Redis but TTL is only 1 hour. Attacker
+         replays a 2-hour-old event that is no longer in the dedup store.
+         Event is processed as new."
+
+  - id: "payload-tampering"
+    name: "Payload Tampering"
+    severity: "error"
+
+    description: |
+      The webhook payload is modified between the provider and the receiver.
+      This can occur via man-in-the-middle attacks or if the signature
+      verification doesn't cover the full payload. Risks include:
+      - Modified amounts in payment events
+      - Changed user IDs in authorization events
+      - Altered status fields to force state transitions
+
+    question: |
+      Is there documentation of payload integrity verification?
+      Specifically:
+      1. Does the signature cover the entire raw request body?
+      2. Is the raw body used for verification (not a parsed/reconstructed version)?
+      3. Is the connection required to use HTTPS/TLS?
+      4. Are payload fields validated against expected types and ranges?
+
+    evidence_required:
+      - field: "signature_coverage"
+        type: "string | null"
+        description: "What does the signature cover? (full raw body, specific fields, headers)"
+      - field: "raw_body_verification"
+        type: "boolean | null"
+        description: "Is the raw request body used for HMAC computation (not parsed JSON)?"
+      - field: "tls_required"
+        type: "boolean | null"
+        description: "Is HTTPS/TLS required for the webhook endpoint?"
+      - field: "payload_validation"
+        type: "string | null"
+        description: "Are payload fields validated against expected schemas/ranges?"
+      - field: "source_location"
+        type: "string | null"
+
+    failure_examples:
+      - "System parses JSON body, then reconstructs it for HMAC verification.
+         JSON parsing normalizes whitespace, changing the HMAC input. Signature
+         check passes for modified payloads because verification uses
+         reconstructed body, not original."
+      - "Webhook endpoint accessible over HTTP (not HTTPS). Man-in-the-middle
+         modifies payment amount from $10 to $0.01 before event reaches server.
+         HMAC verification not possible without the original body."
+
+  - id: "timing-attack"
+    name: "Timing Side-Channel Attack"
+    severity: "warn"
+
+    description: |
+      HMAC signature comparison using standard string equality (== or ===)
+      leaks timing information. An attacker can determine how many bytes of
+      their forged signature match the real signature by measuring response
+      times. With enough attempts, the full signature can be reconstructed.
+
+    question: |
+      Is there documentation of timing-safe signature comparison?
+      Specifically:
+      1. Is a constant-time comparison function used for HMAC verification?
+      2. What library or function performs the comparison?
+      3. Is there rate limiting on the webhook endpoint to limit brute-force attempts?
+
+    evidence_required:
+      - field: "constant_time_comparison"
+        type: "boolean | null"
+        description: "Is a constant-time comparison used for signature verification?"
+      - field: "comparison_implementation"
+        type: "string | null"
+        description: "What function is used? (e.g., 'crypto.timingSafeEqual', 'hmac.compare_digest')"
+      - field: "rate_limiting"
+        type: "string | null"
+        description: "Is the webhook endpoint rate-limited? How?"
+      - field: "source_location"
+        type: "string | null"
+
+    failure_examples:
+      - "Webhook handler uses `if (signature === expectedSignature)` for HMAC
+         check. Attacker sends thousands of requests, measuring response time.
+         After ~1000 attempts per byte position, reconstructs the valid HMAC
+         for arbitrary payloads."
+      - "Constant-time comparison used but no rate limiting. Attacker can make
+         millions of attempts to exploit any residual timing differences."
+
+# -----------------------------------------------------------------------------
+# EVALUATION: Combined assessment
+# -----------------------------------------------------------------------------
+evaluation:
+  preamble: |
+    This interaction check examines documentation for webhook endpoints that
+    receive events from external systems. You must evaluate whether EACH
+    security failure mode below is explicitly addressed in the documentation.
+
+    IMPORTANT: Webhook security requires defense in depth. Signature
+    verification alone is not sufficient - replay protection, payload
+    integrity, and timing-safe comparison are all necessary for a complete
+    security posture.
+
+  combined_question: |
+    Given the documented system receives webhooks from external providers,
+    evaluate whether the following security failure modes are addressed:
+
+    1. EVENT SPOOFING: How does the system verify webhook events are authentic?
+
+    2. REPLAY ATTACK: How does the system prevent re-processing of captured events?
+
+    3. PAYLOAD TAMPERING: How does the system ensure payload integrity?
+
+    4. TIMING ATTACK: Is signature comparison timing-safe?
+
+    For each failure mode:
+    - State whether it is ADDRESSED, PARTIALLY ADDRESSED, or NOT ADDRESSED
+    - Cite the specific documentation location
+    - If not addressed, explain the risk
+
+  output_format: |
+    {
+      "interaction_id": "webhook-times-security",
+      "interaction_version": "1.0",
+      "overall_assessment": "pass | partial | fail",
+      "failure_modes": [
+        {
+          "id": "event-spoofing",
+          "status": "addressed | partial | not-addressed",
+          "evidence": { ... fields from evidence_required ... },
+          "risk_if_unaddressed": "string describing potential impact"
+        }
+      ],
+      "gaps": [
+        {
+          "failure_mode": "string",
+          "description": "what's missing",
+          "severity": "error | warn",
+          "recommendation": "what to document"
+        }
+      ],
+      "cross_references": [
+        {
+          "from": "document:section",
+          "to": "document:section",
+          "relationship": "string describing how they relate"
+        }
+      ]
+    }
+
+  failure_condition: |
+    Report as ERROR when:
+    - "event-spoofing" is not-addressed (CRITICAL: allows arbitrary event injection)
+    - "replay-attack" is not-addressed AND webhooks handle financial events
+    - "payload-tampering" is not-addressed (allows data manipulation)
+
+    Report as WARNING when:
+    - "timing-attack" is not-addressed (lower risk but exploitable at scale)
+    - Any failure mode is "partial" (documented but incomplete)
+    - auth_mechanism is "ip-allowlist" only (IPs can be spoofed; should be layered)
+    - auth_mechanism is "api-key" only (static secrets without signature verification)
+
+# -----------------------------------------------------------------------------
+# RECOMMENDATIONS: Templates for fixing gaps
+# -----------------------------------------------------------------------------
+recommendations:
+  event_spoofing: |
+    ## Document: Webhook Authentication
+
+    Add to ADD/Security Design:
+
+    ```
+    ### Webhook Signature Verification
+
+    All incoming webhook events are verified before processing.
+
+    - **Mechanism:** HMAC-SHA256 using provider-specific webhook secret
+    - **Verification:** Compute HMAC of raw request body using secret;
+      compare with signature in [header name] header
+    - **Failure behavior:** Return 401; log attempt with source IP; alert
+      if failure rate exceeds [threshold]
+    - **Secret management:** Stored in [vault/env]; rotated every [N days];
+      dual-secret support during rotation window
+    ```
+
+  replay_attack: |
+    ## Document: Webhook Replay Prevention
+
+    Add to ADD/Security Design:
+
+    ```
+    ### Replay Protection
+
+    Webhook events are protected against replay attacks.
+
+    - **Timestamp validation:** Reject events older than [5 minutes]
+      using [timestamp header/field]
+    - **Event ID tracking:** Store event_id in [Redis/database] with
+      [24h] TTL; reject duplicates
+    - **Clock skew tolerance:** Allow [±30 seconds] for provider/server
+      clock differences
+    - **Dedup cleanup:** Expired event IDs purged via [TTL / cron job]
+    ```
+
+  payload_tampering: |
+    ## Document: Webhook Payload Integrity
+
+    Add to ADD/Security Design:
+
+    ```
+    ### Payload Integrity
+
+    Webhook payloads are verified for integrity before processing.
+
+    - **Signature scope:** HMAC covers full raw request body
+    - **Raw body handling:** Raw bytes captured before JSON parsing;
+      HMAC computed on raw bytes (not reconstructed JSON)
+    - **TLS required:** Webhook endpoint only accessible via HTTPS
+    - **Payload validation:** Schema validation after signature check;
+      reject payloads with unexpected fields, types, or ranges
+    ```
+
+  timing_attack: |
+    ## Document: Timing-Safe Signature Comparison
+
+    Add to ADD/Security Design:
+
+    ```
+    ### Constant-Time Signature Comparison
+
+    HMAC signatures are compared using constant-time functions.
+
+    - **Implementation:** [crypto.timingSafeEqual (Node.js) /
+      hmac.compare_digest (Python) / MessageDigest.isEqual (Java)]
+    - **Rate limiting:** Webhook endpoint rate-limited to [100 req/min]
+      per source IP
+    - **Brute force protection:** Temporary block after [10] consecutive
+      signature failures from same IP
+    ```
+
+# -----------------------------------------------------------------------------
+# METADATA
+# -----------------------------------------------------------------------------
+metadata:
+  created: "2026-02"
+  last_updated: "2026-02"
+  author: "Multi-Expert Consensus (Claude, Gemini, ChatGPT)"
+  related_concerns:
+    - "idempotency-boundaries"     # replay protection overlaps with idempotency
+    - "api-contract-consistency"   # webhook spec should match security documentation
+  references:
+    - "Stripe Webhook Signatures: https://stripe.com/docs/webhooks/signatures"
+    - "OWASP Webhook Security Cheat Sheet"
+    - "GitHub Webhook Security: Validating Payloads"
+    - "RFC 2104: HMAC - Keyed-Hashing for Message Authentication"

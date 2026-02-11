@@ -1,0 +1,29 @@
+version: "1.0"
+
+project:
+  name: "Test Project"
+  description: "A sample project for testing doc-lint"
+
+documents:
+  required:
+    - role: brd
+      path: docs/brd.md
+      label: "Business Requirements"
+    - role: frd
+      path: docs/frd.md
+      label: "Functional Requirements"
+    - role: add
+      path: docs/add.md
+      label: "Architecture Design"
+  optional:
+    - role: api-spec
+      path: docs/openapi.yaml
+      label: "API Specification"
+
+signals:
+  declared:
+    - external-api
+    - payments
+    - webhooks
+    - async-workflows
+    - approval-gates

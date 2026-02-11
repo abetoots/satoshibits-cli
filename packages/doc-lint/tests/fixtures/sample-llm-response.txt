@@ -1,0 +1,66 @@
+Here is my evaluation of the documentation:
+
+I've reviewed all provided documents against the concern schema. Below are my findings:
+
+```json
+{
+  "schema_type": "concern",
+  "schema_id": "idempotency-boundaries",
+  "schema_version": "1.0",
+  "coverage": {
+    "complete": true,
+    "documents_reviewed": ["BRD", "FRD", "ADD"],
+    "missing_or_partial": [],
+    "declared_exclusions": []
+  },
+  "items_evaluated": [
+    {
+      "operation_name": "PaymentWebhook.handleEvent",
+      "operation_type": "inbound-webhook",
+      "boundary_crossed": "External Payment Gateway",
+      "idempotency_documented": true,
+      "idempotency_mechanism": "event_id deduplication",
+      "duplicate_behavior": "return-cached-response",
+      "source_location": "ADD Section 4.2",
+      "confidence": "high"
+    }
+  ],
+  "gaps": [
+    {
+      "id": "gap-1",
+      "related_item": "OrderService.createOrder",
+      "severity": "error",
+      "confidence": "high",
+      "description": "No idempotency key documented for order creation API",
+      "source_searched": "ADD Section 3, FRD Section 5",
+      "failure_condition_triggered": "idempotency_documented is FALSE",
+      "risk": "Duplicate orders from client retries on timeout",
+      "recommendation": "Add X-Idempotency-Key header requirement to order creation endpoint",
+      "requires_human_review": false
+    },
+    {
+      "id": "gap-2",
+      "related_item": "NotificationService.sendEmail",
+      "severity": "warn",
+      "confidence": "medium",
+      "description": "Email notification retry behavior not documented",
+      "source_searched": "ADD Section 6",
+      "failure_condition_triggered": "retry_sources is NULL",
+      "risk": "Duplicate emails on retry",
+      "recommendation": "Document deduplication strategy for email notifications",
+      "requires_human_review": false
+    }
+  ],
+  "summary": {
+    "items_found": 1,
+    "fully_documented": 1,
+    "gaps_found": 2,
+    "errors": 1,
+    "warnings": 1,
+    "notes": 0,
+    "human_review_required": 0
+  }
+}
+```
+
+The main concern is the missing idempotency documentation for order creation.
