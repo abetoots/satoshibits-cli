@@ -1,6 +1,9 @@
 export type {
   DocLintManifest,
   DocumentRef,
+  ProjectClassification,
+  ToleranceConfig,
+  ExclusionEntry,
 } from "./manifest.js";
 
 export type {
@@ -26,6 +29,7 @@ export type {
   Confidence,
   Finding,
   ContradictionFinding,
+  CoverageInfo,
   LintResult,
   AssembleResult,
 } from "./findings.js";

@@ -41,6 +41,9 @@ program
   .option("--concerns <ids>", "Only specific concerns (comma-separated)")
   .option("--dry-run", "Show matched concerns, don't evaluate")
   .option("--verbose", "Detailed progress")
+  .option("--severity-threshold <level>", "Minimum severity to display (error|warn|note)")
+  .option("--allow-implicit", "Accept implicit documentation as coverage")
+  .option("--allow-external-refs", "Accept external references as partial coverage")
   .action(async (projectPath: string | undefined, options: LintOptions) => {
     const { lintCommand } = await import("../commands/lint.js");
     const exitCode = await lintCommand(projectPath, options);

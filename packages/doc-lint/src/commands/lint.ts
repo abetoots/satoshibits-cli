@@ -5,7 +5,7 @@ import { formatAssembleHuman, formatLintHuman } from "../formatters/human.js";
 import { formatAssembleJson, formatLintJson } from "../formatters/json.js";
 import { SdkEngine } from "../core/engine/sdk-engine.js";
 
-import type { LintOptions } from "../types/index.js";
+import type { LintOptions, ToleranceConfig, Severity } from "../types/index.js";
 
 export async function lintCommand(
   projectPath: string | undefined,
@@ -49,6 +49,16 @@ export async function lintCommand(
       }
     : undefined;
 
+  // build tolerance config from CLI flags (overrides manifest if set)
+  const cliTolerance: ToleranceConfig | undefined =
+    options.severityThreshold || options.allowImplicit != null || options.allowExternalRefs != null
+      ? {
+          severity_threshold: options.severityThreshold as Severity | undefined,
+          allow_implicit: options.allowImplicit,
+          allow_external_refs: options.allowExternalRefs,
+        }
+      : undefined;
+
   const result = await lint({
     projectPath: resolved,
     configPath: options.config,
@@ -57,6 +67,7 @@ export async function lintCommand(
     engine,
     verbose: options.verbose,
     onProgress,
+    tolerance: cliTolerance,
   });
 
   const format = options.format ?? "human";

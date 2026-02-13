@@ -1,0 +1,305 @@
+# =============================================================================
+# CONCERN: Alerting-SLO Alignment
+# =============================================================================
+# This concern validates that every Service Level Objective (SLO) defined in
+# business or technical documents has a corresponding alerting rule, and that
+# every alerting rule maps to a documented SLO. Misalignment means either
+# SLOs are aspirational (no enforcement) or alerts are noise (no business
+# justification).
+#
+# WHY THIS MATTERS:
+# SLOs without alerts are promises nobody is watching. Alerts without SLOs are
+# noise that causes alert fatigue. When an SLO for 99.9% availability has no
+# burn-rate alert, the team discovers the breach only after customers complain.
+# When alerts fire for metrics nobody committed to, on-call engineers waste
+# time investigating non-issues while real SLO violations go undetected.
+# Proper alignment ensures operational effort is directed at what the business
+# actually cares about.
+#
+# TYPICAL MANIFESTATION:
+# - BRD defines "99.95% uptime for payment processing" but no alert monitors it
+# - ADD defines error budget but no burn-rate alerting is configured
+# - Alerts exist for CPU usage and memory but not for user-facing latency SLOs
+# - SLOs are defined in one document, alerting in another, with no cross-ref
+# - Alert thresholds don't match SLO targets (alert at 95% when SLO is 99.9%)
+# =============================================================================
+
+concern:
+  id: "alerting-slo-alignment"
+  version: "1.0"
+  name: "Alerting-SLO Alignment"
+  category: "operational"
+  severity: "warn"
+
+  description: |
+    Every SLO defined in business requirements (BRD), functional requirements
+    (FRD), or architecture documents (ADD) must have a corresponding alerting
+    rule that detects when the SLO is at risk or breached. Conversely, every
+    alerting rule should trace back to a documented SLO or explicit business
+    justification. This bidirectional mapping ensures:
+    1. SLOs are enforceable, not aspirational
+    2. Alerts are meaningful, not noise
+    3. Burn-rate alerting catches slow degradation before breach
+    4. Notification channels reach the right responders
+    5. Error budgets are actively monitored and managed
+
+# -----------------------------------------------------------------------------
+# TRIGGERS: When to load this concern
+# -----------------------------------------------------------------------------
+triggers:
+  any_of:
+    - sla
+    - monitoring
+    - observability
+    - alerting
+
+  escalate_if:
+    - payments        # payment SLOs have direct revenue impact
+    - sla             # contractual SLA violations carry financial penalties
+
+# -----------------------------------------------------------------------------
+# EVALUATION: The reasoning task
+# -----------------------------------------------------------------------------
+evaluation:
+  question: |
+    Systematically extract all SLOs from business and technical documents,
+    extract all alerting rules from operational documents, then verify
+    bidirectional alignment between them.
+
+    STEP 1: EXTRACT SLOs FROM REQUIREMENTS AND ARCHITECTURE
+    Scan all documents (BRD, FRD, ADD, SLA agreements) for Service Level
+    Objectives and related commitments:
+    - Availability targets: "99.9% uptime", "99.95% availability"
+    - Latency targets: "p99 latency < 500ms", "p50 response time < 200ms"
+    - Error rate targets: "error rate < 0.1%", "success rate > 99.9%"
+    - Throughput targets: "support 1000 requests/second"
+    - Durability targets: "zero data loss", "RPO < 1 minute"
+    - Freshness targets: "data no older than 5 minutes"
+
+    For each SLO, record:
+    - The exact target (metric, threshold, measurement window)
+    - The source document and section
+    - Whether it is customer-facing or internal
+    - Whether there is an associated error budget
+
+    STEP 2: EXTRACT ALERTING RULES FROM OPERATIONAL DOCUMENTS
+    Scan all operational documents (monitoring configs, alerting docs,
+    dashboards, runbooks) for defined alerts:
+    - Threshold alerts: "alert when error rate > X%"
+    - Burn-rate alerts: "alert when error budget consumption rate > X"
+    - Anomaly alerts: "alert on deviation from baseline"
+    - Absence alerts: "alert when no data received for X minutes"
+
+    For each alert, record:
+    - The metric and threshold
+    - The notification channel (PagerDuty, Slack, email)
+    - The severity (page, ticket, informational)
+    - The associated runbook or response procedure
+
+    STEP 3: MAP SLOs TO ALERTS (FORWARD MAPPING)
+    For each SLO identified in Step 1:
+    - Is there at least one alert that monitors this SLO?
+    - Does the alert threshold align with the SLO target?
+      (e.g., if SLO is 99.9%, does the alert fire before 99.9% is breached?)
+    - Is there a burn-rate alert for gradual degradation?
+      (e.g., "consuming error budget 10x faster than sustainable rate")
+    - Is the notification channel appropriate for the SLO severity?
+      (customer-facing SLOs should page, internal SLOs may ticket)
+
+    STEP 4: MAP ALERTS TO SLOs (REVERSE MAPPING)
+    For each alert identified in Step 2:
+    - Does this alert map to a documented SLO?
+    - If not, is there a documented business justification?
+    - Are there orphan alerts that fire without clear purpose?
+    - Are there alerts whose thresholds contradict SLO targets?
+
+    STEP 5: ASSESS BURN-RATE ALERTING
+    For each SLO with an error budget:
+    - Is there multi-window burn-rate alerting?
+      (fast burn: 1-hour window, slow burn: 6-hour window)
+    - Does the burn rate alert fire with enough lead time to respond
+      before the error budget is exhausted?
+    - Is there a process for what happens when error budget is depleted?
+
+  checklist:
+    - id: "slo-extraction"
+      question: "Have all SLOs been identified across BRD, FRD, ADD, and SLA documents?"
+    - id: "alert-extraction"
+      question: "Have all alerting rules been identified from operational documentation?"
+    - id: "forward-mapping"
+      question: "Does every SLO have at least one corresponding alert?"
+    - id: "reverse-mapping"
+      question: "Does every alert map to a documented SLO or business justification?"
+    - id: "burn-rate-coverage"
+      question: "Do SLOs with error budgets have burn-rate alerting configured?"
+
+  evidence_required:
+    - field: "slo_name"
+      type: "string"
+      description: "Name or description of the SLO (e.g., 'Payment processing availability', 'API p99 latency', 'Order creation success rate')"
+      required: true
+
+    - field: "slo_source"
+      type: "string"
+      description: "Document and section where the SLO is defined (e.g., 'BRD Section 2.1 - Availability Requirements', 'SLA Agreement Section 3')"
+      required: true
+
+    - field: "slo_target"
+      type: "string"
+      description: "The specific SLO target value (e.g., '99.95% availability over 30-day rolling window', 'p99 < 500ms', 'error rate < 0.1%')"
+      required: true
+
+    - field: "alert_exists"
+      type: "boolean"
+      description: "Whether at least one alerting rule monitors this SLO"
+      required: true
+
+    - field: "alert_reference"
+      type: "string | null"
+      description: "Location of the alerting rule if it exists (e.g., 'Monitoring Doc Section 4.1', 'PagerDuty service: payment-availability')"
+      required: true
+
+    - field: "alert_threshold"
+      type: "string | null"
+      description: "The alert threshold and how it relates to the SLO (e.g., 'Fires when availability drops below 99.97% (gives 0.02% buffer before SLO breach)')"
+      required: true
+
+    - field: "burn_rate_alert"
+      type: "boolean"
+      description: "Whether a burn-rate alert exists for gradual error budget consumption"
+      required: true
+
+    - field: "notification_channel_documented"
+      type: "boolean"
+      description: "Whether the alert's notification channel is documented (who gets paged/notified)"
+      required: true
+
+    - field: "confidence"
+      type: "enum"
+      values: ["high", "medium", "low"]
+      description: "Your confidence that this assessment is accurate based on available documentation"
+      required: true
+
+  failure_condition: |
+    Report as WARNING when ANY of the following are true:
+
+    1. An SLO has alert_exists = FALSE - the SLO is defined but nobody is
+       watching for violations
+
+    2. An alert exists but has no documented SLO justification - potential
+       alert noise that contributes to alert fatigue
+
+    3. alert_exists = TRUE but alert_threshold does not align with slo_target
+       - the alert fires at the wrong threshold (too late to prevent breach
+       or too early causing false alarms)
+
+    4. An SLO has an error budget defined but burn_rate_alert = FALSE
+       - slow degradation will exhaust the error budget without warning
+
+    5. alert_exists = TRUE but notification_channel_documented = FALSE
+       - the alert fires but it is unclear who receives the notification
+
+    6. SLOs are defined in one document and alerting in another with no
+       explicit cross-reference between them
+
+    7. Multiple SLOs share a single alert that cannot distinguish which
+       SLO is being violated
+
+  recommendation_template: |
+    ## Gap: {slo_name} - Missing Alerting Coverage
+
+    **SLO Source:** {slo_source}
+    **SLO Target:** {slo_target}
+    **Alert Exists:** {alert_exists}
+    **Burn Rate Alert:** {burn_rate_alert}
+
+    ### Required Documentation
+
+    Add alerting configuration that covers this SLO:
+
+    1. **Threshold Alert**
+       - Metric: [the metric that measures this SLO]
+       - Threshold: [value that gives early warning before SLO breach]
+       - Window: [measurement window matching SLO definition]
+       - Example: "Alert when 5-minute rolling availability < 99.97%
+         (0.02% buffer before 99.95% SLO breach)"
+
+    2. **Burn-Rate Alert**
+       - Fast burn: [alert when error budget consumed at >14.4x rate in 1h]
+       - Slow burn: [alert when error budget consumed at >3x rate in 6h]
+       - Example: "Alert when 1h burn rate > 14.4x (budget would exhaust
+         in ~5 days at this rate)"
+
+    3. **Notification Channel**
+       - Who is notified: [team, rotation, individual]
+       - Severity: [page for customer-facing, ticket for internal]
+       - Runbook link: [link to response procedure]
+
+    4. **Cross-Reference**
+       - Add SLO reference in alerting documentation
+       - Add alert reference in SLO documentation
+       - Ensure both documents stay synchronized
+
+# -----------------------------------------------------------------------------
+# EXAMPLES: Help the LLM understand what to look for
+# -----------------------------------------------------------------------------
+examples:
+  well_documented:
+    - source: "BRD Section 2.1 + Monitoring Doc Section 4.1"
+      text: |
+        "BRD: Payment processing must maintain 99.95% availability over a
+        30-day rolling window. Error budget: 21.6 minutes of downtime per month.
+
+        Monitoring Doc: Payment availability alert configuration:
+        - Threshold alert: fires when 5-min availability < 99.97% (Slack #payments-alerts)
+        - Fast burn-rate: fires when 1h burn rate > 14.4x (PagerDuty payments-oncall)
+        - Slow burn-rate: fires when 6h burn rate > 3x (JIRA ticket to payments team)
+        - Dashboard: grafana.internal/d/payment-slos
+        - Runbook: runbook.internal/payment-availability"
+      assessment: |
+        slo_name: "Payment processing availability"
+        slo_source: "BRD Section 2.1"
+        slo_target: "99.95% availability, 30-day rolling, 21.6min error budget"
+        alert_exists: true
+        alert_reference: "Monitoring Doc Section 4.1"
+        alert_threshold: "5-min availability < 99.97% (buffer before 99.95% breach)"
+        burn_rate_alert: true
+        notification_channel_documented: true
+        confidence: "high"
+
+  poorly_documented:
+    - source: "BRD Section 3.2"
+      text: |
+        "The API must have low latency. Response times should be fast enough
+        for a good user experience. We will monitor performance."
+      assessment: |
+        slo_name: "API latency"
+        slo_source: "BRD Section 3.2"
+        slo_target: "Undefined - 'low latency' and 'fast enough' are not measurable"
+        alert_exists: false
+        alert_reference: null
+        alert_threshold: null
+        burn_rate_alert: false
+        notification_channel_documented: false
+        confidence: "high"
+        gap: "SLO is vague and unmeasurable. No specific latency target (p50, p99),
+              no measurement window, no error budget. Impossible to create meaningful
+              alerting without a concrete target. Need specific values like
+              'p99 < 500ms over 5-minute window'."
+
+# -----------------------------------------------------------------------------
+# METADATA
+# -----------------------------------------------------------------------------
+metadata:
+  created: "2026-02"
+  last_updated: "2026-02"
+  author: "doc-lint v0.2"
+  related_concerns:
+    - "failure-mode-coverage"      # alerts should trigger runbook procedures
+    - "resilience-triad"           # timeout/retry configs affect SLO achievement
+    - "rollback-documentation"     # rollback may be needed when SLOs are breached
+  references:
+    - "Google SRE Book: Chapter 4 - Service Level Objectives"
+    - "Google SRE Workbook: Chapter 5 - Alerting on SLOs"
+    - "Implementing Service Level Objectives (Alex Hidalgo)"
+    - "Sloth: SLO Generation Framework for Prometheus"

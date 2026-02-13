@@ -1,0 +1,57 @@
+version: "1.0"
+
+project:
+  name: "Expanded Test Project"
+  description: "A manifest with all v0.2 fields"
+  classification: "financial"
+
+documents:
+  required:
+    - role: brd
+      path: docs/brd.md
+      label: "Business Requirements"
+    - role: frd
+      path: docs/frd.md
+      label: "Functional Requirements"
+    - role: add
+      path: docs/add.md
+      label: "Architecture Design"
+  optional:
+    - role: api-spec
+      path: docs/openapi.yaml
+      label: "API Specification"
+  contracts:
+    - role: api_spec
+      path: docs/openapi.yaml
+      label: "REST API Contract"
+    - role: async_spec
+      path: docs/asyncapi.yaml
+      label: "Event Contract"
+  operational:
+    - role: runbook
+      path: ops/runbook.md
+      label: "Runbook"
+  reference:
+    - role: security_standards
+      path: standards/security-policy.md
+      label: "Security Policy"
+
+signals:
+  declared:
+    - external-api
+    - payments
+    - async-workflows
+  auto_detect: true
+  warn_on_mismatch: true
+
+tolerance:
+  severity_threshold: "warn"
+  allow_implicit: false
+  allow_external_refs: true
+
+exclusions:
+  - component: "legacy-auth-module"
+    reason: "Scheduled for deprecation in Q3"
+    approved_by: "tech-lead"
+  - component: "internal-metrics-dashboard"
+    reason: "Non-critical internal tool"

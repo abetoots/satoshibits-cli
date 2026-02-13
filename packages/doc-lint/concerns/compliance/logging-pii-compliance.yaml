@@ -1,0 +1,443 @@
+# =============================================================================
+# CONCERN: Logging PII Compliance
+# =============================================================================
+# This concern validates that logging practices documented in architecture
+# and operational documents do not expose personally identifiable information
+# (PII) and that required audit trails are implemented. Logs are often the
+# most overlooked PII exposure vector because they are treated as "internal"
+# and exempt from privacy reviews.
+#
+# WHY THIS MATTERS:
+# Logs are stored, searched, aggregated, and often exported to third-party
+# observability platforms (Datadog, Splunk, ELK, CloudWatch). When logs
+# contain user emails, IP addresses, session tokens, or other PII, that
+# data proliferates across systems with no retention controls, no access
+# restrictions, and no deletion capability. A GDPR "right to erasure"
+# request cannot be fulfilled if the user's email address exists in
+# millions of log lines across three observability platforms. Meanwhile,
+# compliance frameworks (SOX, HIPAA, PCI DSS, SOC 2) require specific
+# audit trails that, if missing, constitute control failures.
+#
+# TYPICAL MANIFESTATIONS:
+# - ADD describes request logging that includes full request body (which
+#   contains user email, address, payment details)
+# - Error logs include stack traces with user data from request context
+# - Access logs contain IP addresses with no documented anonymization
+# - Auth failure logs include the attempted username or email
+# - ADD describes comprehensive audit logging for business events but
+#   no audit trail for compliance-required events (data access, admin
+#   actions, consent changes)
+# - Logs are exported to third-party SIEM with no PII redaction
+# =============================================================================
+
+concern:
+  id: "logging-pii-compliance"
+  version: "1.0"
+  name: "Logging PII Compliance"
+  category: "compliance"
+  severity: "error"
+
+  description: |
+    Validates that logging practices documented in architecture and
+    operational documents do not expose PII without documented redaction
+    or masking, and that compliance-required audit trails are implemented.
+    Logs are a frequently overlooked PII exposure vector because they are
+    treated as operational infrastructure rather than personal data
+    storage. This concern checks both directions: PII that should NOT be
+    in logs (exposure risk) and audit events that MUST be in logs
+    (compliance requirement).
+
+# -----------------------------------------------------------------------------
+# TRIGGERS: When to load this concern
+# -----------------------------------------------------------------------------
+triggers:
+  any_of:
+    - logging
+    - pii
+    - audit
+    - observability
+    - gdpr
+
+# -----------------------------------------------------------------------------
+# EVALUATION: The reasoning task
+# -----------------------------------------------------------------------------
+evaluation:
+  question: |
+    Examine the documentation for all logging and observability practices,
+    identify PII exposure risks in logs, check for redaction policies, and
+    verify that compliance-required audit trails are documented.
+
+    STEP 1: IDENTIFY WHAT GETS LOGGED
+    Scan the ADD, operational documentation, and any observability or
+    monitoring sections for descriptions of logging:
+
+    a) Application Logs
+       - What log levels are used? (DEBUG, INFO, WARN, ERROR)
+       - What is logged at each level?
+       - Are request/response bodies logged?
+       - Are request headers logged? (which ones?)
+       - What context is attached to log entries? (user ID, session ID,
+         request ID, IP address, user agent)
+
+    b) Access Logs
+       - Are HTTP access logs generated? (web server, API gateway, load
+         balancer)
+       - What fields are in the access log format? (IP, URL, status code,
+         user agent, referrer, response time)
+       - Are access logs forwarded to a centralized system?
+
+    c) Error and Exception Logs
+       - What is captured in error logs? (stack traces, request context,
+         variable values, user state)
+       - Do error handlers log the full exception context?
+       - Are error reports sent to external services? (Sentry, Bugsnag,
+         Rollbar)
+
+    d) Audit Logs
+       - Is audit logging described separately from application logging?
+       - What events are audited? (login, logout, data access, data
+         modification, admin actions, permission changes)
+       - What fields are captured per audit event? (who, what, when,
+         where, outcome)
+
+    e) Third-Party Log Destinations
+       - Are logs exported to external platforms? (Datadog, Splunk, ELK,
+         CloudWatch Logs, BigQuery)
+       - Is there PII filtering before export?
+       - What retention policies apply at the destination?
+
+    For each logging context found, capture the source document, section,
+    and the specific fields or data described as being logged.
+
+    STEP 2: CHECK FOR PII IN LOG FIELDS
+    For each logging context identified in Step 1, check whether any
+    logged fields constitute PII:
+
+    a) Direct PII in Logs
+       - Email addresses (in request bodies, error messages, user context)
+       - Names (in request bodies, user profiles, error context)
+       - Phone numbers (in request bodies, notification logs)
+       - Physical addresses (in order processing logs, shipping logs)
+       - Government IDs (in identity verification logs)
+
+    b) Quasi-PII in Logs
+       - IP addresses (in access logs, request context, rate limiting logs)
+       - User agent strings (browser fingerprinting potential)
+       - Session IDs and auth tokens (can be used to impersonate users)
+       - Device identifiers (mobile app logs)
+       - Geolocation data (from IP or GPS in request headers)
+
+    c) Sensitive Data in Logs
+       - Passwords or password hashes (in auth failure logs)
+       - API keys or secrets (in configuration error logs)
+       - Credit card numbers (in payment processing logs)
+       - Health information (in application domain logs)
+       - Authentication tokens (JWT, bearer tokens, refresh tokens)
+
+    Flag every instance where PII or sensitive data appears in or could
+    appear in logged content. Be thorough - check request body logging,
+    error context, and structured log fields.
+
+    STEP 3: CHECK FOR REDACTION AND MASKING POLICIES
+    For each PII field identified in Step 2, check whether there is a
+    documented redaction or masking policy:
+
+    a) Redaction Mechanism
+       - Is there a documented approach to redacting PII from logs?
+         (field-level redaction, regex-based scrubbing, structured
+         logging with field exclusion, log pipeline filtering)
+       - Is the redaction applied at log generation (source-side) or
+         log ingestion (pipeline-side)?
+       - Is the redaction configuration documented? (which fields are
+         redacted, what pattern is used)
+
+    b) Masking Techniques
+       - Are specific masking techniques documented? (replace email domain
+         with ***, mask all but last 4 digits of phone, hash IP addresses,
+         truncate tokens)
+       - Is the masking irreversible? (hashing vs. encryption vs. truncation)
+       - Are masked values still useful for debugging? (preserving structure
+         while removing identifying content)
+
+    c) Policy Scope
+       - Does the redaction policy cover all logging contexts? (application
+         logs, access logs, error logs, audit logs)
+       - Does it cover third-party log destinations?
+       - Are there exceptions documented? (e.g., "IP addresses retained
+         for 24 hours for abuse detection, then anonymized")
+
+    STEP 4: CHECK FOR AUDIT TRAIL REQUIREMENTS AND IMPLEMENTATION
+    Determine whether compliance-required audit trails are documented
+    and whether the logging architecture supports them:
+
+    a) Identify Audit Requirements
+       - Does the BRD/FRD mention compliance frameworks? (SOC 2, PCI DSS,
+         HIPAA, SOX, GDPR, ISO 27001)
+       - What audit events do these frameworks require?
+         * SOC 2: user access, privilege changes, data access
+         * PCI DSS: access to cardholder data, admin actions, system events
+         * HIPAA: access to protected health information
+         * SOX: financial data access and modification
+         * GDPR: consent changes, data access, data deletion
+
+    b) Verify Audit Trail Implementation
+       - Are the required audit events actually logged?
+       - Do audit logs capture: who (user ID), what (action), when
+         (timestamp), where (system/IP), outcome (success/failure)?
+       - Are audit logs tamper-evident? (append-only, signed, separate
+         from application logs)
+       - Can audit logs be queried for compliance reporting?
+
+    c) Audit Log Retention
+       - Are audit log retention periods documented?
+       - Do retention periods meet regulatory requirements? (SOX: 7 years,
+         PCI DSS: 1 year, HIPAA: 6 years)
+       - Are audit logs excluded from automated purge processes?
+
+  checklist:
+    - id: "pii-in-logs"
+      question: "Are any PII fields (email, IP, name, phone, token, session) present in documented log output?"
+    - id: "redaction-policy"
+      question: "Is there a documented PII redaction or masking policy for logs?"
+    - id: "redaction-coverage"
+      question: "Does the redaction policy cover all PII fields across all logging contexts?"
+    - id: "audit-trail-required"
+      question: "Do applicable compliance frameworks require audit trails for specific events?"
+    - id: "audit-trail-implemented"
+      question: "Are the required audit events documented as being logged with sufficient detail?"
+    - id: "third-party-export"
+      question: "If logs are exported to third-party platforms, is PII filtered before export?"
+
+  evidence_required:
+    - field: "log_context"
+      type: "string"
+      description: "The logging context where PII exposure or audit gap was found (e.g., 'Application request logging', 'Access logs via nginx', 'Error handler in PaymentService', 'Audit log for admin actions')"
+      required: true
+
+    - field: "log_source"
+      type: "string"
+      description: "Where this logging is documented (e.g., 'ADD Section 6.1 - Observability', 'ADD Section 4.3 - Error Handling', 'Operational Runbook Section 2')"
+      required: true
+
+    - field: "pii_fields_present"
+      type: "boolean"
+      description: "Whether PII fields are present or could be present in the logged content"
+      required: true
+
+    - field: "pii_field_list"
+      type: "string | null"
+      description: "Comma-separated list of PII fields found in logs (e.g., 'email, ip_address, user_agent, session_token') or null if no PII detected"
+      required: true
+
+    - field: "redaction_documented"
+      type: "boolean"
+      description: "Whether a PII redaction or masking mechanism is documented for the identified log context"
+      required: true
+
+    - field: "redaction_mechanism"
+      type: "string | null"
+      description: "The documented redaction mechanism if present (e.g., 'Structured logging with PII fields excluded via allowlist', 'Log pipeline regex scrubbing in Fluentd', 'Application-level field masking middleware') or null if not documented"
+      required: true
+
+    - field: "audit_trail_required"
+      type: "boolean"
+      description: "Whether the applicable compliance framework requires an audit trail for events in this context"
+      required: true
+
+    - field: "audit_trail_implemented"
+      type: "boolean"
+      description: "Whether the required audit trail is documented as implemented with sufficient detail (who, what, when, where, outcome)"
+      required: true
+
+    - field: "confidence"
+      type: "enum"
+      values: ["high", "medium", "low"]
+      description: "Confidence in the assessment (low if logging details are sparse or inferred from general architecture descriptions)"
+      required: true
+
+  failure_condition: |
+    Report as ERROR when:
+
+    1. PII is found in documented log output without documented redaction
+       (pii_fields_present is TRUE and redaction_documented is FALSE).
+       Unredacted PII in logs violates GDPR data minimization, makes
+       "right to erasure" requests impossible to fulfill across log
+       storage, and exposes PII to anyone with log access.
+
+    2. Compliance-required audit trail is not implemented
+       (audit_trail_required is TRUE and audit_trail_implemented is FALSE).
+       Missing audit trails are control failures in SOC 2, PCI DSS,
+       HIPAA, and SOX audits. They indicate the organization cannot
+       answer "who accessed what data and when?"
+
+    3. Authentication tokens, passwords, API keys, or credit card numbers
+       appear in logged content. These are not merely PII but credentials
+       or financial data whose exposure creates immediate security and
+       financial risk.
+
+    4. Logs containing PII are exported to third-party platforms without
+       documented PII filtering or redaction. This constitutes an
+       undocumented data transfer to a third party.
+
+    Report as WARNING when:
+
+    1. Logging policy exists but redaction is not specified for all PII
+       fields (redaction_documented is TRUE but pii_field_list includes
+       fields not covered by the redaction policy). Partial redaction
+       still exposes some PII.
+
+    2. Audit trail is implemented but missing required fields (e.g.,
+       logs capture "what" and "when" but not "who" or "outcome").
+       Incomplete audit entries may not satisfy compliance requirements.
+
+    3. PII redaction is documented at the application level but access
+       logs (web server, load balancer, API gateway) are not covered.
+       Access logs often contain IP addresses, URLs with query parameters
+       containing user data, and referrer headers.
+
+    4. Log retention periods are not documented. Without retention
+       periods, PII in logs may be stored indefinitely, and audit logs
+       required for regulatory periods may be deleted prematurely.
+
+  recommendation_template: |
+    ## Gap: Logging PII Compliance - {log_context}
+
+    **Log Context:** {log_context}
+    **Source:** {log_source}
+    **PII Fields Present:** {pii_fields_present}
+    **PII Fields:** {pii_field_list}
+    **Redaction Documented:** {redaction_documented}
+    **Redaction Mechanism:** {redaction_mechanism}
+    **Audit Trail Required:** {audit_trail_required}
+    **Audit Trail Implemented:** {audit_trail_implemented}
+
+    ### Compliance Gap
+
+    Logging practices in this context create compliance risk through
+    PII exposure, missing redaction, or incomplete audit trails.
+
+    ### Resolution Options
+
+    1. **Implement PII Redaction**:
+       Add a PII redaction layer to the logging pipeline. Options:
+       - Structured logging with a field allowlist (log only approved fields)
+       - Application middleware that masks PII before logging
+       - Log pipeline filtering (Fluentd, Logstash) with regex redaction
+       - Field-level encryption for PII that must be logged for debugging
+
+    2. **Document Redaction Policy**:
+       Create a logging policy that specifies:
+       - Which fields are considered PII and must be redacted
+       - The masking technique for each field type
+       - Where redaction is applied (source vs. pipeline vs. destination)
+       - Exceptions and their justification (e.g., "IP retained 24h for
+         abuse detection")
+
+    3. **Implement Required Audit Trail**:
+       For compliance-required audit events, ensure logs capture:
+       - Who: authenticated user ID or service identity
+       - What: the action performed (read, write, delete, approve)
+       - When: timestamp in UTC with timezone
+       - Where: system, service, and IP address
+       - Outcome: success or failure with reason code
+       Store audit logs in tamper-evident, append-only storage with
+       retention periods matching regulatory requirements.
+
+    ### Why This Matters
+    PII in logs creates unbounded compliance liability. Logs are stored
+    in multiple systems, searched by many teams, and often lack access
+    controls. A single "right to erasure" request becomes impossible to
+    fulfill when the user's email exists in millions of log lines across
+    three observability platforms, two backup systems, and an S3 archive.
+    Missing audit trails are control failures that auditors flag as
+    material findings.
+
+# -----------------------------------------------------------------------------
+# EXAMPLES
+# -----------------------------------------------------------------------------
+examples:
+  well_documented:
+    - source: "ADD Section 6.1 - Observability"
+      text: |
+        "Application logs use structured JSON format with a field allowlist.
+        PII fields (email, name, phone, address) are excluded from log
+        output. IP addresses are anonymized by zeroing the last octet
+        (192.168.1.0). Session tokens are truncated to first 8 characters
+        for correlation without exposure. Error logs include request_id
+        and user_id (pseudonymous) but never raw PII. Logs are exported
+        to Datadog with the same field restrictions enforced at the
+        Fluentd pipeline level."
+      mapping: |
+        log_context: "Application request logging"
+        log_source: "ADD Section 6.1"
+        pii_fields_present: false
+        pii_field_list: null
+        redaction_documented: true
+        redaction_mechanism: "Structured logging with field allowlist, IP anonymization, token truncation, Fluentd pipeline enforcement"
+        audit_trail_required: false
+        audit_trail_implemented: false
+        confidence: "high"
+        note: "Comprehensive redaction policy covering application logs, IP handling, and third-party export"
+
+  pii_exposure:
+    - source: "ADD Section 4.3 - Error Handling"
+      text: |
+        "When a request fails, the error handler logs the full request
+        context including headers, body, and user session for debugging.
+        Error logs are shipped to Sentry for alerting and Elasticsearch
+        for searchability."
+      mapping: |
+        log_context: "Error handler request context logging"
+        log_source: "ADD Section 4.3"
+        pii_fields_present: true
+        pii_field_list: "request body (may contain email, name, address, payment info), session data, auth headers (bearer token)"
+        redaction_documented: false
+        redaction_mechanism: null
+        audit_trail_required: false
+        audit_trail_implemented: false
+        confidence: "high"
+        gap: "Full request body logged on errors, which will include any PII
+              submitted by users (registration forms, profile updates, payment
+              details). Exported to two third-party systems (Sentry, ES) without
+              redaction. This is a PII exposure across three systems."
+
+  missing_audit_trail:
+    - source: "BRD Section 1.3 - Compliance Requirements"
+      text: |
+        "The system must comply with SOC 2 Type II requirements, including
+        audit logging for all access to customer data and administrative
+        actions."
+      mapping: |
+        log_context: "SOC 2 audit trail for data access and admin actions"
+        log_source: "BRD Section 1.3"
+        pii_fields_present: false
+        pii_field_list: null
+        redaction_documented: false
+        redaction_mechanism: null
+        audit_trail_required: true
+        audit_trail_implemented: false
+        confidence: "high"
+        gap: "BRD requires SOC 2 compliance with audit logging for customer
+              data access and admin actions. ADD has no documentation of audit
+              logging for these events. This is a compliance control failure
+              that will be flagged in a SOC 2 audit."
+
+# -----------------------------------------------------------------------------
+# METADATA
+# -----------------------------------------------------------------------------
+metadata:
+  created: "2026-02"
+  last_updated: "2026-02"
+  author: "doc-lint v0.2"
+  related_concerns:
+    - "data-retention-compliance"    # PII in logs is subject to retention requirements
+    - "auth-scheme-compliance"       # auth tokens in logs are both PII and credential exposure
+    - "horizontal-traceability"      # audit requirements should trace from BRD to ADD
+  references:
+    - "GDPR Article 5(1)(c): Data Minimization Principle"
+    - "GDPR Article 17: Right to Erasure (Right to be Forgotten)"
+    - "SOC 2 Trust Services Criteria: CC7.2 - System Monitoring"
+    - "PCI DSS Requirement 10: Track and Monitor All Access"
+    - "HIPAA 45 CFR 164.312(b): Audit Controls"
+    - "OWASP Logging Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html"
+    - "NIST SP 800-92: Guide to Computer Security Log Management"

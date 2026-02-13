@@ -11,7 +11,10 @@ import type {
   AssembleResult,
   Finding,
   ContradictionFinding,
+  CoverageInfo,
   LintResult,
+  ToleranceConfig,
+  ExclusionEntry,
 } from "../types/index.js";
 
 export interface AssembleInput {
@@ -25,6 +28,98 @@ export interface LintInput extends AssembleInput {
   engine: EvaluationEngine;
   verbose?: boolean;
   onProgress?: (message: string) => void;
+  tolerance?: ToleranceConfig;
+  exclusions?: ExclusionEntry[];
+}
+
+// severity ordering for threshold filtering
+const SEVERITY_RANK: Record<string, number> = { error: 3, warn: 2, note: 1 };
+
+export function applyToleranceFilter(
+  findings: Finding[],
+  tolerance: ToleranceConfig | undefined,
+): Finding[] {
+  if (!tolerance?.severity_threshold) return findings;
+  const minRank = SEVERITY_RANK[tolerance.severity_threshold] ?? 1;
+  return findings.filter((f) => (SEVERITY_RANK[f.severity] ?? 0) >= minRank);
+}
+
+export function applyExclusionFilter(
+  findings: Finding[],
+  exclusions: ExclusionEntry[] | undefined,
+): { kept: Finding[]; excluded: Finding[] } {
+  if (!exclusions || exclusions.length === 0) {
+    return { kept: findings, excluded: [] };
+  }
+
+  const excludedComponents = exclusions.flatMap((e) =>
+    e.component ? [e.component] : [],
+  );
+  const kept: Finding[] = [];
+  const excluded: Finding[] = [];
+
+  for (const finding of findings) {
+    const isExcluded = excludedComponents.some(
+      (comp) => finding.relatedItem === comp || finding.relatedItem.startsWith(`${comp}.`),
+    );
+    if (isExcluded) {
+      excluded.push(finding);
+    } else {
+      kept.push(finding);
+    }
+  }
+
+  return { kept, excluded };
+}
+
+export function filterExcludedConcernPrompts(
+  prompts: AssembledPrompt[],
+  exclusions: ExclusionEntry[] | undefined,
+): { kept: AssembledPrompt[]; excludedConcernIds: string[] } {
+  if (!exclusions || exclusions.length === 0) {
+    return { kept: prompts, excludedConcernIds: [] };
+  }
+
+  const excludedIds = new Set(
+    exclusions.flatMap((e) => (e.concernId ? [e.concernId] : [])),
+  );
+  if (excludedIds.size === 0) {
+    return { kept: prompts, excludedConcernIds: [] };
+  }
+
+  const kept: AssembledPrompt[] = [];
+  const actuallyExcluded: string[] = [];
+
+  for (const prompt of prompts) {
+    // never filter contradiction prompts
+    if (prompt.type === "contradiction" || !excludedIds.has(prompt.concernId)) {
+      kept.push(prompt);
+    } else {
+      actuallyExcluded.push(prompt.concernId);
+    }
+  }
+
+  return { kept, excludedConcernIds: actuallyExcluded };
+}
+
+export function buildCoverageInfo(input: {
+  matched: string[];
+  skipped: string[];
+  excludedConcernIds: string[];
+  documentsLoaded: string[];
+  documentsMissing: string[];
+}): CoverageInfo {
+  // evaluated = matched minus excluded
+  const excludedSet = new Set(input.excludedConcernIds);
+  const evaluated = input.matched.filter((id) => !excludedSet.has(id));
+
+  return {
+    concernsEvaluated: evaluated,
+    concernsSkipped: input.skipped,
+    concernsExcluded: input.excludedConcernIds,
+    documentsLoaded: input.documentsLoaded,
+    documentsMissing: input.documentsMissing,
+  };
 }
 
 export function assemble(input: AssembleInput): AssembleResult {
@@ -64,15 +159,29 @@ export function assemble(input: AssembleInput): AssembleResult {
 
 // lint composes assemble — the two-layer architecture is enforced structurally
 export async function lint(input: LintInput): Promise<LintResult> {
+  const manifest = loadManifest(input.projectPath, input.configPath);
+  const docs = loadDocuments(manifest, input.projectPath);
   const assembled = assemble(input);
   // noop when no progress callback provided
   // eslint-disable-next-line @typescript-eslint/no-empty-function -- intentional no-op fallback
   const progress = input.onProgress ?? ((_msg: string) => {});
 
-  const findings: Finding[] = [];
+  // resolve tolerance and exclusions: CLI flags override manifest
+  const tolerance: ToleranceConfig | undefined = input.tolerance ?? manifest.tolerance;
+  const exclusions: ExclusionEntry[] | undefined = input.exclusions ?? manifest.exclusions;
+
+  // pre-evaluation: filter out prompts for excluded concern IDs (saves API calls)
+  const { kept: activePrompts, excludedConcernIds: preExcludedConcernIds } =
+    filterExcludedConcernPrompts(assembled.prompts, exclusions);
+
+  if (preExcludedConcernIds.length > 0) {
+    progress(`Skipping excluded concerns: ${preExcludedConcernIds.join(", ")}`);
+  }
+
+  let findings: Finding[] = [];
   const contradictions: ContradictionFinding[] = [];
 
-  for (const prompt of assembled.prompts) {
+  for (const prompt of activePrompts) {
     if (prompt.type === "contradiction") {
       progress("Running contradiction scanner...");
       const result = await input.engine.evaluate(prompt);
@@ -102,6 +211,36 @@ export async function lint(input: LintInput): Promise<LintResult> {
     }
   }
 
+  // apply component-level exclusion filtering on findings
+  const { kept, excluded } = applyExclusionFilter(findings, exclusions);
+  findings = kept;
+  // merge pre-evaluation concern exclusions with post-evaluation component exclusions
+  const postExcludedConcernIds = [...new Set(excluded.map((f) => f.concernId))];
+  const excludedConcernIds = [...new Set([...preExcludedConcernIds, ...postExcludedConcernIds])];
+
+  // apply tolerance filtering
+  findings = applyToleranceFilter(findings, tolerance);
+
+  // build coverage info
+  const documentsLoaded = docs.all.map((d) => d.role);
+  const allDeclaredOptional = [
+    ...(manifest.documents.optional ?? []),
+    ...(manifest.documents.contracts ?? []),
+    ...(manifest.documents.operational ?? []),
+    ...(manifest.documents.reference ?? []),
+  ];
+  const documentsMissing = allDeclaredOptional
+    .filter((ref) => !docs.byRole[ref.role])
+    .map((ref) => ref.role);
+
+  const coverage = buildCoverageInfo({
+    matched: assembled.concerns.matched,
+    skipped: assembled.concerns.skipped,
+    excludedConcernIds,
+    documentsLoaded,
+    documentsMissing,
+  });
+
   const findingErrors = findings.filter((f) => f.severity === "error").length;
   const contradictionErrors = contradictions.filter((c) => c.severity === "error").length;
   const errors = findingErrors + contradictionErrors;
@@ -125,5 +264,8 @@ export async function lint(input: LintInput): Promise<LintResult> {
       contradictions: contradictions.length,
       humanReviewRequired: humanReview,
     },
+    toleranceApplied: tolerance,
+    exclusionsApplied: exclusions,
+    coverage,
   };
 }

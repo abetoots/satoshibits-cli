@@ -5,6 +5,8 @@ import * as yaml from "js-yaml";
 import type { DocLintManifest, DocumentRef } from "../types/index.js";
 
 const MANIFEST_FILENAMES = ["doc-lint.yaml", "doc-lint.yml"];
+const VALID_CLASSIFICATIONS = ["standard", "financial", "healthcare", "infrastructure"];
+const VALID_SEVERITY_THRESHOLDS = ["error", "warn", "note"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -59,6 +61,18 @@ function validateManifest(data: unknown, filePath: string): DocLintManifest {
     throw new Error(`Invalid manifest at ${filePath}: missing 'project.name'`);
   }
 
+  // project.classification (optional)
+  if (obj.project.classification != null) {
+    if (
+      typeof obj.project.classification !== "string" ||
+      !VALID_CLASSIFICATIONS.includes(obj.project.classification)
+    ) {
+      throw new Error(
+        `Invalid manifest at ${filePath}: 'project.classification' must be one of: ${VALID_CLASSIFICATIONS.join(", ")}`,
+      );
+    }
+  }
+
   // documents
   if (!isRecord(obj.documents)) {
     throw new Error(`Invalid manifest at ${filePath}: missing 'documents'`);
@@ -75,6 +89,21 @@ function validateManifest(data: unknown, filePath: string): DocLintManifest {
     }
     for (const doc of obj.documents.optional) {
       validateDocumentRef(doc, filePath);
+    }
+  }
+
+  // documents.contracts / operational / reference (optional arrays of DocumentRef)
+  for (const category of ["contracts", "operational", "reference"] as const) {
+    const value = obj.documents[category];
+    if (value != null) {
+      if (!Array.isArray(value)) {
+        throw new Error(
+          `Invalid manifest at ${filePath}: 'documents.${category}' must be an array`,
+        );
+      }
+      for (const doc of value) {
+        validateDocumentRef(doc, filePath);
+      }
     }
   }
 
@@ -103,6 +132,57 @@ function validateManifest(data: unknown, filePath: string): DocLintManifest {
     }
   }
 
+  // signals.auto_detect / warn_on_mismatch (optional booleans)
+  if (obj.signals.auto_detect != null && typeof obj.signals.auto_detect !== "boolean") {
+    throw new Error(
+      `Invalid manifest at ${filePath}: 'signals.auto_detect' must be a boolean`,
+    );
+  }
+  if (obj.signals.warn_on_mismatch != null && typeof obj.signals.warn_on_mismatch !== "boolean") {
+    throw new Error(
+      `Invalid manifest at ${filePath}: 'signals.warn_on_mismatch' must be a boolean`,
+    );
+  }
+
+  // tolerance (optional)
+  if (obj.tolerance != null) {
+    if (!isRecord(obj.tolerance)) {
+      throw new Error(`Invalid manifest at ${filePath}: 'tolerance' must be an object`);
+    }
+    if (
+      obj.tolerance.severity_threshold != null &&
+      (typeof obj.tolerance.severity_threshold !== "string" ||
+        !VALID_SEVERITY_THRESHOLDS.includes(obj.tolerance.severity_threshold))
+    ) {
+      throw new Error(
+        `Invalid manifest at ${filePath}: 'tolerance.severity_threshold' must be one of: ${VALID_SEVERITY_THRESHOLDS.join(", ")}`,
+      );
+    }
+    if (obj.tolerance.allow_implicit != null && typeof obj.tolerance.allow_implicit !== "boolean") {
+      throw new Error(
+        `Invalid manifest at ${filePath}: 'tolerance.allow_implicit' must be a boolean`,
+      );
+    }
+    if (
+      obj.tolerance.allow_external_refs != null &&
+      typeof obj.tolerance.allow_external_refs !== "boolean"
+    ) {
+      throw new Error(
+        `Invalid manifest at ${filePath}: 'tolerance.allow_external_refs' must be a boolean`,
+      );
+    }
+  }
+
+  // exclusions (optional)
+  if (obj.exclusions != null) {
+    if (!Array.isArray(obj.exclusions)) {
+      throw new Error(`Invalid manifest at ${filePath}: 'exclusions' must be an array`);
+    }
+    for (const entry of obj.exclusions) {
+      validateExclusionEntry(entry, filePath);
+    }
+  }
+
   // fields validated above; final cast needed because TS can't track field-by-field validation
   return data as DocLintManifest;
 }
@@ -116,5 +196,25 @@ function validateDocumentRef(doc: unknown, filePath: string): asserts doc is Doc
   }
   if (typeof doc.path !== "string" || !doc.path) {
     throw new Error(`Invalid manifest at ${filePath}: each document must have a 'path'`);
+  }
+}
+
+function validateExclusionEntry(entry: unknown, filePath: string): void {
+  if (!isRecord(entry)) {
+    throw new Error(`Invalid manifest at ${filePath}: each exclusion must be an object`);
+  }
+
+  const hasComponent = typeof entry.component === "string" && entry.component.length > 0;
+  const hasConcernId = typeof entry.concernId === "string" && entry.concernId.length > 0;
+
+  if (!hasComponent && !hasConcernId) {
+    throw new Error(
+      `Invalid manifest at ${filePath}: each exclusion must have at least one of 'component' or 'concernId'`,
+    );
+  }
+  if (typeof entry.reason !== "string" || !entry.reason) {
+    throw new Error(
+      `Invalid manifest at ${filePath}: each exclusion must have a 'reason'`,
+    );
   }
 }

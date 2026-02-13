@@ -13,4 +13,7 @@ export interface LintOptions {
   concerns?: string;
   dryRun?: boolean;
   verbose?: boolean;
+  severityThreshold?: string;
+  allowImplicit?: boolean;
+  allowExternalRefs?: boolean;
 }

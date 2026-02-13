@@ -1,0 +1,384 @@
+# =============================================================================
+# CONCERN: API Versioning Compliance
+# =============================================================================
+# This concern validates that public and external APIs have a documented
+# versioning strategy, deprecation policy, and backward compatibility
+# guarantees. APIs without versioning strategy will inevitably face breaking
+# changes that disrupt consumers with no migration path.
+#
+# WHY THIS MATTERS:
+# Public APIs are contracts with external consumers who cannot be forced to
+# update on the provider's schedule. When a breaking change ships without
+# versioning, every consumer breaks simultaneously. Without a deprecation
+# policy, consumers receive no warning before their integrations fail.
+# Without backward compatibility guarantees, consumers cannot plan their
+# own release cycles. The result: broken integrations, lost trust, support
+# escalations, and in B2B contexts, potential SLA violations and contract
+# disputes.
+#
+# TYPICAL MANIFESTATIONS:
+# - FRD describes a public REST API but ADD has no versioning strategy
+# - ADD uses URL path versioning (/v1/orders) for some endpoints but other
+#   endpoints have no version indicator
+# - BRD promises "backward compatible API" but no deprecation policy exists
+#   to define what happens when changes are unavoidable
+# - ADD plans to rename fields or change response structure without a
+#   documented migration path for existing consumers
+# - API spec has version 2.0 but no documentation of what changed from
+#   version 1.0 or when version 1.0 will be sunset
+# =============================================================================
+
+concern:
+  id: "api-versioning-compliance"
+  version: "1.0"
+  name: "API Versioning Compliance"
+  category: "compliance"
+  severity: "warn"
+
+  description: |
+    Validates that public and external APIs have a comprehensive versioning
+    strategy including: versioning mechanism (URL path, header, query param),
+    deprecation policy with timelines, backward compatibility guarantees,
+    and documented migration paths for breaking changes. APIs are contracts -
+    breaking changes without versioning and deprecation planning cause
+    downstream consumer failures and erode trust.
+
+# -----------------------------------------------------------------------------
+# TRIGGERS: When to load this concern
+# -----------------------------------------------------------------------------
+triggers:
+  any_of:
+    - external-api
+    - api-versioning
+    - public-api
+    - backward-compatibility
+
+# -----------------------------------------------------------------------------
+# EVALUATION: The reasoning task
+# -----------------------------------------------------------------------------
+evaluation:
+  question: |
+    Examine the documentation for all public or external APIs and evaluate
+    whether each has a complete versioning strategy, deprecation policy,
+    and backward compatibility guarantees.
+
+    STEP 1: IDENTIFY ALL PUBLIC AND EXTERNAL APIs
+    Scan the FRD, BRD, and ADD for APIs that are consumed by external parties:
+
+    a) Public APIs
+       - REST APIs exposed to third-party developers
+       - GraphQL endpoints available to external consumers
+       - Webhook callbacks that external systems register for
+       - SDK interfaces published for external use
+
+    b) Partner/B2B APIs
+       - APIs consumed by specific business partners
+       - Integration APIs documented in partnership agreements
+       - APIs with SLA commitments tied to contracts
+
+    c) Internal APIs with External Impact
+       - Backend-for-frontend (BFF) APIs consumed by mobile apps
+         (app store update cycles create version lag)
+       - APIs consumed by browser-based SPAs (users may run old
+         cached versions)
+       - APIs consumed by IoT devices (firmware update cycles)
+
+    For each API, capture:
+    - API name or endpoint group
+    - Who consumes it (external developers, partners, mobile apps)
+    - Where it is documented (FRD section, ADD section, API spec)
+    - Whether it is explicitly labeled as "public" or "external"
+
+    STEP 2: CHECK FOR VERSIONING STRATEGY
+    For each identified API, search the documentation for a versioning
+    strategy:
+
+    a) Versioning Mechanism
+       - Is a versioning mechanism documented? (URL path /v1/, Accept
+         header, custom header X-API-Version, query parameter ?version=1)
+       - Is the mechanism applied consistently across all endpoints?
+       - Are new endpoints created under the current version?
+
+    b) Version Format
+       - What version format is used? (semantic versioning, date-based,
+         integer, custom)
+       - Is the version format documented for consumers?
+       - How are major vs. minor version bumps distinguished?
+
+    c) Version Coverage
+       - Do all public endpoints include a version indicator?
+       - Are there any endpoints without versioning?
+       - Is the default version behavior documented? (what happens if
+         no version is specified in the request?)
+
+    STEP 3: CHECK FOR DEPRECATION POLICY
+    For each API, check whether there is a documented deprecation policy:
+
+    a) Deprecation Timeline
+       - How much advance notice do consumers receive before a version
+         is deprecated? (30 days, 90 days, 6 months, 1 year)
+       - Is there a minimum support window for each version?
+       - Are deprecation timelines published or communicated?
+
+    b) Deprecation Communication
+       - How are consumers notified of deprecation? (email, changelog,
+         API response headers, developer portal announcements)
+       - Are deprecated endpoints marked in the API spec? (deprecated
+         flag in OpenAPI)
+       - Do deprecated endpoints return warning headers?
+
+    c) Sunset Process
+       - What happens when a version reaches end-of-life?
+       - Is there a sunset date published?
+       - Are deprecated endpoints shut down or do they return error
+         responses with migration guidance?
+
+    STEP 4: CHECK FOR BACKWARD COMPATIBILITY GUARANTEES
+    For each API, check whether backward compatibility is addressed:
+
+    a) Compatibility Guarantees
+       - Is backward compatibility explicitly guaranteed or disclaimed?
+       - What constitutes a breaking change? (field removal, type change,
+         behavior change, new required field)
+       - Are additive changes (new optional fields, new endpoints)
+         considered non-breaking?
+
+    b) Breaking Change Process
+       - How are unavoidable breaking changes handled?
+       - Is a new version created for breaking changes?
+       - Is there a migration guide for consumers?
+       - Can consumers opt into the new version at their own pace?
+
+    c) Migration Support
+       - Are migration paths documented between versions?
+       - Are there code examples or migration scripts?
+       - Is there a transition period where both versions run in parallel?
+       - Is there a compatibility layer or adapter available?
+
+  checklist:
+    - id: "versioning-strategy"
+      question: "Is an API versioning strategy explicitly documented for all public/external APIs?"
+    - id: "versioning-consistency"
+      question: "Is the versioning mechanism applied consistently across all public endpoints?"
+    - id: "deprecation-policy"
+      question: "Is there a documented deprecation policy with timelines and communication plan?"
+    - id: "backward-compatibility"
+      question: "Are backward compatibility guarantees or disclaimers explicitly stated?"
+    - id: "breaking-change-process"
+      question: "Is there a documented process for handling unavoidable breaking changes?"
+    - id: "migration-documentation"
+      question: "When breaking changes occur, is a migration path documented for consumers?"
+
+  evidence_required:
+    - field: "api_name"
+      type: "string"
+      description: "The name or identifier of the API or endpoint group (e.g., 'Orders REST API', 'Partner Integration API v2', 'Public GraphQL endpoint')"
+      required: true
+
+    - field: "api_source"
+      type: "string"
+      description: "Where this API is documented (e.g., 'FRD Section 4.1', 'ADD Section 3.2 - External Interfaces', 'OpenAPI spec paths section')"
+      required: true
+
+    - field: "versioning_strategy_documented"
+      type: "boolean"
+      description: "Whether a versioning strategy is explicitly documented for this API"
+      required: true
+
+    - field: "versioning_mechanism"
+      type: "enum"
+      values:
+        - "url-path"     # /v1/orders, /v2/orders
+        - "header"       # Accept: application/vnd.api.v1+json or X-API-Version: 1
+        - "query-param"  # /orders?version=1
+        - "none"         # no versioning mechanism documented
+        - "other"        # custom or undocumented mechanism
+      description: "The versioning mechanism used (or 'none' if not documented)"
+      required: true
+
+    - field: "deprecation_policy_documented"
+      type: "boolean"
+      description: "Whether a deprecation policy with timelines is documented"
+      required: true
+
+    - field: "backward_compatibility_guarantee"
+      type: "string | null"
+      description: "The backward compatibility guarantee if documented (e.g., 'Additive changes only within major version', 'No breaking changes without 6-month notice', or null if not documented)"
+      required: true
+
+    - field: "breaking_change_process_documented"
+      type: "boolean"
+      description: "Whether a process for handling breaking changes is documented (new version, migration guide, sunset timeline)"
+      required: true
+
+    - field: "confidence"
+      type: "enum"
+      values: ["high", "medium", "low"]
+      description: "Confidence in the assessment (low if it is unclear whether the API is public/external)"
+      required: true
+
+  failure_condition: |
+    Report as WARNING when:
+
+    1. Public API has no documented versioning strategy
+       (versioning_strategy_documented is FALSE). Without versioning,
+       any change to the API is potentially breaking for all consumers.
+
+    2. No deprecation policy is documented
+       (deprecation_policy_documented is FALSE). Consumers cannot plan
+       for API changes if there is no deprecation timeline.
+
+    3. Versioning mechanism is inconsistent - some endpoints use
+       versioning (e.g., /v1/orders) but others do not (e.g., /health,
+       /users). Inconsistency confuses consumers about which endpoints
+       are stable.
+
+    4. Backward compatibility is neither guaranteed nor disclaimed.
+       Consumers need to know whether additive changes (new fields) are
+       the only changes within a version, or if any change is possible.
+
+    Report as ERROR when:
+
+    1. Breaking changes are planned or documented (field removal, type
+       change, endpoint removal) without a migration path for consumers.
+       Breaking changes without migration documentation cause immediate
+       consumer failures.
+
+    2. A public API version is documented as deprecated or sunset but no
+       migration guide or replacement version is documented. Consumers
+       have nowhere to go.
+
+    3. Multiple API versions exist but there is no documentation of what
+       changed between versions. Consumers cannot evaluate whether to
+       migrate or what effort is required.
+
+  recommendation_template: |
+    ## Gap: API Versioning Compliance - {api_name}
+
+    **API:** {api_name}
+    **Source:** {api_source}
+    **Versioning Strategy Documented:** {versioning_strategy_documented}
+    **Versioning Mechanism:** {versioning_mechanism}
+    **Deprecation Policy Documented:** {deprecation_policy_documented}
+    **Backward Compatibility Guarantee:** {backward_compatibility_guarantee}
+    **Breaking Change Process Documented:** {breaking_change_process_documented}
+
+    ### Versioning Gap
+
+    This API is consumed externally but lacks complete versioning and
+    deprecation documentation. External consumers depend on API stability
+    and need advance notice of changes.
+
+    ### Resolution Options
+
+    1. **Document Versioning Strategy**:
+       Choose and document a versioning mechanism (URL path /v1/, header,
+       or query parameter). Apply it consistently across all endpoints.
+       Document the default behavior when no version is specified.
+
+    2. **Establish Deprecation Policy**:
+       Define minimum support windows per major version (e.g., 12 months),
+       communication channels for deprecation notices (changelog, email,
+       response headers), and sunset procedures.
+
+    3. **Define Breaking Change Process**:
+       Document what constitutes a breaking change, how breaking changes
+       trigger a new major version, and the minimum migration support
+       period (parallel operation of old and new versions).
+
+    4. **Publish Migration Guides**:
+       For each version transition, provide a migration guide that lists
+       all changes, highlights breaking changes, and provides code
+       examples for the updated API.
+
+    ### Why This Matters
+    API versioning is a contract with external consumers. Without it,
+    every release is a potential breaking change. The cost of a broken
+    integration compounds across all consumers - support tickets, lost
+    revenue, broken partner relationships, and potential SLA violations.
+
+# -----------------------------------------------------------------------------
+# EXAMPLES
+# -----------------------------------------------------------------------------
+examples:
+  well_documented:
+    - source: "ADD Section 3.2 - API Strategy"
+      text: |
+        "All public APIs use URL path versioning (/v1/, /v2/). Major
+        versions are supported for a minimum of 18 months after the next
+        major version is released. Deprecation notices are published in
+        the developer changelog and via Deprecation and Sunset response
+        headers (RFC 8594). Breaking changes are defined as: field
+        removal, type change, new required request field, semantic
+        behavior change. Additive changes (new optional fields, new
+        endpoints) are non-breaking within a major version."
+      mapping: |
+        api_name: "Public REST API"
+        api_source: "ADD Section 3.2"
+        versioning_strategy_documented: true
+        versioning_mechanism: "url-path"
+        deprecation_policy_documented: true
+        backward_compatibility_guarantee: "Additive changes only within major version. 18-month support window after next major release."
+        breaking_change_process_documented: true
+        confidence: "high"
+        note: "Complete versioning documentation with deprecation policy and compatibility guarantees"
+
+  no_versioning:
+    - source: "FRD Section 5.1 - Partner API"
+      text: |
+        "The Partner Integration API provides endpoints for order
+        submission, inventory queries, and shipment tracking. Partners
+        access the API at api.example.com/orders, api.example.com/inventory,
+        and api.example.com/shipments."
+      mapping: |
+        api_name: "Partner Integration API"
+        api_source: "FRD Section 5.1"
+        versioning_strategy_documented: false
+        versioning_mechanism: "none"
+        deprecation_policy_documented: false
+        backward_compatibility_guarantee: null
+        breaking_change_process_documented: false
+        confidence: "high"
+        gap: "Public partner API with no versioning strategy, no deprecation
+              policy, and no backward compatibility guarantees. Any change
+              to these endpoints could break partner integrations."
+
+  breaking_change_no_migration:
+    - source: "ADD Section 7.3 - API v2 Migration"
+      text: |
+        "API v2 replaces the legacy /orders endpoint with a new /orders
+        resource that uses a different response format. The 'items' field
+        is now an array of objects instead of an array of strings. v1 will
+        be sunset on March 1."
+      mapping: |
+        api_name: "Orders API v2"
+        api_source: "ADD Section 7.3"
+        versioning_strategy_documented: true
+        versioning_mechanism: "url-path"
+        deprecation_policy_documented: false
+        backward_compatibility_guarantee: null
+        breaking_change_process_documented: false
+        confidence: "high"
+        gap: "Breaking change documented (items field type change) with a
+              sunset date but no migration guide, no code examples, and
+              no deprecation notice timeline. Consumers will discover the
+              change when their integration breaks."
+
+# -----------------------------------------------------------------------------
+# METADATA
+# -----------------------------------------------------------------------------
+metadata:
+  created: "2026-02"
+  last_updated: "2026-02"
+  author: "doc-lint v0.2"
+  related_concerns:
+    - "api-contract-consistency"     # API spec should reflect versioning strategy
+    - "horizontal-traceability"      # versioning requirements should trace from BRD
+    - "auth-scheme-compliance"       # auth changes across versions need migration paths
+  references:
+    - "RFC 8594: The Sunset HTTP Header Field"
+    - "OpenAPI Specification: Deprecation of Operations"
+    - "Semantic Versioning 2.0.0: https://semver.org"
+    - "Microsoft REST API Guidelines: Versioning"
+    - "Google API Design Guide: Compatibility and Versioning"
+    - "Stripe API Versioning: https://stripe.com/docs/api/versioning"

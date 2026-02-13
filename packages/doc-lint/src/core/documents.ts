@@ -27,8 +27,16 @@ export function loadDocuments(manifest: DocLintManifest, projectPath: string): L
   }
 
   // load optional documents
-  if (manifest.documents.optional) {
-    for (const ref of manifest.documents.optional) {
+  const optionalCategories = [
+    manifest.documents.optional,
+    manifest.documents.contracts,
+    manifest.documents.operational,
+    manifest.documents.reference,
+  ];
+
+  for (const refs of optionalCategories) {
+    if (!refs) continue;
+    for (const ref of refs) {
       const doc = loadSingleDocument(ref, projectPath, false);
       if (doc) {
         all.push(doc);

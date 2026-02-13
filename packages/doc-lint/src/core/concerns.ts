@@ -13,27 +13,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+const CONCERN_SUBDIRS = [
+  "core",
+  "interactions",
+  "promise-validation",
+  "security",
+  "operational",
+  "compliance",
+  "test-coverage",
+];
+
 export function loadAllConcerns(): LoadedConcern[] {
   const concerns: LoadedConcern[] = [];
   const concernsDir = getConcernsDir();
 
-  const coreDir = path.join(concernsDir, "core");
-  const interactionsDir = path.join(concernsDir, "interactions");
+  for (const subdir of CONCERN_SUBDIRS) {
+    const dir = path.join(concernsDir, subdir);
+    if (!fs.existsSync(dir)) continue;
 
-  if (fs.existsSync(coreDir)) {
-    for (const file of fs.readdirSync(coreDir)) {
+    for (const file of fs.readdirSync(dir)) {
       if (file.endsWith(".yaml") || file.endsWith(".yml")) {
-        const filePath = path.join(coreDir, file);
-        const loaded = loadConcernFile(filePath);
-        if (loaded) concerns.push(loaded);
-      }
-    }
-  }
-
-  if (fs.existsSync(interactionsDir)) {
-    for (const file of fs.readdirSync(interactionsDir)) {
-      if (file.endsWith(".yaml") || file.endsWith(".yml")) {
-        const filePath = path.join(interactionsDir, file);
+        const filePath = path.join(dir, file);
         const loaded = loadConcernFile(filePath);
         if (loaded) concerns.push(loaded);
       }

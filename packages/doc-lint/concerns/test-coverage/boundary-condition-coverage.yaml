@@ -1,0 +1,459 @@
+# =============================================================================
+# CONCERN: Boundary Condition Test Coverage
+# =============================================================================
+# This concern validates that every documented boundary, limit, quota, or
+# threshold in the ADD or FRD has corresponding boundary condition tests.
+# Boundaries include rate limits, maximum payload sizes, concurrency limits,
+# quotas, time limits, and count limits. Each boundary requires testing at
+# three points: at the limit (exactly at threshold), over the limit (just
+# beyond threshold), and under the limit (just below threshold).
+#
+# WHY THIS MATTERS:
+# Boundary conditions are where off-by-one errors, integer overflows, and
+# edge-case failures hide. A rate limiter documented as "100 requests per
+# minute" may actually allow 101 due to a >= vs > comparison. A file upload
+# limit of "10MB" may accept 10.1MB because the check uses base-10 megabytes
+# while storage uses base-2 mebibytes. Security boundaries (rate limits on
+# login attempts, API key quotas) are especially critical - a boundary that
+# fails open becomes a vulnerability. Without boundary tests, the documented
+# limits are aspirational rather than enforced.
+#
+# TYPICAL MANIFESTATION:
+# - ADD specifies "rate limit: 100 req/min per API key" but no test verifies
+#   request 101 is actually rejected
+# - FRD states "maximum file upload size: 10MB" but no test uploads a 10MB,
+#   10.1MB, and 9.9MB file to verify boundary behavior
+# - ADD defines "connection pool max: 50" but no test verifies behavior when
+#   51st connection is requested
+# - FRD specifies "free tier: 1,000 API calls/month" but no test verifies
+#   the quota enforcement at exactly 1,000 and 1,001 calls
+# =============================================================================
+
+concern:
+  id: "boundary-condition-coverage"
+  version: "1.0"
+  name: "Boundary Condition Test Coverage"
+  category: "test-coverage"
+  severity: "warn"
+
+  description: |
+    Validates that every documented boundary, limit, quota, or threshold in
+    the ADD and FRD has corresponding boundary condition tests. Each boundary
+    should be tested at three points: at the limit (exact threshold), over
+    the limit (just beyond), and under the limit (just below). Boundaries
+    without tests are unverified constraints - the system may not actually
+    enforce the documented limits, leading to resource exhaustion, security
+    vulnerabilities, or unexpected behavior at scale.
+
+# -----------------------------------------------------------------------------
+# TRIGGERS: When to load this concern
+# -----------------------------------------------------------------------------
+triggers:
+  any_of:
+    - validation
+    - limits
+    - quotas
+    - rate-limiting
+    - testing
+
+# -----------------------------------------------------------------------------
+# EVALUATION: The reasoning task
+# -----------------------------------------------------------------------------
+evaluation:
+  question: |
+    Systematically extract every documented boundary, limit, quota, and
+    threshold from the ADD and FRD, then verify that each one has
+    corresponding boundary condition tests covering at-limit, over-limit,
+    and under-limit scenarios.
+
+    STEP 1: EXTRACT DOCUMENTED BOUNDARIES FROM ADD AND FRD
+    Scan all architecture and functional documents for any numeric limit,
+    threshold, quota, or constraint that defines a boundary in system behavior:
+
+    a) RATE LIMITS
+       - API request rate limits (per user, per API key, per IP, global)
+       - Login attempt limits (e.g., "5 failed attempts locks account")
+       - Email/notification sending rate limits
+       - Webhook delivery rate limits
+       - Database query rate limits or throttling
+       - Look for: rate limit, throttle, per minute, per second, per hour,
+         requests per, calls per, max rate, burst limit
+
+    b) SIZE LIMITS
+       - Maximum file upload sizes
+       - Maximum request/response payload sizes
+       - Maximum field lengths (username, description, comment)
+       - Maximum record counts in bulk operations
+       - Database column size limits
+       - Maximum attachment sizes
+       - Look for: max size, maximum, limit, up to, no larger than,
+         maximum length, character limit, file size
+
+    c) QUOTAS
+       - API call quotas per billing period (free tier, paid tier)
+       - Storage quotas per account or organization
+       - Resource quotas (max projects, max users, max repositories)
+       - Bandwidth quotas
+       - Look for: quota, allowance, allocation, tier limit, plan limit,
+         usage limit, monthly limit, included in plan
+
+    d) CONCURRENCY LIMITS
+       - Connection pool sizes (database, HTTP, message broker)
+       - Maximum concurrent users or sessions
+       - Thread pool sizes
+       - Worker/consumer concurrency limits
+       - Parallel processing limits (max parallel jobs, fan-out limits)
+       - Look for: pool size, max connections, concurrent, parallel,
+         max workers, max threads, simultaneous
+
+    e) TIME LIMITS
+       - Session duration limits (e.g., "session expires after 30 minutes")
+       - Token validity periods (JWT expiry, refresh token lifetime)
+       - Cache TTL values
+       - Job execution timeout limits
+       - Data retention periods
+       - Look for: expires, TTL, valid for, maximum duration, retention,
+         lifetime, idle timeout, absolute timeout
+
+    f) COUNT LIMITS
+       - Maximum items in a collection (e.g., "max 100 items per cart")
+       - Pagination limits (max page size)
+       - Maximum search results returned
+       - Maximum nested depth (e.g., comment threads, category hierarchy)
+       - Maximum number of tags, labels, or categories per item
+       - Look for: maximum, at most, up to, no more than, limit,
+         max items, page size, max results
+
+    For each boundary, record:
+    - A descriptive name for the boundary
+    - The source document and section where it is defined
+    - The boundary type (from categories above)
+    - The exact boundary value (e.g., "100 requests per minute", "10MB")
+    - Whether the boundary has security implications
+
+    STEP 2: CHECK FOR CORRESPONDING BOUNDARY CONDITION TESTS
+    For each documented boundary identified in Step 1, search all test
+    documentation for tests that verify boundary behavior:
+
+    a) AT-LIMIT TESTS (exact threshold)
+       - Does a test verify behavior at exactly the boundary value?
+       - Example: send exactly 100th request at the rate limit boundary
+       - This tests whether the boundary is inclusive or exclusive
+       - Look for: exactly, at limit, boundary, threshold, edge case
+
+    b) OVER-LIMIT TESTS (just beyond threshold)
+       - Does a test verify the system correctly rejects/handles the
+         boundary violation?
+       - Example: send 101st request and verify 429 Too Many Requests
+       - This tests that the boundary is actually enforced
+       - Look for: exceed, over limit, beyond, rejected, denied, 429,
+         413, too large, too many
+
+    c) UNDER-LIMIT TESTS (just below threshold)
+       - Does a test verify the system allows behavior just below the limit?
+       - Example: send 99th request and verify it succeeds
+       - This tests there are no off-by-one errors in boundary enforcement
+       - Look for: below limit, within limit, allowed, accepted, valid
+
+    d) TEST COMPLETENESS ASSESSMENT
+       Rate each boundary's test coverage:
+       - "both": at-limit AND over-limit tests exist (minimum acceptable)
+       - "at-limit": only at-limit test exists
+       - "over-limit": only over-limit test exists (verifies enforcement
+         but not off-by-one correctness)
+       - "none": no boundary-specific tests found
+
+    STEP 3: FLAG BOUNDARIES WITHOUT TEST COVERAGE
+    Identify all gaps and assess their severity based on impact:
+
+    a) SECURITY-CRITICAL BOUNDARIES (ERROR severity)
+       - Rate limits on authentication endpoints (login, password reset)
+         Without tests, brute-force protection may not work
+       - API key rate limits and quotas
+         Without tests, abuse protection may not work
+       - File upload size limits
+         Without tests, disk exhaustion or DoS is possible
+       - Session/token expiration limits
+         Without tests, sessions may never expire (security vulnerability)
+
+    b) OPERATIONAL BOUNDARIES (WARNING severity)
+       - Connection pool sizes
+         Without tests, pool exhaustion behavior is unknown
+       - Concurrency limits
+         Without tests, resource contention under load is unverified
+       - Pagination limits
+         Without tests, unbounded queries may cause performance issues
+       - Cache TTL values
+         Without tests, stale data windows are unverified
+
+    c) BUSINESS BOUNDARIES (WARNING severity)
+       - Quota enforcement for billing tiers
+         Without tests, customers may get free overages
+       - Cart/order item limits
+         Without tests, business rules may not be enforced
+       - Data retention periods
+         Without tests, data may be kept or deleted incorrectly
+
+    STEP 4: ASSESS OVERALL BOUNDARY COVERAGE
+    Summarize the boundary testing posture:
+    - Total boundaries documented
+    - Boundaries with both at-limit and over-limit tests
+    - Boundaries with partial test coverage (only one type)
+    - Boundaries with no test coverage
+    - Security-critical boundaries without test coverage (highest risk)
+    - Identify patterns: are all rate limits untested? Are all size limits
+      tested but time limits ignored?
+
+  checklist:
+    - id: "boundaries-extracted"
+      question: "Have all documented boundaries, limits, quotas, and thresholds been identified from ADD and FRD?"
+    - id: "rate-limits-tested"
+      question: "Do all documented rate limits have at-limit and over-limit test specifications?"
+    - id: "size-limits-tested"
+      question: "Do all documented size limits have boundary condition tests (at-limit, over-limit, under-limit)?"
+    - id: "security-boundaries-tested"
+      question: "Do all security-related boundaries (auth rate limits, session expiry, API quotas) have test specifications?"
+    - id: "quota-enforcement-tested"
+      question: "Are billing tier quotas tested at the enforcement boundary (exact limit and one over)?"
+    - id: "concurrency-limits-tested"
+      question: "Are connection pool sizes and concurrency limits tested under boundary conditions?"
+
+  evidence_required:
+    - field: "boundary_name"
+      type: "string"
+      description: "Descriptive name for the boundary (e.g., 'API rate limit per user', 'Max file upload size', 'Free tier monthly API quota')"
+      required: true
+
+    - field: "boundary_source"
+      type: "string"
+      description: "Document and section where the boundary is defined (e.g., 'ADD Section 3.4, Rate Limiting Configuration')"
+      required: true
+
+    - field: "boundary_type"
+      type: "enum"
+      values:
+        - "rate-limit"
+        - "size-limit"
+        - "quota"
+        - "concurrency-limit"
+        - "time-limit"
+        - "count-limit"
+        - "other"
+      description: "Category of the boundary"
+      required: true
+
+    - field: "boundary_value"
+      type: "string"
+      description: "The exact boundary value as documented (e.g., '100 requests per minute', '10MB', '50 concurrent connections', '1,000 API calls per month')"
+      required: true
+
+    - field: "test_exists"
+      type: "boolean"
+      description: "Whether any boundary condition test exists for this limit"
+      required: true
+
+    - field: "test_reference"
+      type: "string | null"
+      description: "Reference to the test specification (e.g., 'Test Plan Section 8.1, TC-120 through TC-122') or null if no test found"
+      required: true
+
+    - field: "test_cases_documented"
+      type: "enum"
+      values:
+        - "at-limit"
+        - "over-limit"
+        - "both"
+        - "none"
+      description: "'both' if at-limit and over-limit tests exist, 'at-limit' if only exact-threshold test, 'over-limit' if only enforcement test, 'none' if no boundary tests found"
+      required: true
+
+    - field: "confidence"
+      type: "enum"
+      values: ["high", "medium", "low"]
+      description: "Confidence that the boundary is accurately documented and test coverage assessment is correct: 'high' if boundary value is explicit and test explicitly references it, 'medium' if boundary is stated but test coverage is inferred, 'low' if boundary value is ambiguous or test mapping is uncertain"
+      required: true
+
+  failure_condition: |
+    Report as ERROR when:
+
+    1. A security-related boundary has no test coverage (test_exists is FALSE
+       AND the boundary protects against abuse or unauthorized access):
+       - Login attempt rate limits (brute-force protection)
+       - API authentication rate limits
+       - Account lockout thresholds
+       - Session or token expiration limits
+       - File upload size limits (DoS prevention)
+       Without tests, these security controls are unverified and may fail
+       open, creating exploitable vulnerabilities.
+
+    2. A rate limit documented for a public-facing API endpoint has no
+       over-limit test (test_cases_documented is "none" or "at-limit" only).
+       The enforcement behavior (reject with 429, queue, degrade) is not
+       verified.
+
+    3. A quota enforcement boundary for billing tiers has no test at the
+       exact enforcement point (e.g., free tier limit of 1,000 calls but
+       no test verifies call 1,001 is rejected or billed). Revenue leakage
+       or incorrect billing may result.
+
+    4. More than 50% of documented boundaries have no test specifications
+       (systemic lack of boundary testing).
+
+    Report as WARNING when:
+
+    1. Any documented boundary lacks test coverage (test_exists is FALSE)
+       regardless of boundary type.
+
+    2. A boundary has over-limit tests but no at-limit test
+       (test_cases_documented is "over-limit" only). Off-by-one errors
+       in boundary enforcement will not be caught.
+
+    3. A boundary has at-limit tests but no over-limit test
+       (test_cases_documented is "at-limit" only). The enforcement
+       behavior when the limit is exceeded is not verified.
+
+    4. A boundary value is ambiguous or inconsistent across documents
+       (e.g., ADD says "10MB" but FRD says "10 megabytes" without
+       clarifying base-2 vs. base-10, or different documents state
+       different values for the same limit).
+
+    5. Concurrency limits or connection pool sizes are documented but
+       no load test or stress test verifies behavior at the boundary
+       (these boundaries typically require specialized test infrastructure
+       to verify).
+
+  recommendation_template: |
+    ## Gap: Untested Boundary - {boundary_name}
+
+    **Boundary Value:** {boundary_value}
+    **Boundary Type:** {boundary_type}
+    **Source:** {boundary_source}
+    **Test Coverage:** {test_cases_documented}
+
+    ### Missing Boundary Condition Tests
+
+    This boundary is documented but lacks test specifications that verify
+    the system correctly enforces the limit. Without boundary tests, the
+    documented limit may not match actual system behavior.
+
+    ### Recommended Test Cases
+
+    1. **At-Limit Test** (exact threshold):
+       - Set up conditions where usage is at exactly {boundary_value}
+       - Verify the system allows this request (boundary is inclusive)
+         OR rejects it (boundary is exclusive) - clarify which is intended
+       - Example: send the {boundary_value}th request and verify response
+
+    2. **Over-Limit Test** (one beyond threshold):
+       - Set up conditions where usage exceeds {boundary_value} by one unit
+       - Verify the system correctly enforces the limit:
+         - Returns appropriate error response (429, 413, 403, etc.)
+         - Error message is user-friendly and does not leak internals
+         - System state is consistent (no partial processing)
+       - Example: send request #{boundary_value} + 1 and verify rejection
+
+    3. **Under-Limit Test** (one below threshold):
+       - Set up conditions where usage is one unit below {boundary_value}
+       - Verify the system allows this request without any degradation
+       - Example: send request #{boundary_value} - 1 and verify success
+
+    4. **Recovery Test** (after limit resets):
+       - Verify that after the limit window resets (for rate limits) or
+         quota period renews, the system correctly allows requests again
+       - Example: exhaust rate limit, wait for window reset, verify
+         requests succeed again
+
+# -----------------------------------------------------------------------------
+# EXAMPLES
+# -----------------------------------------------------------------------------
+examples:
+  well_documented:
+    - source: "ADD Section 3.4 - Rate Limiting"
+      text: |
+        "Public API endpoints are rate-limited to 100 requests per minute
+        per API key. When the limit is exceeded, the system returns HTTP
+        429 Too Many Requests with a Retry-After header indicating seconds
+        until the window resets. Rate limit state is tracked in Redis with
+        a sliding window counter."
+      mapping: |
+        boundary_name: "Public API rate limit per API key"
+        boundary_source: "ADD Section 3.4"
+        boundary_type: "rate-limit"
+        boundary_value: "100 requests per minute per API key"
+        test_exists: true
+        test_reference: "Test Plan Section 8.1, TC-120 through TC-123"
+        test_cases_documented: "both"
+        confidence: "high"
+        note: "TC-120: 99 requests succeed (under-limit). TC-121: 100th
+               request succeeds (at-limit). TC-122: 101st request returns
+               429 with Retry-After header (over-limit). TC-123: after
+               window reset, requests succeed again (recovery)."
+
+  poorly_documented:
+    - source: "FRD Section 7.1 - File Management"
+      text: |
+        "Users can upload files up to 10MB. Supported formats: PDF, PNG,
+        JPG, DOCX. Files exceeding the size limit should display an error
+        message before upload begins."
+      mapping: |
+        boundary_name: "File upload size limit"
+        boundary_source: "FRD Section 7.1"
+        boundary_type: "size-limit"
+        boundary_value: "10MB"
+        test_exists: false
+        test_reference: null
+        test_cases_documented: "none"
+        confidence: "high"
+        gap: "File upload size limit of 10MB is documented but no test
+              verifies: (1) a 10MB file is accepted (at-limit), (2) a
+              10.1MB file is rejected with error message (over-limit),
+              (3) client-side validation triggers before upload begins,
+              (4) whether 10MB means 10,000,000 bytes or 10,485,760 bytes.
+              Without these tests, oversized files may be accepted, causing
+              storage issues, or the limit may reject files slightly under
+              10MB due to base-2 vs. base-10 discrepancy."
+
+  security_critical:
+    - source: "ADD Section 2.5 - Authentication Security"
+      text: |
+        "To prevent brute-force attacks, user accounts are locked after 5
+        consecutive failed login attempts. Locked accounts are automatically
+        unlocked after 30 minutes. Administrators can manually unlock
+        accounts from the admin dashboard."
+      mapping: |
+        boundary_name: "Login attempt limit for brute-force protection"
+        boundary_source: "ADD Section 2.5"
+        boundary_type: "rate-limit"
+        boundary_value: "5 consecutive failed login attempts"
+        test_exists: false
+        test_reference: null
+        test_cases_documented: "none"
+        confidence: "high"
+        gap: "SECURITY CRITICAL: Brute-force protection boundary of 5 failed
+              attempts has no test coverage. Without tests, there is no
+              verification that: (1) the 5th attempt triggers lockout (at-limit),
+              (2) the 6th attempt is rejected even with correct password
+              (over-limit enforcement), (3) lockout resets after 30 minutes
+              (time-based recovery), (4) successful login resets the failure
+              counter (under-limit reset). An off-by-one error here means
+              either accounts lock too easily (6 attempts needed instead of 5,
+              causing user friction) or too late (allowing extra attempts for
+              brute-force attacks)."
+
+# -----------------------------------------------------------------------------
+# METADATA
+# -----------------------------------------------------------------------------
+metadata:
+  created: "2026-02"
+  last_updated: "2026-02"
+  author: "doc-lint v0.2"
+  related_concerns:
+    - "requirement-test-mapping"      # boundaries are a subset of testable requirements
+    - "error-path-coverage"           # over-limit behavior is a form of error path
+    - "resilience-triad"              # timeouts and circuit breaker thresholds are boundaries
+    - "api-contract-consistency"      # documented limits must match API spec limits
+  references:
+    - "ISTQB: Boundary Value Analysis Technique"
+    - "OWASP Testing Guide: Rate Limiting and Brute Force"
+    - "IEEE 829 - Standard for Software Test Documentation"
+    - "Equivalence Partitioning and Boundary Value Analysis (Myers)"

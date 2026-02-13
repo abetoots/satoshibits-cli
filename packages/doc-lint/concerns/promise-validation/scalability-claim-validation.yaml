@@ -1,0 +1,353 @@
+# =============================================================================
+# CONCERN: Scalability Claim Validation
+# =============================================================================
+# This concern validates that scalability claims made in business and
+# functional documents are backed by concrete architectural mechanisms.
+# A claim like "handles 10,000 requests/second" is meaningless without
+# auto-scaling, connection pooling, stateless design, and load balancing
+# documented in the architecture.
+#
+# WHY THIS MATTERS:
+# Scalability claims set expectations with stakeholders and inform capacity
+# planning. When a BRD promises "supports 1 million concurrent users" but
+# the ADD describes a single stateful application server with an
+# unsharded database, the system will fail under load. These gaps are
+# discovered during load testing (expensive) or in production (catastrophic).
+#
+# TYPICAL MANIFESTATION:
+# - BRD claims "10K RPS" but ADD shows a single application instance
+# - FRD specifies "1M concurrent users" but ADD has stateful sessions
+# - ADD mentions "horizontally scalable" but uses a single SQL database
+#   with no read replicas, sharding, or connection pooling
+# - Claims auto-scaling but architecture has hardcoded resource limits
+# =============================================================================
+
+concern:
+  id: "scalability-claim-validation"
+  version: "1.0"
+  name: "Scalability Claim Validation"
+  category: "promise-validation"
+  severity: "warn"
+
+  description: |
+    Validates that every scalability claim in BRD/FRD documents has
+    corresponding architectural mechanisms in the ADD that can
+    realistically deliver the claimed scale. This includes throughput
+    targets, concurrent user counts, data volume growth, and
+    horizontal scaling assertions. Architecture must demonstrate
+    concrete mechanisms, not just aspirational statements.
+
+# -----------------------------------------------------------------------------
+# TRIGGERS: When to load this concern
+# -----------------------------------------------------------------------------
+triggers:
+  any_of:
+    - scalability
+    - high-traffic
+    - load-balancing
+    - auto-scaling
+
+# -----------------------------------------------------------------------------
+# EVALUATION: The reasoning task
+# -----------------------------------------------------------------------------
+evaluation:
+  question: |
+    Find all scalability claims in business and functional documents, then
+    assess whether the architecture can deliver them by identifying both
+    scaling mechanisms and potential bottlenecks.
+
+    STEP 1: FIND SCALABILITY CLAIMS IN BRD AND FRD
+    Scan for quantitative and qualitative scalability commitments:
+
+    a) Throughput Claims
+       - Requests per second (RPS/TPS) targets
+       - Messages per second processing rates
+       - Data ingestion rates (GB/hour, events/second)
+       - Look for: throughput, RPS, TPS, requests per second, transactions
+
+    b) Concurrency Claims
+       - Concurrent user targets
+       - Simultaneous connection limits
+       - Parallel processing capacity
+       - Look for: concurrent, simultaneous, parallel, connections
+
+    c) Data Volume Claims
+       - Storage growth projections
+       - Record count expectations (millions, billions)
+       - Data retention volumes
+       - Look for: volume, growth, records, storage, petabyte, terabyte
+
+    d) Growth and Elasticity Claims
+       - "Scales linearly with load"
+       - "Handles 10x traffic spikes"
+       - "Elastic scaling for seasonal peaks"
+       - Look for: elastic, linear scaling, burst, spike, peak
+
+    For each claim, capture the exact text, metric, target, and source.
+
+    STEP 2: IDENTIFY BOTTLENECK CANDIDATES IN ADD
+    Scan the architecture for components that could limit scale:
+
+    a) Stateful Components
+       - In-memory sessions or caches tied to specific instances
+       - Local file storage
+       - Singleton services or leaders
+       - Look for: session, state, local, singleton, leader
+
+    b) Database Bottlenecks
+       - Single database instance (no read replicas, no sharding)
+       - Unpartitioned tables expected to hold millions of rows
+       - Missing connection pooling
+       - Sequential ID generation (contention point)
+       - Look for: single database, primary, master, unsharded
+
+    c) Synchronous Bottlenecks
+       - Long synchronous call chains
+       - Blocking I/O operations
+       - Sequential processing pipelines
+       - Look for: synchronous, blocking, sequential, waterfall
+
+    d) Resource Limits
+       - Hardcoded thread pools or connection limits
+       - Fixed instance sizes with no auto-scaling
+       - Single load balancer or gateway
+       - Look for: fixed, hardcoded, limit, max, ceiling
+
+    STEP 3: CHECK FOR SCALING MECHANISMS
+    For each scalability claim, verify the ADD describes mechanisms:
+
+    a) Horizontal Scaling
+       - Auto-scaling groups or pod autoscalers
+       - Stateless service design
+       - Load balancer distribution
+       - Look for: auto-scaling, HPA, scale-out, stateless, load balancer
+
+    b) Data Scaling
+       - Database sharding or partitioning strategy
+       - Read replicas for read-heavy workloads
+       - Caching layers (Redis, Memcached, CDN)
+       - Connection pooling (PgBouncer, ProxySQL)
+       - Look for: shard, partition, replica, cache, pool
+
+    c) Async Processing
+       - Message queues for decoupling (Kafka, SQS, RabbitMQ)
+       - Event-driven architecture for burst handling
+       - Background job processing
+       - Look for: queue, async, event-driven, background, worker
+
+    d) Traffic Management
+       - Rate limiting and throttling
+       - Backpressure mechanisms
+       - CDN for static content
+       - Look for: rate limit, throttle, backpressure, CDN
+
+    STEP 4: FLAG CLAIMS WITHOUT SUPPORT
+    For each scalability claim, determine:
+    - "validated": Architecture has concrete mechanisms to support it
+    - "unvalidated": Architecture is silent on how to achieve it
+    - "contradicted": Architecture has features that prevent it
+      (e.g., stateful sessions block horizontal scaling)
+
+    Pay special attention to:
+    - Claims in marketing/BRD language that may be aspirational
+    - "Horizontally scalable" assertions without stateless design
+    - Auto-scaling mentioned without addressing database bottlenecks
+    - High throughput claims with synchronous architectures
+
+  checklist:
+    - id: "throughput-mechanisms"
+      question: "Are there concrete mechanisms (auto-scaling, load balancing) for throughput claims?"
+    - id: "stateless-design"
+      question: "Is the application stateless to enable horizontal scaling?"
+    - id: "database-scaling"
+      question: "Does the database strategy support the claimed data volume and throughput?"
+    - id: "bottleneck-analysis"
+      question: "Are potential bottlenecks identified and addressed in the architecture?"
+    - id: "no-contradictions"
+      question: "Are there architectural choices that contradict scalability claims?"
+
+  evidence_required:
+    - field: "claim_text"
+      type: "string"
+      description: "The exact scalability claim (e.g., 'Handles 10,000 requests per second')"
+      required: true
+
+    - field: "claim_source"
+      type: "string"
+      description: "Document and section where the claim is made (e.g., 'BRD Section 4.1 - Performance Requirements')"
+      required: true
+
+    - field: "target_metric"
+      type: "string"
+      description: "The quantitative target (e.g., '10,000 RPS', '1M concurrent users', '500GB/day ingestion')"
+      required: true
+
+    - field: "architectural_mechanism"
+      type: "string | null"
+      description: "The scaling mechanism in ADD that supports this claim (e.g., 'Kubernetes HPA with min 3, max 50 pods; stateless services behind ALB')"
+      required: true
+
+    - field: "mechanism_source"
+      type: "string | null"
+      description: "Where in the ADD the mechanism is described (e.g., 'ADD Section 6.1 - Scaling Strategy')"
+      required: true
+
+    - field: "validation_status"
+      type: "enum"
+      values:
+        - "validated"     # Architecture has concrete mechanisms for this claim
+        - "unvalidated"   # Architecture is silent on how to achieve this
+        - "contradicted"  # Architecture has features that prevent this
+      description: "Whether the architecture supports the scalability claim"
+      required: true
+
+    - field: "bottleneck_risk"
+      type: "string | null"
+      description: "Identified bottleneck that could prevent achieving the claim (e.g., 'Single PostgreSQL instance with no read replicas is the bottleneck for 10K RPS read workload')"
+      required: true
+
+    - field: "confidence"
+      type: "enum"
+      values: ["high", "medium", "low"]
+      description: "Confidence in the validation assessment"
+      required: true
+
+  failure_condition: |
+    Report as ERROR when:
+
+    1. validation_status is "contradicted" - the architecture has features
+       that actively prevent achieving the scalability claim. Examples:
+       - Stateful sessions stored in-memory prevent horizontal scaling
+       - Single unsharded database contradicts "handles billions of records"
+       - Synchronous processing pipeline contradicts "processes 100K events/sec"
+       - No auto-scaling mechanism but claims "elastic scaling"
+
+    2. A throughput or concurrency claim exceeds what a single instance
+       can handle, but the architecture describes no horizontal scaling.
+
+    3. Architecture describes a component as "the bottleneck" or "single
+       point of contention" without a mitigation plan.
+
+    Report as WARNING when:
+
+    1. validation_status is "unvalidated" - the architecture does not
+       address how the scalability claim will be achieved. The claim
+       may be aspirational without technical backing.
+
+    2. Scaling mechanisms are mentioned but lack specifics (e.g.,
+       "auto-scaling" without min/max instances, scaling triggers,
+       or cooldown periods).
+
+    3. Database scaling is not addressed despite high throughput or
+       data volume claims (database is often the first bottleneck).
+
+    4. Architecture mentions horizontal scaling but has components
+       that appear stateful without explanation of how state is
+       externalized.
+
+    5. Bottleneck risks are identified but no mitigation is documented.
+
+  recommendation_template: |
+    ## Gap: Scalability Claim Without Architectural Support
+
+    **Claim:** {claim_text}
+    **Target:** {target_metric}
+    **Source:** {claim_source}
+    **Architecture Source:** {mechanism_source}
+    **Status:** {validation_status}
+
+    ### Bottleneck Risk
+    {bottleneck_risk}
+
+    ### Resolution Options
+
+    1. **Add Scaling Mechanisms** (if claim is valid):
+       Document concrete scaling strategies in the ADD:
+       - Auto-scaling policies (triggers, min/max, cooldown)
+       - Database scaling (read replicas, sharding, caching)
+       - Async processing for burst handling
+       - Stateless design for horizontal scaling
+
+    2. **Revise Scalability Claim** (if architecture is fixed):
+       Adjust the claim to match what the architecture can deliver.
+       Provide realistic capacity numbers based on the current design.
+
+    3. **Add Capacity Plan** (to validate claims):
+       Document expected load profile, capacity model, and load
+       testing plan to verify the claim before going to production.
+
+    ### Why This Matters
+    Unvalidated scalability claims create false confidence. When traffic
+    exceeds what the architecture can handle, the result is degraded
+    performance, cascading failures, or total outage - precisely when
+    the system is most needed.
+
+# -----------------------------------------------------------------------------
+# EXAMPLES
+# -----------------------------------------------------------------------------
+examples:
+  well_documented:
+    - source: "BRD Section 4.1 / ADD Section 6.1"
+      text: |
+        "BRD: 'The platform must handle 10,000 concurrent API requests
+        during peak holiday traffic.'
+        ADD: 'API tier runs on Kubernetes with HPA (min 5, max 100 pods,
+        scale at 70% CPU). Services are stateless; sessions stored in Redis
+        cluster. PostgreSQL with 3 read replicas behind PgBouncer connection
+        pooler. CDN caches static assets and GET responses (5min TTL).
+        Kafka absorbs write bursts with consumer auto-scaling.'"
+      assessment: |
+        claim_text: "10,000 concurrent API requests"
+        target_metric: "10,000 concurrent requests"
+        architectural_mechanism: "K8s HPA (5-100 pods), stateless + Redis sessions, PG read replicas + PgBouncer, CDN caching, Kafka for write bursts"
+        validation_status: "validated"
+        bottleneck_risk: null
+        confidence: "high"
+
+  contradicted_claim:
+    - source: "BRD Section 3.2 / ADD Section 2.1"
+      text: |
+        "BRD: 'The system scales horizontally to support unlimited growth.'
+        ADD: 'The application server maintains user sessions in local memory
+        using Express.js sessions with MemoryStore. The single PostgreSQL
+        instance handles all read and write operations.'"
+      assessment: |
+        claim_text: "Scales horizontally to support unlimited growth"
+        target_metric: "unlimited horizontal scaling"
+        architectural_mechanism: "Single application server with in-memory sessions, single PostgreSQL instance"
+        validation_status: "contradicted"
+        bottleneck_risk: "In-memory sessions prevent horizontal scaling (sticky sessions required, no session sharing). Single PostgreSQL instance is a hard ceiling for both throughput and storage."
+        confidence: "high"
+
+  unvalidated_claim:
+    - source: "BRD Section 5.3 / ADD Section 4.1"
+      text: |
+        "BRD: 'The data pipeline processes 500GB of event data daily.'
+        ADD: 'Events are collected via an API endpoint and written to
+        the events table in the application database. A nightly batch
+        job processes the events and generates reports.'"
+      assessment: |
+        claim_text: "Processes 500GB of event data daily"
+        target_metric: "500GB/day event processing"
+        architectural_mechanism: "Single API endpoint writing to application database, nightly batch job"
+        validation_status: "unvalidated"
+        bottleneck_risk: "500GB/day (~5.8MB/sec sustained) into a single database table will cause table bloat, slow queries, and backup issues. Nightly batch processing creates a 24-hour processing lag. No streaming, partitioning, or dedicated data store mentioned."
+        confidence: "high"
+
+# -----------------------------------------------------------------------------
+# METADATA
+# -----------------------------------------------------------------------------
+metadata:
+  created: "2026-02"
+  last_updated: "2026-02"
+  author: "doc-lint v0.2"
+  related_concerns:
+    - "sla-architecture-alignment"   # throughput SLAs are a subset of this concern
+    - "resilience-triad"             # scaling requires resilience under load
+    - "failure-domain-isolation"     # scaling failures should be contained
+    - "horizontal-traceability"      # scalability claims are requirements that need tracing
+  references:
+    - "AWS Well-Architected: Performance Efficiency Pillar"
+    - "Google SRE Book: Handling Overload"
+    - "The Art of Scalability (Abbott, Fisher) - Scale Cube Model"
+    - "Designing Data-Intensive Applications (Kleppmann) - Partitioning"

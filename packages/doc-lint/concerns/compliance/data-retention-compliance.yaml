@@ -1,0 +1,420 @@
+# =============================================================================
+# CONCERN: Data Retention Compliance
+# =============================================================================
+# This concern validates that data handling practices documented in architecture
+# and design documents match the retention and privacy requirements established
+# in requirements documents. Every piece of personally identifiable information
+# (PII) or user data must have a documented retention period, deletion procedure,
+# and legal basis for processing.
+#
+# WHY THIS MATTERS:
+# GDPR fines have reached hundreds of millions of euros. CCPA, LGPD, PIPEDA,
+# and similar regulations all require documented retention periods and deletion
+# capabilities for personal data. When PII is stored without a documented
+# retention period, the organization cannot answer "when will this data be
+# deleted?" - a question regulators will ask. When deletion procedures are
+# not documented, engineers cannot implement the "right to be forgotten."
+# When legal basis is not documented, the organization cannot justify why
+# it processes personal data at all.
+#
+# TYPICAL MANIFESTATIONS:
+# - FRD describes collecting user email, phone, and address but ADD has no
+#   retention period for any of these fields
+# - BRD requires GDPR compliance but ADD stores user IP addresses in logs
+#   indefinitely with no documented purge schedule
+# - FRD mentions "user profile data" but never specifies which fields are
+#   PII or what the retention policy is
+# - ADD describes a user database but has no documented deletion or
+#   anonymization procedure for account closure
+# - System processes health data (HIPAA) but no legal basis is documented
+#   beyond a vague reference to "user consent"
+# =============================================================================
+
+concern:
+  id: "data-retention-compliance"
+  version: "1.0"
+  name: "Data Retention Compliance"
+  category: "compliance"
+  severity: "error"
+
+  description: |
+    Validates that all personally identifiable information (PII) and user
+    data described in system documentation has a corresponding retention
+    policy, deletion or anonymization procedure, and legal basis for
+    processing. Data without documented retention periods becomes a
+    compliance liability. Data without deletion procedures makes the
+    "right to be forgotten" unimplementable. Data without legal basis
+    makes the entire processing activity unlawful under GDPR and similar
+    regulations.
+
+# -----------------------------------------------------------------------------
+# TRIGGERS: When to load this concern
+# -----------------------------------------------------------------------------
+triggers:
+  any_of:
+    - pii
+    - gdpr
+    - data-retention
+    - user-data
+    - privacy
+
+# -----------------------------------------------------------------------------
+# EVALUATION: The reasoning task
+# -----------------------------------------------------------------------------
+evaluation:
+  question: |
+    Identify all PII and user data described across the documentation, then
+    verify that each data type has a documented retention period, deletion
+    procedure, and legal basis for processing.
+
+    STEP 1: IDENTIFY ALL PII AND USER DATA FROM FRD/BRD
+    Scan the FRD and BRD for all references to personal or user data:
+
+    a) Direct PII Fields
+       - Names (first, last, full, display)
+       - Email addresses
+       - Phone numbers
+       - Physical addresses (street, city, postal code, country)
+       - Date of birth, age
+       - Government identifiers (SSN, national ID, passport, driver's license)
+       - Financial identifiers (bank account, credit card number, routing number)
+
+    b) Indirect PII / Behavioral Data
+       - IP addresses
+       - Device identifiers (device ID, MAC address, IMEI)
+       - Browser fingerprints and user agents
+       - Location data (GPS coordinates, geolocation from IP)
+       - Cookies and tracking identifiers
+       - Session IDs and authentication tokens
+
+    c) Sensitive PII (requiring enhanced protection)
+       - Health or medical data
+       - Biometric data (fingerprints, facial recognition, voice prints)
+       - Racial or ethnic origin
+       - Religious or philosophical beliefs
+       - Sexual orientation
+       - Political opinions
+       - Trade union membership
+       - Genetic data
+       - Criminal records
+
+    d) User-Generated Content
+       - Messages, comments, posts
+       - Uploaded files and documents
+       - Search queries and browsing history
+       - Purchase history and transaction records
+       - Support tickets and communication logs
+
+    For each data type found, capture:
+    - The specific field or data category
+    - Where it is mentioned (document and section)
+    - The purpose for which it is collected
+    - Whether it is classified as PII, sensitive PII, or general data
+
+    STEP 2: CHECK FOR RETENTION POLICY PER DATA TYPE
+    For each identified data type, search the documentation for a
+    retention policy:
+
+    a) Retention Period
+       - Is a specific retention period documented? (e.g., "retained for 2
+         years after account closure", "deleted after 90 days of inactivity")
+       - Is the retention period legally compliant? (GDPR principle of storage
+         limitation requires data not be kept longer than necessary)
+       - Are different retention periods specified for different data types?
+         (e.g., transaction records 7 years for tax, user profiles 30 days
+         after deletion request)
+
+    b) Retention Justification
+       - Is a business or legal reason given for the retention period?
+       - Does the retention period align with regulatory requirements?
+         (e.g., financial records may require 7-year retention)
+       - Is the retention period proportionate to the purpose?
+
+    STEP 3: CHECK FOR DELETION AND ANONYMIZATION PROCEDURES
+    For each data type, check whether there is a documented procedure for
+    removing or anonymizing the data:
+
+    a) Deletion Procedure
+       - Is there a documented process for deleting user data upon request?
+       - Does the deletion cascade across all systems that store the data?
+         (primary database, backups, caches, logs, analytics, third-party
+         systems)
+       - What is the timeline for deletion completion?
+       - Are there exceptions to deletion? (legal holds, regulatory
+         requirements)
+
+    b) Anonymization
+       - Is anonymization used as an alternative to deletion?
+       - Is the anonymization method described? (k-anonymity, differential
+         privacy, aggregation, pseudonymization)
+       - Is the anonymization irreversible?
+       - Are anonymized datasets still subject to retention periods?
+
+    c) Right to Be Forgotten
+       - Can a user request complete deletion of their data?
+       - What is the documented process for handling such requests?
+       - How is deletion verified across all storage locations?
+
+    STEP 4: CHECK FOR LEGAL BASIS DOCUMENTATION
+    For each data type and processing activity, verify that a legal basis
+    is documented:
+
+    a) GDPR Legal Bases (Article 6)
+       - Consent: User has given explicit consent. Is consent collection
+         and withdrawal mechanism documented?
+       - Contract: Processing necessary for contract performance. Is the
+         contractual relationship specified?
+       - Legal obligation: Processing required by law. Is the specific
+         law or regulation cited?
+       - Vital interests: Processing necessary to protect life. Is the
+         scenario specified?
+       - Public interest: Processing for a public task. Is the task
+         specified?
+       - Legitimate interest: Processing for legitimate business interest.
+         Is the balancing test documented?
+
+    b) Special Category Data (Article 9)
+       - Sensitive PII requires explicit consent or a specific legal basis
+       - Is the additional justification documented?
+
+    c) Cross-Border Transfer
+       - If data is transferred outside the originating jurisdiction, is
+         the transfer mechanism documented? (adequacy decision, standard
+         contractual clauses, binding corporate rules)
+
+  checklist:
+    - id: "pii-inventory"
+      question: "Is there a comprehensive inventory of all PII and user data types in the documentation?"
+    - id: "retention-periods"
+      question: "Does every PII data type have a documented retention period?"
+    - id: "deletion-procedures"
+      question: "Is there a documented deletion or anonymization procedure for each data type?"
+    - id: "deletion-cascading"
+      question: "Does the deletion procedure cover all storage locations (database, backups, caches, logs, third-party)?"
+    - id: "legal-basis"
+      question: "Is a legal basis documented for processing each category of personal data?"
+    - id: "consent-mechanism"
+      question: "If consent is the legal basis, is the consent collection and withdrawal mechanism documented?"
+
+  evidence_required:
+    - field: "data_type"
+      type: "string"
+      description: "The specific data type or field identified (e.g., 'user email address', 'IP address in access logs', 'payment card last 4 digits')"
+      required: true
+
+    - field: "data_classification"
+      type: "enum"
+      values:
+        - "pii"            # standard personally identifiable information
+        - "sensitive-pii"  # special category data requiring enhanced protection
+        - "financial"      # financial data (PCI DSS scope)
+        - "health"         # health/medical data (HIPAA scope)
+        - "general"        # non-personal data
+      description: "Classification of the data type for determining applicable regulations"
+      required: true
+
+    - field: "data_source"
+      type: "string"
+      description: "Where this data type is documented (e.g., 'FRD Section 2.3 - User Registration', 'ADD Section 5.1 - User Database Schema')"
+      required: true
+
+    - field: "retention_period_documented"
+      type: "boolean"
+      description: "Whether a specific retention period is documented for this data type"
+      required: true
+
+    - field: "retention_period"
+      type: "string | null"
+      description: "The documented retention period if present (e.g., '2 years after account closure', '90 days', 'indefinite')"
+      required: true
+
+    - field: "deletion_procedure_documented"
+      type: "boolean"
+      description: "Whether a deletion or anonymization procedure is documented for this data type"
+      required: true
+
+    - field: "legal_basis_documented"
+      type: "boolean"
+      description: "Whether a legal basis for processing is documented (consent, contract, legal obligation, etc.)"
+      required: true
+
+    - field: "legal_basis"
+      type: "string | null"
+      description: "The documented legal basis if present (e.g., 'User consent at registration', 'Contractual necessity', 'Tax reporting legal obligation')"
+      required: true
+
+    - field: "confidence"
+      type: "enum"
+      values: ["high", "medium", "low"]
+      description: "Confidence in the assessment (low if data types are inferred rather than explicitly documented)"
+      required: true
+
+  failure_condition: |
+    Report as ERROR when:
+
+    1. PII data type has no documented retention period
+       (retention_period_documented is FALSE). Without a retention period,
+       data may be stored indefinitely, violating the GDPR storage
+       limitation principle and creating unbounded compliance liability.
+
+    2. User data has no documented deletion procedure
+       (deletion_procedure_documented is FALSE). Without a deletion
+       procedure, the organization cannot fulfill "right to be forgotten"
+       requests, which is a direct GDPR/CCPA violation.
+
+    3. Sensitive PII (data_classification is "sensitive-pii" or "health")
+       has no legal basis documented. Processing special category data
+       without explicit legal basis is unlawful under GDPR Article 9.
+
+    4. Financial data (data_classification is "financial") has no retention
+       period. PCI DSS requires documented data retention policies for
+       cardholder data.
+
+    5. Data is described as "retained indefinitely" with no justification.
+       Indefinite retention contradicts the data minimization principle.
+
+    Report as WARNING when:
+
+    1. Legal basis is not documented for standard PII
+       (legal_basis_documented is FALSE and data_classification is "pii").
+       While less urgent than sensitive PII, all personal data processing
+       should have a documented legal basis.
+
+    2. Retention period is documented but deletion procedure is vague
+       (e.g., "data will be deleted per policy" without specifying the
+       mechanism, timeline, or scope of deletion).
+
+    3. Deletion procedure exists but does not mention cascading to backups,
+       caches, logs, or third-party systems. Partial deletion creates
+       compliance gaps.
+
+    4. Consent is cited as legal basis but consent collection and
+       withdrawal mechanisms are not documented.
+
+  recommendation_template: |
+    ## Gap: Data Retention Compliance - {data_type}
+
+    **Data Type:** {data_type}
+    **Classification:** {data_classification}
+    **Source:** {data_source}
+    **Retention Period Documented:** {retention_period_documented}
+    **Retention Period:** {retention_period}
+    **Deletion Procedure Documented:** {deletion_procedure_documented}
+    **Legal Basis Documented:** {legal_basis_documented}
+    **Legal Basis:** {legal_basis}
+
+    ### Compliance Gap
+
+    This data type is missing required compliance documentation. Under
+    GDPR, CCPA, and similar regulations, organizations must be able to
+    answer: What data do we collect? How long do we keep it? How do we
+    delete it? Why are we allowed to process it?
+
+    ### Resolution Options
+
+    1. **Document Retention Period**:
+       Specify how long this data type is retained and justify the period
+       based on business need or legal requirement. Example: "User email
+       retained for duration of active account plus 30 days post-closure."
+
+    2. **Document Deletion Procedure**:
+       Describe how this data is deleted across all storage locations,
+       including primary database, backups, caches, logs, analytics
+       systems, and third-party integrations. Specify the timeline.
+
+    3. **Document Legal Basis**:
+       Specify the legal basis for processing this data under applicable
+       regulations (consent, contractual necessity, legal obligation,
+       legitimate interest). For consent-based processing, document how
+       consent is collected and how users can withdraw it.
+
+    ### Why This Matters
+    Data without documented retention policies and deletion procedures
+    is a compliance liability. GDPR fines can reach 4% of global annual
+    revenue or 20 million EUR (whichever is greater). Beyond fines,
+    data breaches involving improperly retained data amplify the damage
+    and regulatory scrutiny.
+
+# -----------------------------------------------------------------------------
+# EXAMPLES
+# -----------------------------------------------------------------------------
+examples:
+  well_documented:
+    - source: "FRD Section 2.3 - User Data Handling"
+      text: |
+        "User email addresses are collected at registration for account
+        identification and communication. Retention: duration of active
+        account plus 30 days. Deletion: automated purge job removes email
+        from users table, audit_logs, and notifies third-party email
+        provider (SendGrid) to purge from their records. Legal basis:
+        contractual necessity (required for account operation)."
+      mapping: |
+        data_type: "user email address"
+        data_classification: "pii"
+        data_source: "FRD Section 2.3"
+        retention_period_documented: true
+        retention_period: "Active account duration + 30 days"
+        deletion_procedure_documented: true
+        legal_basis_documented: true
+        legal_basis: "Contractual necessity"
+        confidence: "high"
+        note: "Complete compliance documentation with cascading deletion"
+
+  missing_retention:
+    - source: "ADD Section 5.1 - User Database"
+      text: |
+        "The users table stores: user_id, email, full_name, phone_number,
+        date_of_birth, address, created_at, last_login_at. Records are
+        created during registration."
+      mapping: |
+        data_type: "user profile PII (email, name, phone, DOB, address)"
+        data_classification: "pii"
+        data_source: "ADD Section 5.1"
+        retention_period_documented: false
+        retention_period: null
+        deletion_procedure_documented: false
+        legal_basis_documented: false
+        legal_basis: null
+        confidence: "high"
+        gap: "ADD describes PII storage but no retention period, deletion
+              procedure, or legal basis is documented for any field.
+              All five PII fields are compliance liabilities."
+
+  sensitive_data_gap:
+    - source: "FRD Section 6.2 - Health Profile"
+      text: |
+        "Users may optionally provide health information (allergies,
+        medications, conditions) for personalized recommendations."
+      mapping: |
+        data_type: "user health information (allergies, medications, conditions)"
+        data_classification: "health"
+        data_source: "FRD Section 6.2"
+        retention_period_documented: false
+        retention_period: null
+        deletion_procedure_documented: false
+        legal_basis_documented: false
+        legal_basis: null
+        confidence: "high"
+        gap: "Health data is HIPAA-scope and GDPR special category data.
+              No retention period, deletion procedure, or legal basis
+              documented. This is a critical compliance gap requiring
+              immediate attention."
+
+# -----------------------------------------------------------------------------
+# METADATA
+# -----------------------------------------------------------------------------
+metadata:
+  created: "2026-02"
+  last_updated: "2026-02"
+  author: "doc-lint v0.2"
+  related_concerns:
+    - "logging-pii-compliance"       # PII in logs is also a retention concern
+    - "auth-scheme-compliance"       # auth tokens containing PII
+    - "horizontal-traceability"      # privacy requirements should trace through
+  references:
+    - "GDPR Articles 5, 6, 9, 17: Data Minimization, Lawful Basis, Special Categories, Right to Erasure"
+    - "CCPA Section 1798.105: Consumer Right to Deletion"
+    - "PCI DSS Requirement 3: Protect Stored Cardholder Data"
+    - "HIPAA Privacy Rule: 45 CFR Part 164 Subpart E"
+    - "NIST SP 800-188: De-Identifying Government Datasets"
+    - "ISO 27701: Privacy Information Management System"

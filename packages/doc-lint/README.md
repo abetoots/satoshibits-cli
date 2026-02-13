@@ -181,7 +181,7 @@ Assembles prompts and evaluates them via the Anthropic SDK. `[path]` is the proj
 
 ### `doc-lint list`
 
-Lists all bundled concerns with their trigger signals.
+Lists all bundled concerns grouped by category (core, promise-validation, security, operational, compliance, test-coverage) with trigger signals and severity.
 
 ## Manifest Reference
 
@@ -193,6 +193,7 @@ version: "1.0"            # manifest schema version
 project:
   name: "Project Name"     # required
   description: "Optional"  # optional
+  classification: financial # optional: standard | financial | healthcare | infrastructure
 
 documents:
   required:                 # must exist on disk; validated at load time
@@ -206,17 +207,43 @@ documents:
   optional:                 # silently skipped if missing
     - role: tsd
       path: docs/tsd.md
+  contracts:                # optional: API specs, schemas, interface contracts
+    - role: api_spec
+      path: docs/openapi.yaml
+  operational:              # optional: runbooks, incident response
+    - role: runbook
+      path: docs/runbook.md
+  reference:                # optional: standards, compliance docs
+    - role: security_standards
+      path: docs/security-standards.md
 
 signals:
   declared:                 # determines which concerns activate
     - external-api
     - payments
     - webhooks
+  auto_detect: false        # optional: auto-detect signals from documents
+  warn_on_mismatch: true    # optional: warn when detected signals differ from declared
 
 options:                    # optional overrides
   contradiction: false      # disable contradiction scanner
   concerns:                 # restrict to specific concern IDs
     - idempotency-boundaries
+
+tolerance:                  # optional: filter findings by severity
+  severity_threshold: warn  # only report findings at this level or above (error, warn, note)
+  allow_implicit: false     # optional
+  allow_external_refs: true # optional
+
+exclusions:                 # optional: skip specific components or concerns
+  - component: legacy-auth-module       # exclude findings for this component
+    reason: "Scheduled for deprecation"
+    approved_by: tech-lead              # optional
+  - concernId: threat-model-coverage    # skip this concern entirely (saves API calls)
+    reason: "Not applicable to internal tooling"
+  - component: admin-panel              # both component and concernId can be combined
+    concernId: input-validation
+    reason: "Internal-only admin interface"
 ```
 
 ### Document Roles
@@ -238,18 +265,66 @@ Run `doc-lint list` to see available signals for each concern.
 
 ## Bundled Concerns
 
-### Core Concerns (6)
+doc-lint ships with 28 bundled concerns across 7 categories. Run `doc-lint list` for the full listing with trigger signals.
+
+### Core (7)
 
 Each core concern activates when *any* of its trigger signals match your declared signals.
 
 | ID | What It Checks | Triggers (any_of) |
 |----|---------------|--------------------|
-| `idempotency-boundaries` | Every trust-boundary operation (API call, webhook, DB write) documents its idempotency mechanism, duplicate behavior, and idempotency window | external-api, webhooks, payments, async-workflows, message-queue, event-driven, distributed |
 | `api-contract-consistency` | FRD/ADD claims about endpoints, error codes, auth schemes, and required fields match the actual API specification | external-api, rest-api, graphql, async-api, webhooks |
-| `resilience-triad` | Every external dependency has documented timeout, retry policy, AND circuit breaker — and validates coherence: `total_timeout >= retry_count * per_attempt_timeout` | external-api, external-dependency, microservices, distributed |
 | `durable-persistence` | Long-running processes have documented resume/checkpoint points and crash recovery behavior | async-workflows, long-running, orchestration, durable-execution, batch-processing, saga |
 | `failure-domain-isolation` | Each component declares its failure blast radius, propagation mode (sync/async), and containment mechanism | microservices, distributed, multi-component, event-driven |
+| `horizontal-traceability` | Requirements trace from BRD through FRD to ADD with no orphaned or untraceable items | requirements-tracing, compliance, audit, enterprise |
+| `idempotency-boundaries` | Every trust-boundary operation (API call, webhook, DB write) documents its idempotency mechanism, duplicate behavior, and idempotency window | external-api, webhooks, payments, async-workflows, message-queue, event-driven, distributed |
+| `resilience-triad` | Every external dependency has documented timeout, retry policy, AND circuit breaker — and validates coherence: `total_timeout >= retry_count * per_attempt_timeout` | external-api, external-dependency, microservices, distributed |
 | `state-ownership-clarity` | Every cross-boundary state has a declared owner, write access model, and conflict resolution strategy | microservices, distributed, async-workflows, event-driven, message-queue |
+
+### Promise Validation (3)
+
+Validates that architectural promises (SLAs, scalability claims, feasibility) are backed by concrete mechanisms.
+
+| ID | What It Checks | Triggers (any_of) |
+|----|---------------|--------------------|
+| `feasibility-check` | External dependencies and integrations have documented fallback strategies | external-api, third-party, integration, legacy-system |
+| `scalability-claim-validation` | Scalability claims are backed by specific mechanisms, not just aspirational statements | scalability, high-traffic, load-balancing, auto-scaling |
+| `sla-architecture-alignment` | SLA targets (availability, latency) are achievable given the documented architecture | sla, availability, performance, uptime |
+
+### Security (4)
+
+| ID | What It Checks | Triggers (any_of) |
+|----|---------------|--------------------|
+| `auth-boundary-consistency` | Authentication and authorization boundaries are consistent across all documents | authentication, authorization, multi-tenant, rbac |
+| `input-validation` | System boundaries document input validation, sanitization, and rejection strategies | external-api, webhooks, user-input, file-upload |
+| `secrets-management` | Secrets, credentials, and API keys have documented rotation, storage, and access policies | secrets, credentials, api-keys, encryption, certificates |
+| `threat-model-coverage` | Every documented attack surface has a corresponding threat model with mitigations | security, authentication, pii, payments, external-api |
+
+### Operational (4)
+
+| ID | What It Checks | Triggers (any_of) |
+|----|---------------|--------------------|
+| `alerting-slo-alignment` | Alerting rules are aligned with SLO targets and thresholds | sla, monitoring, observability, alerting |
+| `dependency-runbook` | External dependencies have documented runbook procedures for failure scenarios | external-api, third-party, database, message-queue |
+| `failure-mode-coverage` | Documented failure modes have corresponding detection, alerting, and recovery procedures | distributed, microservices, external-api, async-workflows |
+| `rollback-documentation` | Deployments and migrations have documented rollback procedures | deployment, ci-cd, database-migration, feature-flags |
+
+### Compliance (4)
+
+| ID | What It Checks | Triggers (any_of) |
+|----|---------------|--------------------|
+| `api-versioning-compliance` | API versioning strategy is documented and consistent with backward-compatibility claims | external-api, api-versioning, public-api, backward-compatibility |
+| `auth-scheme-compliance` | Authentication schemes follow documented standards and are consistently applied | authentication, oauth, saml, sso, jwt |
+| `data-retention-compliance` | Data retention policies are documented with specific timeframes and deletion procedures | pii, gdpr, data-retention, user-data, privacy |
+| `logging-pii-compliance` | Logging practices do not leak PII and comply with documented privacy requirements | logging, pii, audit, observability, gdpr |
+
+### Test Coverage (3)
+
+| ID | What It Checks | Triggers (any_of) |
+|----|---------------|--------------------|
+| `boundary-condition-coverage` | Boundary conditions (limits, quotas, edge cases) have corresponding test documentation | validation, limits, quotas, rate-limiting, testing |
+| `error-path-coverage` | Error paths and failure scenarios have documented test coverage | error-handling, resilience, fault-tolerance, testing |
+| `requirement-test-mapping` | Requirements have traceable test coverage with no untested acceptance criteria | testing, qa, acceptance-criteria, requirements-tracing |
 
 ### Interaction Matrices (3)
 
@@ -391,7 +466,7 @@ Core concerns use `any_of` (any signal match loads the concern). Interaction mat
 
 ## Custom Concerns
 
-Custom user-defined concern schemas are not yet supported. The current version ships with 9 bundled concerns covering common distributed systems patterns. Custom concerns are planned for a future release.
+Custom user-defined concern schemas are not yet supported. The current version ships with 28 bundled concerns across 7 categories covering distributed systems, security, operational readiness, compliance, and test coverage patterns. Custom concerns are planned for a future release.
 
 To use a custom evaluation engine with your own prompt logic, implement the `EvaluationEngine` interface (see [Programmatic API](#custom-evaluation-engines) above).
 

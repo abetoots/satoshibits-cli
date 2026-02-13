@@ -80,6 +80,20 @@ export async function formatLintHuman(result: LintResult): Promise<string> {
     lines.push("");
   }
 
+  // exclusions
+  if (result.exclusionsApplied && result.exclusionsApplied.length > 0) {
+    lines.push(chalk.dim.bold(`EXCLUSIONS (${result.exclusionsApplied.length})`));
+    lines.push(chalk.dim("─".repeat(60)));
+    for (const ex of result.exclusionsApplied) {
+      const target = [ex.component, ex.concernId].filter(Boolean).join(", ");
+      lines.push(chalk.dim(`  ${target}: ${ex.reason}`));
+      if (ex.approved_by) {
+        lines.push(chalk.dim(`    Approved by: ${ex.approved_by}`));
+      }
+    }
+    lines.push("");
+  }
+
   // summary
   lines.push(chalk.bold("SUMMARY"));
   lines.push("─".repeat(60));
@@ -91,6 +105,28 @@ export async function formatLintHuman(result: LintResult): Promise<string> {
   if (s.contradictions > 0) lines.push(chalk.magenta(`  Contradictions: ${s.contradictions}`));
   if (s.humanReviewRequired > 0) {
     lines.push(chalk.red(`  Human review required: ${s.humanReviewRequired}`));
+  }
+
+  // coverage info
+  if (result.coverage) {
+    const cov = result.coverage;
+    lines.push("");
+    lines.push(chalk.bold("COVERAGE"));
+    lines.push("─".repeat(60));
+    lines.push(`  Concerns evaluated: ${cov.concernsEvaluated.length}`);
+    lines.push(`  Concerns skipped: ${cov.concernsSkipped.length}`);
+    if (cov.concernsExcluded.length > 0) {
+      lines.push(`  Concerns excluded: ${cov.concernsExcluded.length}`);
+    }
+    lines.push(`  Documents loaded: ${cov.documentsLoaded.join(", ")}`);
+    if (cov.documentsMissing.length > 0) {
+      lines.push(chalk.yellow(`  Documents missing: ${cov.documentsMissing.join(", ")}`));
+    }
+  }
+
+  // tolerance info
+  if (result.toleranceApplied?.severity_threshold) {
+    lines.push(chalk.dim(`  Severity threshold: ${result.toleranceApplied.severity_threshold}`));
   }
 
   if (s.errors > 0) {

@@ -44,6 +44,14 @@ export interface ContradictionFinding {
   explanation: string;
 }
 
+export interface CoverageInfo {
+  concernsEvaluated: string[];
+  concernsSkipped: string[];
+  concernsExcluded: string[];
+  documentsLoaded: string[];
+  documentsMissing: string[];
+}
+
 export interface LintResult {
   version: string;
   timestamp: string;
@@ -63,6 +71,9 @@ export interface LintResult {
     contradictions: number;
     humanReviewRequired: number;
   };
+  toleranceApplied?: import("./manifest.js").ToleranceConfig;
+  exclusionsApplied?: import("./manifest.js").ExclusionEntry[];
+  coverage?: CoverageInfo;
 }
 
 export interface AssembleResult {

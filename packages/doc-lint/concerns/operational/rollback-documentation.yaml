@@ -1,0 +1,360 @@
+# =============================================================================
+# CONCERN: Rollback Documentation
+# =============================================================================
+# This concern validates that every deployable component (services, database
+# migrations, configuration changes, feature flags, infrastructure changes)
+# has a documented rollback procedure. Deployments without rollback plans
+# turn every release into a one-way door.
+#
+# WHY THIS MATTERS:
+# The ability to roll back a deployment quickly is the single most important
+# safety net in production operations. When a service deployment introduces
+# a critical bug, when a database migration corrupts data, when a config
+# change causes cascading failures - the team needs a pre-documented,
+# pre-tested rollback procedure. Without one, recovery requires improvisation
+# under pressure: reverting code that may not be revertible, reversing
+# migrations that may have destroyed data, or undoing config changes whose
+# effects are not fully understood. Every minute of improvisation extends
+# the outage.
+#
+# TYPICAL MANIFESTATION:
+# - Service deployments assume "just redeploy the previous version" without
+#   considering database schema compatibility or state changes
+# - Database migrations are marked as irreversible with no alternative
+#   recovery strategy documented
+# - Config changes via environment variables or feature flags have no
+#   documented rollback procedure
+# - Feature flag rollbacks assume instant effect without considering
+#   in-flight requests or cached state
+# - Infrastructure changes (scaling, networking) have no documented reversal
+# =============================================================================
+
+concern:
+  id: "rollback-documentation"
+  version: "1.0"
+  name: "Rollback Documentation"
+  category: "operational"
+  severity: "warn"
+
+  description: |
+    Every deployable component identified in architecture documents must have
+    a documented rollback procedure. This includes:
+    1. Service deployments (application code, container images)
+    2. Database migrations (schema changes, data migrations)
+    3. Configuration changes (environment variables, feature flags, secrets)
+    4. Infrastructure changes (scaling policies, networking, IAM)
+    5. API contract changes (new endpoints, changed schemas)
+
+    Each rollback procedure must document: the specific steps to reverse
+    the change, the estimated time to complete rollback, any data
+    implications (data loss, corruption risk), prerequisites for rollback
+    (backward compatibility, schema compatibility), and verification steps
+    to confirm rollback succeeded.
+
+# -----------------------------------------------------------------------------
+# TRIGGERS: When to load this concern
+# -----------------------------------------------------------------------------
+triggers:
+  any_of:
+    - deployment
+    - ci-cd
+    - database-migration
+    - feature-flags
+
+  escalate_if:
+    - payments        # payment system rollback requires extra care for in-flight transactions
+    - data-migration  # data migrations may be irreversible
+
+# -----------------------------------------------------------------------------
+# EVALUATION: The reasoning task
+# -----------------------------------------------------------------------------
+evaluation:
+  question: |
+    Systematically identify every deployable component from architecture
+    documents, then verify each has a documented rollback procedure that
+    accounts for data safety, backward compatibility, and verification.
+
+    STEP 1: IDENTIFY DEPLOYABLE COMPONENTS
+    Scan all documents (ADD, FRD, deployment docs, CI/CD configs) for
+    components that are deployed or changed in production:
+
+    a) Service deployments:
+    - Microservices, monolith modules, serverless functions
+    - Container images, application binaries
+    - Look for: deploy, release, ship, rollout, blue-green, canary
+
+    b) Database migrations:
+    - Schema changes (add/remove/alter tables, columns, indexes)
+    - Data migrations (backfill, transform, move data between tables)
+    - Look for: migration, schema change, ALTER TABLE, data backfill
+
+    c) Configuration changes:
+    - Environment variables, application config files
+    - Feature flags (launch, kill switch, experiment)
+    - Secrets rotation (API keys, certificates)
+    - Look for: config, environment, feature flag, toggle, secret
+
+    d) Infrastructure changes:
+    - Scaling policies (auto-scaling rules, instance counts)
+    - Networking (security groups, DNS, load balancer rules)
+    - IAM (roles, permissions, policies)
+    - Look for: infrastructure, terraform, CloudFormation, scaling
+
+    For each component, record:
+    - Name and type
+    - What document describes it
+    - Whether it modifies persistent state (database, file storage)
+
+    STEP 2: CHECK ROLLBACK PROCEDURE FOR EACH COMPONENT
+    For each deployable component:
+    - Is there an explicit rollback procedure documented?
+    - Is the procedure specific (actual steps/commands) or vague ("revert")?
+    - Does the procedure account for in-flight requests during rollback?
+    - Is there an estimated time for the rollback to complete?
+
+    STEP 3: CHECK DATABASE MIGRATION REVERSIBILITY
+    For each database migration:
+    - Is the migration reversible (has a "down" migration)?
+    - If irreversible, is there an alternative recovery strategy?
+    - Does the migration maintain backward compatibility with the previous
+      application version? (can old code run against new schema?)
+    - Is there a data backup strategy before migration?
+    - What happens to data written after migration if rollback occurs?
+
+    STEP 4: CHECK FEATURE FLAG KILL SWITCHES
+    For each feature flag or configuration change:
+    - Can the change be reverted instantly via flag toggle?
+    - Does the rollback account for cached/stale flag values?
+    - Are there in-flight requests that will complete with the old value?
+    - Is there a documented procedure for emergency flag changes?
+    - Who has permission to toggle flags in production?
+
+    STEP 5: ASSESS ROLLBACK DEPENDENCIES AND ORDERING
+    For deployments involving multiple components:
+    - Is the rollback order documented? (reverse of deploy order?)
+    - Are there dependencies between rollbacks? (must rollback A before B?)
+    - Can partial rollback leave the system in an inconsistent state?
+    - Is there a "point of no return" after which rollback is not possible?
+
+  checklist:
+    - id: "component-inventory"
+      question: "Have all deployable components been identified from architecture and deployment documents?"
+    - id: "rollback-procedure"
+      question: "Does each component have a specific, actionable rollback procedure?"
+    - id: "migration-reversibility"
+      question: "Are database migrations reversible, or do irreversible migrations have alternative recovery?"
+    - id: "feature-flag-killswitch"
+      question: "Do feature flags have documented kill switch procedures?"
+    - id: "rollback-time-estimate"
+      question: "Is there a time estimate for each rollback procedure?"
+
+  evidence_required:
+    - field: "component_name"
+      type: "string"
+      description: "Name of the deployable component (e.g., 'PaymentService v2.3', 'Add index on orders.customer_id', 'ENABLE_NEW_CHECKOUT feature flag', 'Redis cluster scaling to 3 nodes')"
+      required: true
+
+    - field: "component_type"
+      type: "enum"
+      values:
+        - "service"
+        - "database-migration"
+        - "config-change"
+        - "feature-flag"
+        - "infrastructure"
+        - "other"
+      description: "Category of the deployable component"
+      required: true
+
+    - field: "component_source"
+      type: "string"
+      description: "Document and section where the component is described (e.g., 'ADD Section 5.1 - Deployment Architecture', 'Migration Plan v2.3')"
+      required: true
+
+    - field: "rollback_documented"
+      type: "boolean"
+      description: "Whether an explicit rollback procedure is documented for this component"
+      required: true
+
+    - field: "rollback_procedure"
+      type: "string | null"
+      description: "Summary of the rollback procedure if documented (e.g., 'Redeploy v2.2 container, run down migration 20260201_add_index, toggle CHECKOUT_V2 flag off')"
+      required: true
+
+    - field: "rollback_time_estimate"
+      type: "string | null"
+      description: "Estimated time to complete the rollback (e.g., '5 minutes for service redeploy', '30 minutes for migration reversal', 'Instant for feature flag toggle')"
+      required: true
+
+    - field: "data_migration_reversible"
+      type: "boolean | null"
+      description: "For database migrations: whether the migration can be reversed without data loss. NULL if component is not a database migration."
+      required: true
+
+    - field: "confidence"
+      type: "enum"
+      values: ["high", "medium", "low"]
+      description: "Your confidence that this assessment is accurate based on available documentation"
+      required: true
+
+  failure_condition: |
+    Report as ERROR when ANY of the following are true:
+
+    1. A database migration has rollback_documented = FALSE and
+       data_migration_reversible = FALSE - an irreversible migration with
+       no rollback strategy means data changes cannot be undone
+
+    2. A database migration has data_migration_reversible = FALSE and no
+       alternative recovery strategy is documented (backup/restore plan,
+       compensating migration, manual data fix procedure)
+
+    3. A service deployment modifies database schema and
+       rollback_documented = FALSE - rolling back the service without
+       rolling back the schema may cause application errors
+
+    Report as WARNING when:
+
+    1. Any deployable component has rollback_documented = FALSE
+       - the component can be deployed but there is no documented way to
+       undo the deployment
+
+    2. rollback_documented = TRUE but rollback_time_estimate = NULL
+       - the rollback procedure exists but the team does not know how long
+       it will take, making incident recovery planning impossible
+
+    3. rollback_documented = TRUE but the procedure is vague
+       (e.g., "redeploy previous version" without specifying which version,
+       how to identify it, or what commands to run)
+
+    4. A feature flag is used for a gradual rollout but there is no
+       documented kill switch procedure for emergency rollback
+
+    5. Multiple components are deployed together but rollback ordering
+       is not documented
+
+    6. A database migration is marked as reversible but the "down"
+       migration is not tested or documented
+
+    7. Rollback procedure does not account for data written between
+       deployment and rollback (data written to new schema columns,
+       data in new format, etc.)
+
+  recommendation_template: |
+    ## Gap: {component_name} - Missing Rollback Documentation
+
+    **Component Type:** {component_type}
+    **Component Source:** {component_source}
+    **Rollback Documented:** {rollback_documented}
+
+    ### Required Documentation
+
+    Add a rollback procedure for this component:
+
+    1. **Rollback Steps**
+       - Exact commands or actions to reverse this deployment
+       - Which systems need to be updated (CI/CD, config, database)
+       - Order of operations if multiple steps are involved
+       - Example: "1. Toggle FEATURE_X=off in LaunchDarkly
+         2. Deploy PaymentService v2.2 image via 'kubectl rollout undo'
+         3. Run migration rollback: 'rake db:rollback STEP=1'
+         4. Verify: check /health endpoint returns v2.2"
+
+    2. **Time Estimate**
+       - How long does each step take?
+       - What is the total expected rollback time?
+       - Example: "Flag toggle: instant. Service rollback: 3 minutes.
+         Migration rollback: 10 minutes. Total: ~15 minutes."
+
+    3. **Data Implications**
+       - What happens to data written after the deployment?
+       - Is data loss possible during rollback?
+       - Do new records need manual cleanup?
+       - Example: "Orders created with new 'priority' field will have
+         that field ignored by v2.2. No data loss. Field can be dropped
+         in a future cleanup migration."
+
+    4. **Backward Compatibility**
+       - Can the previous version run against the current database schema?
+       - Are API contracts backward compatible?
+       - Example: "v2.2 is compatible with the new index. The added column
+         has a default value so v2.2 ignores it safely."
+
+    5. **Verification**
+       - How to confirm rollback succeeded
+       - What metrics should return to baseline
+       - Example: "Verify /health returns v2.2. Check error_rate < 0.1%.
+         Confirm payment_success_rate > 99.9% within 5 minutes."
+
+# -----------------------------------------------------------------------------
+# EXAMPLES: Help the LLM understand what to look for
+# -----------------------------------------------------------------------------
+examples:
+  well_documented:
+    - source: "ADD Section 5.1 + Deployment Runbook Section 3"
+      text: |
+        "ADD: PaymentService v2.3 introduces a new 'priority' column on the
+        orders table and a new checkout flow behind the CHECKOUT_V2 flag.
+
+        Deployment Runbook:
+        Deploy order: 1) Run migration (add column with default), 2) Deploy
+        service v2.3, 3) Enable CHECKOUT_V2 flag at 10%.
+
+        Rollback procedure:
+        1. Toggle CHECKOUT_V2 = off (instant, affects new requests only)
+        2. Deploy PaymentService v2.2 (3 min, v2.2 ignores new column)
+        3. Run down migration to remove column (5 min, data in column lost
+           but it only contains v2.3 data that v2.2 doesn't use)
+        Total rollback time: ~10 minutes.
+        Note: Orders created during v2.3 with priority field will have
+        priority data lost. Acceptable because priority feature is new."
+      assessment: |
+        component_name: "PaymentService v2.3 (service + migration + flag)"
+        component_type: "service"
+        component_source: "ADD Section 5.1"
+        rollback_documented: true
+        rollback_procedure: "Toggle flag off, redeploy v2.2, run down migration"
+        rollback_time_estimate: "~10 minutes total"
+        data_migration_reversible: true
+        confidence: "high"
+
+  poorly_documented:
+    - source: "ADD Section 4.2"
+      text: |
+        "The user profile migration consolidates data from the legacy
+        users table and the profiles table into a new unified_users table.
+        The migration transforms and merges records, resolving duplicates
+        by keeping the most recently updated record."
+      assessment: |
+        component_name: "User profile consolidation migration"
+        component_type: "database-migration"
+        component_source: "ADD Section 4.2"
+        rollback_documented: false
+        rollback_procedure: null
+        rollback_time_estimate: null
+        data_migration_reversible: false
+        confidence: "high"
+        gap: "This migration merges data from two tables into one, resolving
+              duplicates by discarding older records. This is destructive and
+              irreversible without a backup. No rollback procedure is documented.
+              No backup strategy mentioned. If the migration produces incorrect
+              merges, there is no way to recover the original separate records.
+              Need: pre-migration backup procedure, validation query to verify
+              merge correctness, and documented restore procedure from backup."
+
+# -----------------------------------------------------------------------------
+# METADATA
+# -----------------------------------------------------------------------------
+metadata:
+  created: "2026-02"
+  last_updated: "2026-02"
+  author: "doc-lint v0.2"
+  related_concerns:
+    - "failure-mode-coverage"      # failed deployments are a failure mode
+    - "durable-persistence"        # rollback must account for persistent state
+    - "state-ownership-clarity"    # rollback must consider who owns affected state
+    - "dependency-runbook"         # dependency changes may need coordinated rollback
+  references:
+    - "Accelerate (Forsgren, Humble, Kim) - Deployment Practices"
+    - "Database Reliability Engineering (Campbell, Majors) - Schema Changes"
+    - "Feature Flags Best Practices (LaunchDarkly)"
+    - "Kubernetes: Deployments Rollback Strategy"

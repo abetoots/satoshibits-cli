@@ -1,0 +1,310 @@
+# =============================================================================
+# CONCERN: Failure Mode Coverage
+# =============================================================================
+# This concern validates that every failure mode documented in the Architecture
+# Decision Document (ADD) has a corresponding runbook or playbook entry with
+# recovery procedures. Failure modes without operational response plans leave
+# teams improvising during incidents.
+#
+# WHY THIS MATTERS:
+# Architecture documents frequently enumerate failure scenarios (timeouts,
+# circuit breaker trips, queue backlogs, database failovers) but stop at the
+# design level. When these failures actually occur at 3 AM, on-call engineers
+# need step-by-step recovery procedures, not architectural diagrams. Every
+# undocumented failure mode is an incident where the team is flying blind,
+# extending mean-time-to-recovery (MTTR) and risking cascading damage.
+#
+# TYPICAL MANIFESTATION:
+# - ADD describes circuit breaker pattern but no runbook explains what to do
+#   when the circuit stays open for extended periods
+# - ADD mentions database failover but no playbook covers manual promotion
+# - ADD lists queue failure as a risk but no procedure exists for draining
+#   a dead-letter queue or replaying failed messages
+# - Critical-path failure modes (payment, auth) treated identically to
+#   non-critical ones with no prioritized response
+# =============================================================================
+
+concern:
+  id: "failure-mode-coverage"
+  version: "1.0"
+  name: "Failure Mode Coverage"
+  category: "operational"
+  severity: "warn"
+
+  description: |
+    Every failure mode identified in architecture documents must have a
+    corresponding operational response documented in runbooks or playbooks.
+    This includes:
+    1. Component failures (service crashes, OOM, thread exhaustion)
+    2. Dependency failures (third-party API outages, DNS resolution failures)
+    3. Network partitions (split-brain, partial connectivity)
+    4. Resource exhaustion (disk full, connection pool exhaustion, queue backlog)
+    5. Data failures (corruption, replication lag, failover)
+
+    Each failure mode must map to a runbook entry that provides: detection
+    method, immediate response steps, recovery procedure, verification steps,
+    and escalation path. Without this mapping, architecture decisions remain
+    theoretical and untested in production operations.
+
+# -----------------------------------------------------------------------------
+# TRIGGERS: When to load this concern
+# -----------------------------------------------------------------------------
+triggers:
+  any_of:
+    - distributed
+    - microservices
+    - external-api
+    - async-workflows
+
+  escalate_if:
+    - payments        # payment failure modes require documented recovery
+    - approval-gates  # approval flow failures can block business processes
+
+# -----------------------------------------------------------------------------
+# EVALUATION: The reasoning task
+# -----------------------------------------------------------------------------
+evaluation:
+  question: |
+    Systematically extract every failure mode from the architecture documents,
+    then verify each has a corresponding runbook or playbook entry with
+    actionable recovery procedures.
+
+    STEP 1: EXTRACT FAILURE MODES FROM ARCHITECTURE DOCUMENTS
+    Scan all documents (ADD, FRD, BRD) for references to failure scenarios:
+    - Explicit failure modes: "if X fails...", "when timeout occurs...",
+      "circuit breaker trips...", "failover to..."
+    - Implicit failure modes: any external dependency, any async operation,
+      any distributed state, any resource with finite capacity
+    - Infrastructure failure modes: database failover, message queue backup,
+      cache invalidation failure, DNS outage
+    - Application failure modes: OOM, deadlocks, thread pool exhaustion,
+      memory leaks, unhandled exceptions
+
+    For each failure mode, record:
+    - What component or interaction fails
+    - What document and section describes it
+    - What the expected system behavior is during this failure
+    - Whether the failure is on a critical path (payments, auth, core workflow)
+
+    STEP 2: INVENTORY OPERATIONAL DOCUMENTATION
+    Scan all operational documents (runbooks, playbooks, incident response
+    procedures, SRE docs) for documented response procedures:
+    - Look for: runbook, playbook, incident response, recovery procedure,
+      operational guide, on-call guide, troubleshooting guide
+    - For each entry, record what failure scenario it covers and what
+      steps it prescribes
+
+    STEP 3: MAP FAILURE MODES TO RUNBOOK ENTRIES
+    For each failure mode identified in Step 1:
+    - Is there a runbook entry that explicitly covers this failure?
+    - Does the runbook entry include detection (how to confirm the failure)?
+    - Does it include immediate response (stop the bleeding)?
+    - Does it include recovery steps (restore normal operation)?
+    - Does it include verification (confirm recovery succeeded)?
+    - Does it include escalation path (who to contact if steps fail)?
+
+    STEP 4: ASSESS COMPLETENESS OF EXISTING RUNBOOK ENTRIES
+    For failure modes that DO have runbook entries:
+    - Are the steps specific and actionable (commands, URLs, dashboards)?
+    - Are the steps current (reference existing infrastructure, not legacy)?
+    - Do they account for partial failure scenarios?
+    - Do they include rollback if the recovery procedure itself fails?
+    - Is there an estimated time-to-recovery?
+
+    STEP 5: PRIORITIZE GAPS BY CRITICALITY
+    Classify each uncovered failure mode:
+    - Critical: failure mode is on the payment, authentication, or core
+      business workflow path - recovery procedure is mandatory
+    - Standard: failure mode affects feature functionality but not core
+      business operations - recovery procedure is strongly recommended
+    - Non-critical: failure mode affects non-essential features - recovery
+      procedure is recommended but lower priority
+
+  checklist:
+    - id: "failure-mode-extraction"
+      question: "Have all failure modes from architecture documents been identified?"
+    - id: "runbook-mapping"
+      question: "Does each failure mode have a corresponding runbook or playbook entry?"
+    - id: "recovery-completeness"
+      question: "Does each runbook entry include detection, response, recovery, verification, and escalation?"
+    - id: "critical-path-coverage"
+      question: "Do critical-path failure modes (payments, auth) have complete recovery procedures?"
+    - id: "actionability"
+      question: "Are runbook steps specific and actionable (not vague guidance)?"
+
+  evidence_required:
+    - field: "failure_mode"
+      type: "string"
+      description: "Description of the failure mode (e.g., 'Payment gateway timeout after 30s', 'RabbitMQ broker becomes unreachable', 'Primary database failover to replica')"
+      required: true
+
+    - field: "failure_source"
+      type: "string"
+      description: "Document and section where the failure mode is described (e.g., 'ADD Section 4.2 - Resilience Patterns', 'ADD Section 3.1 - Payment Flow')"
+      required: true
+
+    - field: "affected_component"
+      type: "string"
+      description: "Name of the component or interaction affected by this failure (e.g., 'PaymentService', 'OrderService -> InventoryService call', 'RabbitMQ cluster')"
+      required: true
+
+    - field: "runbook_entry_exists"
+      type: "boolean"
+      description: "Whether a runbook or playbook entry exists that covers this specific failure mode"
+      required: true
+
+    - field: "runbook_reference"
+      type: "string | null"
+      description: "Location of the runbook entry if it exists (e.g., 'Runbook Section 5.3 - Payment Gateway Failover', 'Playbook: Database Recovery')"
+      required: true
+
+    - field: "recovery_procedure_documented"
+      type: "boolean"
+      description: "Whether the runbook entry includes step-by-step recovery procedure (not just detection or alerting)"
+      required: true
+
+    - field: "escalation_path_documented"
+      type: "boolean"
+      description: "Whether the runbook entry includes escalation contacts and criteria for when to escalate"
+      required: true
+
+    - field: "confidence"
+      type: "enum"
+      values: ["high", "medium", "low"]
+      description: "Your confidence that this assessment is accurate based on available documentation"
+      required: true
+
+  failure_condition: |
+    Report as ERROR when ANY of the following are true:
+
+    1. A critical-path failure mode (payment processing, authentication,
+       authorization, core business workflow) has runbook_entry_exists = FALSE
+       - teams will have no guidance during a critical incident
+
+    2. A critical-path failure mode has recovery_procedure_documented = FALSE
+       even though a runbook entry exists - the runbook acknowledges the failure
+       but provides no recovery steps
+
+    3. A critical-path failure mode has escalation_path_documented = FALSE
+       - no one knows who to contact when standard recovery fails
+
+    Report as WARNING when:
+
+    1. Any non-critical failure mode has runbook_entry_exists = FALSE
+       - the failure mode is recognized in architecture but has no operational
+       response documented
+
+    2. runbook_entry_exists = TRUE but recovery_procedure_documented = FALSE
+       - the runbook entry exists but lacks actionable recovery steps
+
+    3. runbook_entry_exists = TRUE but escalation_path_documented = FALSE
+       - recovery steps exist but no escalation path if they fail
+
+    4. A failure mode is documented in the ADD but the runbook entry appears
+       stale or references deprecated infrastructure
+
+    5. Multiple failure modes share a single generic runbook entry without
+       failure-specific steps
+
+  recommendation_template: |
+    ## Gap: {failure_mode} - Missing Runbook Entry
+
+    **Failure Source:** {failure_source}
+    **Affected Component:** {affected_component}
+    **Runbook Entry Exists:** {runbook_entry_exists}
+
+    ### Required Documentation
+
+    Create a runbook entry covering this failure mode:
+
+    1. **Detection**
+       - How is this failure detected? (alert, dashboard, log pattern)
+       - What does the on-call engineer see first?
+       - How to confirm this is the actual failure (not a symptom of something else)?
+
+    2. **Immediate Response**
+       - What should be done within the first 5 minutes?
+       - Are there any circuit breakers or kill switches to activate?
+       - Should traffic be redirected or drained?
+
+    3. **Recovery Procedure**
+       - Step-by-step commands and actions to restore normal operation
+       - Expected duration for each step
+       - How to verify each step succeeded before proceeding
+
+    4. **Verification**
+       - How to confirm the system has fully recovered
+       - What metrics should return to baseline?
+       - How long to monitor before declaring recovery complete?
+
+    5. **Escalation**
+       - When to escalate (time threshold, severity threshold)
+       - Who to contact (team, individual, external vendor)
+       - What information to provide when escalating
+
+# -----------------------------------------------------------------------------
+# EXAMPLES: Help the LLM understand what to look for
+# -----------------------------------------------------------------------------
+examples:
+  well_documented:
+    - source: "ADD Section 4.2 + Runbook Section 5.3"
+      text: |
+        "ADD: The PaymentService uses a circuit breaker (5 failures/60s) when
+        calling Stripe. When the circuit opens, payments are queued to a
+        dead-letter queue for manual retry.
+
+        Runbook 5.3 - Payment Gateway Circuit Breaker Open:
+        Detection: PagerDuty alert 'payment-cb-open' fires.
+        Immediate: Check Stripe status page. If Stripe is down, activate
+        payment-pending mode via feature flag PAYMENT_QUEUE_MODE=true.
+        Recovery: When Stripe recovers, drain DLQ via 'rake payments:replay'.
+        Verify: payment_success_rate returns above 99% within 15 minutes.
+        Escalate: If DLQ depth > 1000 after 1 hour, page payments-oncall-lead."
+      assessment: |
+        failure_mode: "Payment gateway circuit breaker open due to Stripe outage"
+        failure_source: "ADD Section 4.2"
+        affected_component: "PaymentService"
+        runbook_entry_exists: true
+        runbook_reference: "Runbook Section 5.3"
+        recovery_procedure_documented: true
+        escalation_path_documented: true
+        confidence: "high"
+
+  poorly_documented:
+    - source: "ADD Section 3.1"
+      text: |
+        "The system uses RabbitMQ for async communication between services.
+        If RabbitMQ becomes unavailable, messages will be lost unless
+        publisher confirms are enabled. A dead-letter exchange handles
+        messages that cannot be delivered after 3 retries."
+      assessment: |
+        failure_mode: "RabbitMQ broker becomes unreachable"
+        failure_source: "ADD Section 3.1"
+        affected_component: "RabbitMQ cluster"
+        runbook_entry_exists: false
+        runbook_reference: null
+        recovery_procedure_documented: false
+        escalation_path_documented: false
+        confidence: "high"
+        gap: "ADD acknowledges RabbitMQ failure risk and describes architectural
+              mitigation (publisher confirms, DLX) but no runbook entry exists
+              for what to do when RabbitMQ is actually down: how to restart,
+              how to verify message integrity, how to replay from DLQ."
+
+# -----------------------------------------------------------------------------
+# METADATA
+# -----------------------------------------------------------------------------
+metadata:
+  created: "2026-02"
+  last_updated: "2026-02"
+  author: "doc-lint v0.2"
+  related_concerns:
+    - "resilience-triad"           # failure modes often involve timeout/retry/CB
+    - "failure-domain-isolation"   # failure blast radius determines runbook scope
+    - "dependency-runbook"         # external dependency failures are a subset
+    - "alerting-slo-alignment"    # alerts should trigger runbook procedures
+  references:
+    - "Google SRE Book: Chapter 14 - Managing Incidents"
+    - "PagerDuty Incident Response Guide"
+    - "AWS Well-Architected: Operational Excellence - Respond to Events"
+    - "Incident Management for Operations (Rob Schnepp)"

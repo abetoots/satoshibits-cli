@@ -1,0 +1,337 @@
+# =============================================================================
+# CONCERN: Dependency Runbook Coverage
+# =============================================================================
+# This concern validates that every external dependency (third-party APIs,
+# databases, message queues, caches, CDNs) has a documented failure response
+# procedure including fallback strategies, degradation modes, and escalation
+# contacts. Dependencies without operational docs become black boxes during
+# incidents.
+#
+# WHY THIS MATTERS:
+# External dependencies are the most common source of production incidents.
+# When Stripe goes down, when the primary database fails over, when Redis
+# becomes unreachable - the team needs to know IMMEDIATELY: what is the
+# impact, what is the fallback, who do we contact, and how do we communicate
+# to users. Without pre-documented procedures, every dependency outage
+# becomes a novel problem-solving exercise under pressure, with extended
+# downtime and poor customer communication.
+#
+# TYPICAL MANIFESTATION:
+# - ADD lists "uses Stripe for payments" but no procedure for Stripe outage
+# - ADD describes database replication but no procedure for failover
+# - Message queue is a critical dependency but no documentation of what
+#   happens to in-flight messages when it goes down
+# - No vendor contact information for escalating third-party outages
+# - Fallback/degradation strategy is assumed but never documented
+# =============================================================================
+
+concern:
+  id: "dependency-runbook"
+  version: "1.0"
+  name: "Dependency Runbook Coverage"
+  category: "operational"
+  severity: "warn"
+
+  description: |
+    Every external dependency identified in architecture documents must have
+    a documented failure response procedure in operational runbooks. This
+    includes:
+    1. External APIs (payment gateways, identity providers, email services)
+    2. Databases (primary, replicas, managed services)
+    3. Message queues (RabbitMQ, Kafka, SQS)
+    4. Caches (Redis, Memcached, CDN caches)
+    5. CDNs and edge services
+    6. Third-party SaaS services (monitoring, logging, feature flags)
+
+    For each dependency, the runbook must document: what happens when it is
+    unavailable, what the fallback or degradation strategy is, how to detect
+    the outage, how to communicate impact, and who to contact for escalation
+    (both internal team and vendor support).
+
+# -----------------------------------------------------------------------------
+# TRIGGERS: When to load this concern
+# -----------------------------------------------------------------------------
+triggers:
+  any_of:
+    - external-api
+    - third-party
+    - database
+    - message-queue
+
+  escalate_if:
+    - payments        # payment dependency outages have direct revenue impact
+    - approval-gates  # approval dependency outages block business processes
+
+# -----------------------------------------------------------------------------
+# EVALUATION: The reasoning task
+# -----------------------------------------------------------------------------
+evaluation:
+  question: |
+    Systematically list all external dependencies from architecture documents,
+    then verify each has a documented failure response procedure with fallback
+    strategy, degradation mode, and escalation contacts.
+
+    STEP 1: LIST ALL EXTERNAL DEPENDENCIES
+    Scan all documents (ADD, FRD, infrastructure docs) for external
+    dependencies. An external dependency is anything that:
+    - Runs in a separate process or on a separate host
+    - Is operated by a third party
+    - Can become unavailable independently of the application
+    - Has its own failure modes outside the team's control
+
+    Categories to look for:
+    - External APIs: payment gateways (Stripe, PayPal), identity providers
+      (Auth0, Okta), email/SMS services (SendGrid, Twilio), analytics
+    - Databases: primary databases, read replicas, managed database services
+      (RDS, Cloud SQL), data warehouses
+    - Message queues: RabbitMQ, Kafka, SQS, Pub/Sub, event buses
+    - Caches: Redis, Memcached, Elasticache, application-level caches
+    - CDNs: CloudFront, Fastly, Cloudflare, static asset hosting
+    - Third-party services: feature flag services (LaunchDarkly), monitoring
+      (Datadog, New Relic), secret managers (Vault, AWS Secrets Manager)
+    - Infrastructure: DNS, load balancers, certificate authorities
+
+    For each dependency, record:
+    - Name and type
+    - What system functionality depends on it
+    - Whether it is on a critical path
+
+    STEP 2: CHECK FAILURE SCENARIO DOCUMENTATION
+    For each dependency identified in Step 1, look for documentation of:
+    - What happens when this dependency is completely unavailable?
+    - What is the expected duration of unavailability the system can tolerate?
+    - Is there a health check or monitoring for this dependency?
+    - How is the outage detected (alert, health check failure, error spike)?
+
+    STEP 3: CHECK FALLBACK AND DEGRADATION STRATEGY
+    For each dependency, look for:
+    - Fallback strategy: what the system does instead (cached data, alternative
+      provider, queue for later, graceful error)
+    - Degradation mode: what features are reduced or disabled
+    - User communication: what users see during the outage
+    - Automatic recovery: how the system resumes normal operation when the
+      dependency recovers
+
+    STEP 4: CHECK CONTACT AND ESCALATION INFORMATION
+    For each dependency, look for:
+    - Internal owner: which team owns the integration
+    - Vendor support: contact information for the third-party provider
+    - Escalation criteria: when to contact vendor support vs. wait
+    - SLA references: what uptime the vendor guarantees
+    - Status page: URL for the vendor's status page
+
+    STEP 5: PRIORITIZE BY CRITICALITY
+    - Critical dependencies: on the payment, authentication, or core workflow
+      path - full runbook coverage is mandatory
+    - Standard dependencies: affect features but not core business - runbook
+      coverage is strongly recommended
+    - Non-critical dependencies: affect non-essential features - basic
+      documentation is recommended
+
+  checklist:
+    - id: "dependency-inventory"
+      question: "Have all external dependencies been identified from architecture documents?"
+    - id: "failure-scenario"
+      question: "Is the failure scenario documented for each dependency (what happens when it's down)?"
+    - id: "fallback-strategy"
+      question: "Is there a documented fallback or degradation strategy for each dependency?"
+    - id: "degradation-mode"
+      question: "Is the degraded user experience documented for each dependency outage?"
+    - id: "contact-escalation"
+      question: "Are contact and escalation details documented for each external dependency?"
+
+  evidence_required:
+    - field: "dependency_name"
+      type: "string"
+      description: "Name of the external dependency (e.g., 'Stripe Payment API', 'Primary PostgreSQL database', 'RabbitMQ message broker', 'Redis cache cluster')"
+      required: true
+
+    - field: "dependency_type"
+      type: "enum"
+      values:
+        - "external-api"
+        - "database"
+        - "message-queue"
+        - "cache"
+        - "cdn"
+        - "third-party-service"
+        - "other"
+      description: "Category of the external dependency"
+      required: true
+
+    - field: "dependency_source"
+      type: "string"
+      description: "Document and section where the dependency is referenced (e.g., 'ADD Section 3.1 - Payment Integration', 'ADD Section 2.4 - Data Layer')"
+      required: true
+
+    - field: "failure_procedure_exists"
+      type: "boolean"
+      description: "Whether a documented procedure exists for when this dependency is unavailable"
+      required: true
+
+    - field: "fallback_strategy"
+      type: "string | null"
+      description: "The documented fallback when this dependency is down (e.g., 'Return cached data', 'Queue requests for retry', 'Switch to backup provider', 'Show maintenance page')"
+      required: true
+
+    - field: "degradation_mode"
+      type: "string | null"
+      description: "How the system degrades when this dependency is unavailable (e.g., 'Read-only mode', 'Payment processing paused, orders accepted with pending status', 'Notifications delayed')"
+      required: true
+
+    - field: "contact_info_documented"
+      type: "boolean"
+      description: "Whether vendor contact information and escalation path are documented for this dependency"
+      required: true
+
+    - field: "confidence"
+      type: "enum"
+      values: ["high", "medium", "low"]
+      description: "Your confidence that this assessment is accurate based on available documentation"
+      required: true
+
+  failure_condition: |
+    Report as ERROR when ANY of the following are true:
+
+    1. A critical-path dependency (payment gateway, authentication provider,
+       primary database) has failure_procedure_exists = FALSE - teams will
+       have no guidance during a critical dependency outage
+
+    2. A critical-path dependency has fallback_strategy = NULL - no documented
+       plan for maintaining service when the dependency is down
+
+    3. A critical-path dependency has degradation_mode = NULL - no documented
+       understanding of how the system behaves during the outage
+
+    Report as WARNING when:
+
+    1. Any non-critical dependency has failure_procedure_exists = FALSE
+       - the dependency is known but its failure impact is undocumented
+
+    2. failure_procedure_exists = TRUE but fallback_strategy = NULL
+       - the procedure acknowledges the failure but provides no alternative
+
+    3. failure_procedure_exists = TRUE but degradation_mode = NULL
+       - the procedure exists but does not describe the user experience
+       during the outage
+
+    4. contact_info_documented = FALSE for any third-party dependency
+       - no vendor contact means the team cannot escalate externally
+
+    5. A dependency has a fallback strategy but it has never been tested
+       or the documentation does not reference testing/validation
+
+    6. Multiple dependencies share the same generic fallback without
+       dependency-specific procedures
+
+  recommendation_template: |
+    ## Gap: {dependency_name} - Missing Failure Response Procedure
+
+    **Dependency Type:** {dependency_type}
+    **Dependency Source:** {dependency_source}
+    **Failure Procedure Exists:** {failure_procedure_exists}
+
+    ### Required Documentation
+
+    Create a runbook entry for this dependency covering:
+
+    1. **Failure Detection**
+       - How is the outage detected? (health check, error rate spike, vendor status page)
+       - What alert fires when this dependency is down?
+       - How to distinguish between this dependency failing vs. network issue?
+
+    2. **Impact Assessment**
+       - What system features are affected?
+       - How many users are impacted?
+       - Is there data loss risk?
+
+    3. **Fallback Strategy**
+       - What does the system do instead? (cache, queue, alternative, error)
+       - How is the fallback activated? (automatic, feature flag, manual)
+       - How long can the system operate in fallback mode?
+
+    4. **Degradation Mode**
+       - What do users experience during the outage?
+       - What communication goes to users? (status page, in-app banner)
+       - Which features remain available vs. unavailable?
+
+    5. **Recovery**
+       - How does the system detect the dependency has recovered?
+       - How is normal operation resumed? (automatic, manual drain, replay)
+       - What verification confirms full recovery?
+
+    6. **Escalation and Contacts**
+       - Internal team owner: [team name, Slack channel]
+       - Vendor support: [contact method, SLA, account ID]
+       - Status page: [URL]
+       - When to escalate: [time threshold, impact threshold]
+
+# -----------------------------------------------------------------------------
+# EXAMPLES: Help the LLM understand what to look for
+# -----------------------------------------------------------------------------
+examples:
+  well_documented:
+    - source: "ADD Section 3.1 + Runbook Section 7.2"
+      text: |
+        "ADD: The PaymentService integrates with Stripe API for charge
+        processing. Stripe is a critical-path dependency.
+
+        Runbook 7.2 - Stripe Outage Procedure:
+        Detection: Alert 'stripe-health-check-fail' fires when 3 consecutive
+        health checks fail. Cross-reference with status.stripe.com.
+        Fallback: Activate PAYMENT_QUEUE_MODE feature flag. Orders accepted
+        with 'payment-pending' status. Payments queued to DLQ.
+        Degradation: Users see 'Payment processing may be delayed' banner.
+        Order confirmation shows 'Payment will be processed shortly.'
+        Recovery: When Stripe recovers, drain payment queue via
+        'rake payments:process_pending'. Monitor payment_success_rate.
+        Contacts: Stripe support - support@stripe.com, Account ID: acct_xxx,
+        Internal owner: #payments-team Slack channel."
+      assessment: |
+        dependency_name: "Stripe Payment API"
+        dependency_type: "external-api"
+        dependency_source: "ADD Section 3.1"
+        failure_procedure_exists: true
+        fallback_strategy: "Queue payments with pending status, process when recovered"
+        degradation_mode: "Orders accepted, payment delayed, user sees banner"
+        contact_info_documented: true
+        confidence: "high"
+
+  poorly_documented:
+    - source: "ADD Section 2.3"
+      text: |
+        "The system uses Redis for session caching and rate limiting.
+        Redis is deployed as a single-node instance on AWS ElastiCache."
+      assessment: |
+        dependency_name: "Redis cache (ElastiCache)"
+        dependency_type: "cache"
+        dependency_source: "ADD Section 2.3"
+        failure_procedure_exists: false
+        fallback_strategy: null
+        degradation_mode: null
+        contact_info_documented: false
+        confidence: "high"
+        gap: "Redis is used for session caching AND rate limiting. If Redis
+              goes down: sessions may be lost (users logged out), rate limiting
+              is disabled (potential abuse). No fallback documented. Single-node
+              deployment has no redundancy. Need: fallback to database-backed
+              sessions, application-level rate limiting, and ElastiCache failover
+              procedure."
+
+# -----------------------------------------------------------------------------
+# METADATA
+# -----------------------------------------------------------------------------
+metadata:
+  created: "2026-02"
+  last_updated: "2026-02"
+  author: "doc-lint v0.2"
+  related_concerns:
+    - "resilience-triad"           # dependencies need timeout/retry/CB
+    - "failure-domain-isolation"   # dependency failures should be contained
+    - "failure-mode-coverage"      # dependency failures are a subset of all failure modes
+    - "alerting-slo-alignment"    # dependency outages may violate SLOs
+  references:
+    - "Google SRE Book: Chapter 21 - Handling Overload"
+    - "Release It! 2nd Edition (Nygard) - Integration Points"
+    - "AWS Well-Architected: Reliability - Dependencies"
+    - "Architecture Patterns for Dependency Management (Microsoft)"

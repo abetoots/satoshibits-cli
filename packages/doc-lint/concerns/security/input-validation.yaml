@@ -1,0 +1,390 @@
+# =============================================================================
+# CONCERN: Input Validation at System Boundaries
+# =============================================================================
+# This concern validates that every system boundary where untrusted external
+# data enters the system has documented input validation rules. Boundaries
+# without documented validation are the primary vector for injection attacks,
+# data corruption, and denial of service.
+#
+# WHY THIS MATTERS:
+# Every piece of data that crosses a system boundary from an external source
+# is untrusted by definition. API endpoints receive requests from unknown
+# clients. Webhook handlers process payloads from third-party systems. File
+# upload endpoints accept binary data from users. Message consumers read
+# events from external producers. Without documented validation at these
+# boundaries, the system is vulnerable to: SQL/NoSQL injection, XSS, command
+# injection, path traversal, XML external entities, oversized payloads causing
+# OOM, malformed data corrupting state, and type confusion attacks. Input
+# validation is the first line of defense - and it must be documented so the
+# team can verify it is comprehensive.
+#
+# TYPICAL MANIFESTATION:
+# - ADD describes REST API endpoints but no validation schema or rules
+# - FRD lists accepted file types but ADD has no file validation logic
+# - Webhook handler processes payloads with no schema validation
+# - Form inputs described in FRD but no sanitization in ADD
+# - API accepts JSON but no size limits or depth limits documented
+# =============================================================================
+
+concern:
+  id: "input-validation"
+  version: "1.0"
+  name: "Input Validation at System Boundaries"
+  category: "security"
+  severity: "warn"
+
+  description: |
+    Every system boundary where external (untrusted) data enters must have
+    documented input validation rules. This includes API endpoints, webhook
+    handlers, file upload processors, form submissions, and message consumers.
+    Validation documentation should cover: schema validation (expected types,
+    formats, and structures), size limits (max payload size, max field length,
+    max array size), type checking (strict type enforcement, no type coercion),
+    and sanitization (HTML encoding, SQL parameterization, path normalization).
+    Undocumented validation is effectively no validation - the team cannot
+    verify what they haven't specified.
+
+# -----------------------------------------------------------------------------
+# TRIGGERS: When to load this concern
+# -----------------------------------------------------------------------------
+triggers:
+  any_of:
+    - external-api
+    - webhooks
+    - user-input
+    - file-upload
+
+  escalate_if:
+    - pii                # PII inputs require strict validation to prevent data corruption
+    - payments           # payment inputs must be validated to prevent amount tampering
+    - file-upload        # file uploads carry malware, path traversal, and resource exhaustion risks
+
+# -----------------------------------------------------------------------------
+# EVALUATION: The reasoning task
+# -----------------------------------------------------------------------------
+evaluation:
+  question: |
+    Systematically identify every system boundary where untrusted external data
+    enters the system, then evaluate whether input validation rules are
+    documented for each boundary.
+
+    STEP 1: IDENTIFY SYSTEM BOUNDARIES
+    Scan the ADD and FRD for all points where external data enters the system:
+
+    a) API Endpoints
+       - REST/GraphQL/gRPC endpoints that accept client requests
+       - Query parameters, path parameters, request headers, request body
+       - Which endpoints accept user-supplied data vs. system-generated data?
+       - Look for: endpoint, route, path, API, request body, payload, parameter
+
+    b) Webhook Handlers
+       - Endpoints that receive events from external providers
+       - Stripe webhooks, GitHub webhooks, CI/CD notifications, etc.
+       - Payloads containing event data, metadata, and nested objects
+       - Look for: webhook, callback, notification endpoint, inbound event
+
+    c) File Upload Endpoints
+       - User-submitted files (images, documents, spreadsheets, CSVs)
+       - Import functionality (bulk data import, configuration upload)
+       - Avatar/profile picture uploads
+       - Look for: upload, import, file, attachment, multipart, blob
+
+    d) Form Inputs
+       - User registration and profile forms
+       - Search queries and filter inputs
+       - Comment/message content (rich text, markdown)
+       - Look for: form, input, field, text, search, query, comment
+
+    e) Message Consumers
+       - Event consumers reading from external message queues/topics
+       - Messages from external producers or partner systems
+       - Data feeds from third-party providers
+       - Look for: consumer, subscriber, listener, queue, topic, feed
+
+    f) Other Boundaries
+       - Email/SMS content processed by the system (inbound email parsing)
+       - URL parameters in redirect/callback flows (OAuth redirect URIs)
+       - Headers from reverse proxies or CDNs (X-Forwarded-For, etc.)
+
+    STEP 2: FOR EACH BOUNDARY, CHECK VALIDATION DOCUMENTATION
+    Determine whether the documentation specifies validation rules:
+
+    a) Schema Validation
+       - Are expected fields, types, and formats documented?
+       - Is there a schema definition (JSON Schema, Zod, Joi, protobuf)?
+       - Are required vs. optional fields specified?
+       - Are enum values and allowed ranges documented?
+       - Look for: schema, validation, type, format, required, optional, enum
+
+    b) Size Limits
+       - Is maximum payload size documented? (e.g., 1MB request body limit)
+       - Are individual field length limits specified? (e.g., name max 255 chars)
+       - Are array/list size limits documented? (e.g., max 100 items per batch)
+       - Are nested object depth limits specified? (prevent deep recursion)
+       - Look for: max size, limit, maximum, length, cap, bound
+
+    c) Type Checking
+       - Is strict type enforcement documented? (reject "123" when number expected)
+       - How are type coercion risks handled? (JavaScript loose equality, etc.)
+       - Are format validations specified? (email format, UUID format, date format)
+       - Look for: type check, strict, format, coerce, cast, parse
+
+    d) Sanitization
+       - Is output encoding documented for user-supplied strings? (HTML encoding for XSS)
+       - Is SQL parameterization documented for database queries?
+       - Is path normalization documented for file operations?
+       - Is HTML/markdown sanitization documented for rich text inputs?
+       - Look for: sanitize, encode, escape, parameterize, normalize, strip
+
+    STEP 3: FOR EACH BOUNDARY, CHECK SANITIZATION DOCUMENTATION
+    Determine whether the documentation specifies how potentially dangerous
+    input is neutralized:
+
+    a) Injection Prevention
+       - SQL/NoSQL injection: parameterized queries, ORM usage
+       - Command injection: argument escaping, allowlisting
+       - XSS: output encoding, Content Security Policy
+       - Path traversal: path normalization, jail/chroot
+       - XML/XXE: external entity processing disabled
+
+    b) Content Validation (for file uploads)
+       - File type validation (magic bytes, not just extension)
+       - File size limits (prevent resource exhaustion)
+       - Malware scanning (antivirus integration)
+       - Image re-encoding (strip EXIF, prevent image-based attacks)
+       - Filename sanitization (prevent path traversal via filename)
+
+    c) Rate and Resource Limits
+       - Request rate limiting per client/IP
+       - Payload size enforcement at the network/gateway level
+       - Concurrent request limits
+       - Slow request detection (slowloris prevention)
+
+    STEP 4: FLAG GAPS AND ASSESS RISK
+    For each boundary, classify validation coverage as:
+    - COMPLETE: Schema, size limits, type checking, and sanitization all documented
+    - PARTIAL: Some validation documented but gaps in coverage
+    - ABSENT: No validation documentation for this boundary
+
+    Pay special attention to:
+    - Boundaries that handle PII (names, emails, SSNs, addresses)
+    - Boundaries that handle financial data (amounts, account numbers)
+    - Boundaries that accept files (highest risk for resource exhaustion and malware)
+    - Boundaries that accept rich text (XSS risk)
+
+  checklist:
+    - id: "boundaries-identified"
+      question: "Are all system boundaries where external data enters identified in the documentation?"
+    - id: "schema-validation"
+      question: "Does each boundary have a documented schema specifying expected fields, types, and formats?"
+    - id: "size-limits"
+      question: "Are size limits documented for payloads, fields, arrays, and nested objects at each boundary?"
+    - id: "type-checking"
+      question: "Is strict type checking documented to prevent type coercion attacks?"
+    - id: "sanitization"
+      question: "Is input sanitization documented for injection prevention (SQL, XSS, command, path traversal)?"
+    - id: "file-validation"
+      question: "Do file upload boundaries have documented type validation, size limits, and malware scanning?"
+
+  evidence_required:
+    - field: "boundary_name"
+      type: "string"
+      description: "Identifier for the system boundary (e.g., 'POST /api/users - User Registration', 'Stripe Webhook Handler', 'CSV Import Endpoint')"
+      required: true
+
+    - field: "boundary_type"
+      type: "enum"
+      values:
+        - "api-endpoint"
+        - "webhook"
+        - "file-upload"
+        - "form-input"
+        - "message-consumer"
+        - "other"
+      description: "Classification of the system boundary"
+      required: true
+
+    - field: "boundary_source"
+      type: "string"
+      description: "Where the boundary is documented (e.g., 'ADD Section 4.1, API Layer', 'FRD Section 3.2, File Import Feature')"
+      required: true
+
+    - field: "validation_documented"
+      type: "boolean"
+      description: "Is any form of input validation documented for this boundary?"
+      required: true
+
+    - field: "validation_rules"
+      type: "string | null"
+      description: "Summary of documented validation rules (e.g., 'JSON Schema validation via Zod: email must be valid format, name max 255 chars, age must be integer 0-150'). Null if no validation documented."
+      required: true
+
+    - field: "sanitization_documented"
+      type: "boolean"
+      description: "Is input sanitization documented for this boundary (encoding, parameterization, normalization)?"
+      required: true
+
+    - field: "size_limits_documented"
+      type: "boolean"
+      description: "Are size limits documented for payloads and fields at this boundary?"
+      required: true
+
+    - field: "confidence"
+      type: "enum"
+      values: ["high", "medium", "low"]
+      description: "Your confidence that this assessment is accurate based on available documentation"
+      required: true
+
+  failure_condition: |
+    Report as ERROR when ANY of the following are true:
+
+    1. boundary_type is "api-endpoint" or "webhook" that handles PII and
+       validation_documented is FALSE - untrusted data containing PII entering
+       the system without validation is a data integrity and injection risk.
+
+    2. boundary_type is "api-endpoint" that handles payment data (amounts,
+       account numbers) and validation_documented is FALSE - unvalidated
+       payment inputs enable amount tampering and financial fraud.
+
+    3. boundary_type is "file-upload" and validation_documented is FALSE -
+       file uploads without validation are the highest-risk boundary for
+       malware injection, path traversal, and resource exhaustion.
+
+    4. boundary_type is "webhook" handling financial events and
+       sanitization_documented is FALSE - webhook payloads from external
+       providers should never be trusted without sanitization.
+
+    Report as WARNING when:
+
+    1. validation_documented is FALSE for any boundary regardless of data
+       sensitivity - all external input should be validated as a baseline.
+
+    2. validation_documented is TRUE but size_limits_documented is FALSE -
+       schema validation without size limits leaves the boundary vulnerable
+       to resource exhaustion (oversized payloads, unbounded arrays).
+
+    3. validation_documented is TRUE but sanitization_documented is FALSE -
+       validation checks structure but sanitization prevents injection.
+       Both are needed for defense in depth.
+
+    4. boundary_type is "form-input" and sanitization_documented is FALSE -
+       form inputs are the primary vector for XSS and injection attacks.
+
+    5. boundary_type is "message-consumer" and validation_documented is FALSE -
+       messages from external producers should be treated as untrusted.
+
+  recommendation_template: |
+    ## Gap: Missing Input Validation - {boundary_name}
+
+    **Boundary Type:** {boundary_type}
+    **Source:** {boundary_source}
+    **Validation Documented:** {validation_documented}
+    **Sanitization Documented:** {sanitization_documented}
+    **Size Limits Documented:** {size_limits_documented}
+
+    ### Required Documentation
+
+    Add input validation documentation for this boundary covering:
+
+    1. **Schema Validation**
+       - Define expected fields, types, and formats
+       - Specify required vs. optional fields
+       - Document enum values and allowed ranges
+       - Example: "POST /api/users body validated via Zod schema:
+         { email: z.string().email(), name: z.string().max(255),
+           age: z.number().int().min(0).max(150) }"
+
+    2. **Size Limits**
+       - Maximum request payload size
+       - Maximum field lengths
+       - Maximum array sizes for batch operations
+       - Maximum nested object depth
+       - Example: "Request body max 1MB enforced at API gateway.
+         Name field max 255 characters. Tags array max 20 items."
+
+    3. **Sanitization**
+       - How are user inputs protected against injection?
+       - What encoding is applied to output contexts?
+       - Example: "All database queries use Prisma ORM (parameterized).
+         User-generated text HTML-encoded before rendering.
+         File paths normalized and restricted to upload directory."
+
+    4. **Error Handling**
+       - What response does the client receive for invalid input?
+       - Are validation errors descriptive enough for legitimate clients
+         but not leaking internal details to attackers?
+       - Example: "Invalid input returns 400 with { error: 'VALIDATION_ERROR',
+         fields: [{ field: 'email', message: 'Invalid email format' }] }"
+
+# -----------------------------------------------------------------------------
+# EXAMPLES
+# -----------------------------------------------------------------------------
+examples:
+  well_documented:
+    - source: "ADD Section 4.2 - API Validation Layer"
+      text: |
+        "User Registration Endpoint (POST /api/users):
+
+        Input Validation:
+        - Schema: Zod schema validates request body
+          { email: z.string().email().max(320),
+            name: z.string().min(1).max(255).trim(),
+            password: z.string().min(12).max(128) }
+        - Size: Request body max 64KB enforced at Nginx level
+        - Sanitization: Email normalized to lowercase. Name trimmed of
+          leading/trailing whitespace. Password never logged or echoed.
+        - Type: Strict type checking - additional fields rejected (strict mode)
+        - Error: 400 response with field-level validation errors.
+          No internal details exposed. Rate limited to 5 attempts/min/IP.
+
+        File Upload (POST /api/users/:id/avatar):
+        - Type: Magic bytes validation for JPEG/PNG only (not extension-based)
+        - Size: Max 5MB enforced at Nginx (client_max_body_size) and application
+        - Processing: Image re-encoded via Sharp library (strips EXIF, normalizes format)
+        - Filename: UUID generated server-side (original filename discarded)
+        - Storage: S3 with content-type validation, no public-read ACL"
+      assessment: |
+        boundary_name: "POST /api/users - User Registration"
+        boundary_type: "api-endpoint"
+        validation_documented: true
+        validation_rules: "Zod schema with email format, name length, password length, strict mode"
+        sanitization_documented: true
+        size_limits_documented: true
+        confidence: "high"
+
+  poorly_documented:
+    - source: "ADD Section 3.1"
+      text: |
+        "The API accepts JSON requests from clients. Express.js is used as
+        the web framework with body-parser middleware for JSON parsing."
+      assessment: |
+        boundary_name: "All API Endpoints"
+        boundary_type: "api-endpoint"
+        validation_documented: false
+        validation_rules: null
+        sanitization_documented: false
+        size_limits_documented: false
+        gap: "API endpoints accept JSON but no validation is documented. body-parser
+              has a default size limit (100KB) but this isn't explicitly documented or
+              configured. No schema validation, no field-level type checking, no
+              sanitization strategy. Every endpoint is potentially vulnerable to
+              oversized payloads, malformed data, and injection attacks."
+        confidence: "high"
+
+# -----------------------------------------------------------------------------
+# METADATA
+# -----------------------------------------------------------------------------
+metadata:
+  created: "2026-02"
+  last_updated: "2026-02"
+  author: "doc-lint v0.2"
+  related_concerns:
+    - "threat-model-coverage"        # input boundaries are attack surfaces needing threat models
+    - "auth-boundary-consistency"    # auth tokens arriving as input need validation
+    - "api-contract-consistency"     # validation rules should match API spec definitions
+    - "secrets-management"           # credentials in input (API keys, tokens) need handling
+  references:
+    - "OWASP Input Validation Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Input_Validation_Cheat_Sheet.html"
+    - "OWASP Top 10 A03:2021 - Injection: https://owasp.org/Top10/A03_2021-Injection/"
+    - "CWE-20: Improper Input Validation"
+    - "NIST SP 800-53: SI-10 Information Input Validation"
