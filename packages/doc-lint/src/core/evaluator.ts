@@ -1,27 +1,37 @@
-import { loadManifest } from "./manifest.js";
-import { loadDocuments } from "./documents.js";
-import { loadAllConcerns } from "./concerns.js";
-import { matchConcerns } from "./signals.js";
-import { buildEvaluationPrompt, buildContradictionPrompt } from "./prompt-builder.js";
-import { parseEvaluationResponse, parseContradictionResponse } from "./response-parser.js";
-
-import type { EvaluationEngine } from "./engine/types.js";
 import type {
   AssembledPrompt,
   AssembleResult,
-  Finding,
   ContradictionFinding,
   CoverageInfo,
-  LintResult,
-  ToleranceConfig,
   ExclusionEntry,
+  Finding,
+  LintResult,
+  SignalAnalysis,
+  ToleranceConfig,
 } from "../types/index.js";
+import type { EvaluationEngine } from "./engine/types.js";
+
+import { loadAllConcerns } from "./concerns.js";
+import { loadDocuments } from "./documents.js";
+import { loadManifest } from "./manifest.js";
+import {
+  buildContradictionPrompt,
+  buildEvaluationPrompt,
+} from "./prompt-builder.js";
+import {
+  parseContradictionResponse,
+  parseEvaluationResponse,
+} from "./response-parser.js";
+import { detectSignals, resolveDocumentPaths } from "./signal-keywords.js";
+import { matchConcerns } from "./signals.js";
 
 export interface AssembleInput {
   projectPath: string;
   configPath?: string;
   contradiction?: boolean;
   filterConcernIds?: string[];
+  autoDetect?: boolean; // CLI override for manifest.signals.auto_detect
+  warnOnMismatch?: boolean; // CLI override for manifest.signals.warn_on_mismatch
 }
 
 export interface LintInput extends AssembleInput {
@@ -60,7 +70,9 @@ export function applyExclusionFilter(
 
   for (const finding of findings) {
     const isExcluded = excludedComponents.some(
-      (comp) => finding.relatedItem === comp || finding.relatedItem.startsWith(`${comp}.`),
+      (comp) =>
+        finding.relatedItem === comp ||
+        finding.relatedItem.startsWith(`${comp}.`),
     );
     if (isExcluded) {
       excluded.push(finding);
@@ -127,8 +139,38 @@ export function assemble(input: AssembleInput): AssembleResult {
   const docs = loadDocuments(manifest, input.projectPath);
   const allConcerns = loadAllConcerns();
 
+  // resolve auto_detect and warn_on_mismatch: CLI flag > manifest > default false
+  const autoDetect = input.autoDetect ?? manifest.signals.auto_detect ?? false;
+  const warnOnMismatch =
+    input.warnOnMismatch ?? manifest.signals.warn_on_mismatch ?? false;
+  const shouldDetect = autoDetect || warnOnMismatch;
+
+  const declaredSignals = manifest.signals.declared;
+  let detectedSignals: string[] = [];
+  let effectiveSignals = declaredSignals;
+
+  if (shouldDetect) {
+    const docPaths = resolveDocumentPaths(
+      input.projectPath,
+      docs.all.map((d) => d.path),
+    );
+    const allDetected = detectSignals(docPaths);
+    detectedSignals = allDetected
+      .filter((s) => s.confidence === "high" || s.confidence === "medium")
+      .map((s) => s.signal);
+  }
+
+  if (autoDetect) {
+    // MERGE: union of declared + detected
+    effectiveSignals = [...new Set([...declaredSignals, ...detectedSignals])];
+  }
+
   const filterIds = input.filterConcernIds;
-  const { matched, skipped } = matchConcerns(manifest.signals.declared, allConcerns, filterIds);
+  const { matched, skipped } = matchConcerns(
+    effectiveSignals,
+    allConcerns,
+    filterIds,
+  );
 
   const prompts: AssembledPrompt[] = [];
 
@@ -144,11 +186,27 @@ export function assemble(input: AssembleInput): AssembleResult {
     prompts.push(contradictionPrompt);
   }
 
+  const signalAnalysis: SignalAnalysis = {
+    declared: declaredSignals,
+    detected: detectedSignals,
+    effective: effectiveSignals,
+  };
+
+  if (warnOnMismatch) {
+    const declaredSet = new Set(declaredSignals);
+    const detectedSet = new Set(detectedSignals);
+    const undeclared = detectedSignals.filter((s) => !declaredSet.has(s));
+    const stale = declaredSignals.filter((s) => !detectedSet.has(s));
+    if (undeclared.length > 0 || stale.length > 0) {
+      signalAnalysis.mismatch = { undeclared, stale };
+    }
+  }
+
   return {
-    version: "1.0",
+    version: "2.0",
     timestamp: new Date().toISOString(),
     project: manifest.project.name,
-    signals: manifest.signals.declared,
+    signals: signalAnalysis,
     concerns: {
       matched: matched.map((c) => c.id),
       skipped: skipped.map((c) => c.id),
@@ -166,9 +224,25 @@ export async function lint(input: LintInput): Promise<LintResult> {
   // eslint-disable-next-line @typescript-eslint/no-empty-function -- intentional no-op fallback
   const progress = input.onProgress ?? ((_msg: string) => {});
 
+  if (assembled.signals.mismatch) {
+    const { undeclared, stale } = assembled.signals.mismatch;
+    if (undeclared.length > 0) {
+      progress(
+        `Warning: Signals detected in docs but not declared: ${undeclared.join(", ")}`,
+      );
+    }
+    if (stale.length > 0) {
+      progress(
+        `Warning: Declared signals not found in docs: ${stale.join(", ")}`,
+      );
+    }
+  }
+
   // resolve tolerance and exclusions: CLI flags override manifest
-  const tolerance: ToleranceConfig | undefined = input.tolerance ?? manifest.tolerance;
-  const exclusions: ExclusionEntry[] | undefined = input.exclusions ?? manifest.exclusions;
+  const tolerance: ToleranceConfig | undefined =
+    input.tolerance ?? manifest.tolerance;
+  const exclusions: ExclusionEntry[] | undefined =
+    input.exclusions ?? manifest.exclusions;
 
   // pre-evaluation: filter out prompts for excluded concern IDs (saves API calls)
   const { kept: activePrompts, excludedConcernIds: preExcludedConcernIds } =
@@ -200,7 +274,10 @@ export async function lint(input: LintInput): Promise<LintResult> {
       const result = await input.engine.evaluate(prompt);
 
       if (result.ok) {
-        const parsed = parseEvaluationResponse(result.content, prompt.concernId);
+        const parsed = parseEvaluationResponse(
+          result.content,
+          prompt.concernId,
+        );
         if (parsed.parseError) {
           progress(`  Warning: ${parsed.parseError}`);
         }
@@ -216,7 +293,9 @@ export async function lint(input: LintInput): Promise<LintResult> {
   findings = kept;
   // merge pre-evaluation concern exclusions with post-evaluation component exclusions
   const postExcludedConcernIds = [...new Set(excluded.map((f) => f.concernId))];
-  const excludedConcernIds = [...new Set([...preExcludedConcernIds, ...postExcludedConcernIds])];
+  const excludedConcernIds = [
+    ...new Set([...preExcludedConcernIds, ...postExcludedConcernIds]),
+  ];
 
   // apply tolerance filtering
   findings = applyToleranceFilter(findings, tolerance);
@@ -242,14 +321,16 @@ export async function lint(input: LintInput): Promise<LintResult> {
   });
 
   const findingErrors = findings.filter((f) => f.severity === "error").length;
-  const contradictionErrors = contradictions.filter((c) => c.severity === "error").length;
+  const contradictionErrors = contradictions.filter(
+    (c) => c.severity === "error",
+  ).length;
   const errors = findingErrors + contradictionErrors;
   const warnings = findings.filter((f) => f.severity === "warn").length;
   const notes = findings.filter((f) => f.severity === "note").length;
   const humanReview = findings.filter((f) => f.requiresHumanReview).length;
 
   return {
-    version: "1.0",
+    version: "2.0",
     timestamp: new Date().toISOString(),
     project: assembled.project,
     signals: assembled.signals,

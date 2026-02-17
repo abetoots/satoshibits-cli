@@ -24,6 +24,8 @@ export async function lintCommand(
       configPath: options.config,
       contradiction: options.contradiction,
       filterConcernIds,
+      autoDetect: options.autoDetect,
+      warnOnMismatch: options.warnOnMismatch,
     });
 
     const dryRunFormat = options.format ?? "human";
@@ -68,6 +70,8 @@ export async function lintCommand(
     verbose: options.verbose,
     onProgress,
     tolerance: cliTolerance,
+    autoDetect: options.autoDetect,
+    warnOnMismatch: options.warnOnMismatch,
   });
 
   const format = options.format ?? "human";

@@ -2,7 +2,11 @@ import { describe, it, expect } from "vitest";
 
 import { formatAssembleJson, formatLintJson } from "../../src/formatters/json.js";
 
-import type { AssembleResult, LintResult } from "../../src/types/index.js";
+import type { AssembleResult, LintResult, SignalAnalysis } from "../../src/types/index.js";
+
+function makeSignals(effective: string[]): SignalAnalysis {
+  return { declared: effective, detected: [], effective };
+}
 
 describe("json formatter", () => {
   it("formats assemble result as valid JSON", () => {
@@ -10,7 +14,7 @@ describe("json formatter", () => {
       version: "1.0",
       timestamp: "2026-02-10T00:00:00Z",
       project: "Test",
-      signals: ["payments"],
+      signals: makeSignals(["payments"]),
       concerns: { matched: ["c1"], skipped: ["c2"] },
       prompts: [],
     };
@@ -26,7 +30,7 @@ describe("json formatter", () => {
       version: "1.0",
       timestamp: "2026-02-10T00:00:00Z",
       project: "Test",
-      signals: ["payments"],
+      signals: makeSignals(["payments"]),
       concerns: { matched: ["c1"], skipped: [] },
       findings: [],
       contradictions: [],

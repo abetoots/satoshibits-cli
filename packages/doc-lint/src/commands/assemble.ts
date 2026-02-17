@@ -21,6 +21,8 @@ export async function assembleCommand(
     configPath: options.config,
     contradiction: options.contradiction,
     filterConcernIds,
+    autoDetect: options.autoDetect,
+    warnOnMismatch: options.warnOnMismatch,
   });
 
   const format = options.format ?? "json";

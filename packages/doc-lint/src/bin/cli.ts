@@ -25,6 +25,10 @@ program
   .option("-f, --format <format>", "Output format (human|json)", "json")
   .option("--no-contradiction", "Skip contradiction scanner")
   .option("--concerns <ids>", "Only specific concerns (comma-separated)")
+  .option("--auto-detect", "Auto-detect signals from document content")
+  .option("--no-auto-detect", "Disable auto-detection (overrides manifest)")
+  .option("--warn-on-mismatch", "Warn when detected signals differ from declared")
+  .option("--no-warn-on-mismatch", "Disable mismatch warnings")
   .action(async (projectPath: string | undefined, options: AssembleOptions) => {
     const { assembleCommand } = await import("../commands/assemble.js");
     const exitCode = await assembleCommand(projectPath, options);
@@ -44,6 +48,10 @@ program
   .option("--severity-threshold <level>", "Minimum severity to display (error|warn|note)")
   .option("--allow-implicit", "Accept implicit documentation as coverage")
   .option("--allow-external-refs", "Accept external references as partial coverage")
+  .option("--auto-detect", "Auto-detect signals from document content")
+  .option("--no-auto-detect", "Disable auto-detection (overrides manifest)")
+  .option("--warn-on-mismatch", "Warn when detected signals differ from declared")
+  .option("--no-warn-on-mismatch", "Disable mismatch warnings")
   .action(async (projectPath: string | undefined, options: LintOptions) => {
     const { lintCommand } = await import("../commands/lint.js");
     const exitCode = await lintCommand(projectPath, options);

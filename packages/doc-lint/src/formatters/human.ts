@@ -8,7 +8,18 @@ export async function formatAssembleHuman(result: AssembleResult): Promise<strin
   const lines: string[] = [];
 
   lines.push(chalk.bold(`doc-lint assemble: ${result.project}`));
-  lines.push(chalk.dim(`Signals: ${result.signals.join(", ")}`));
+  lines.push(chalk.dim(`Signals: ${result.signals.effective.join(", ")}`));
+
+  if (result.signals.mismatch) {
+    const { undeclared, stale } = result.signals.mismatch;
+    if (undeclared.length > 0) {
+      lines.push(chalk.yellow(`  Undeclared signals found in docs: ${undeclared.join(", ")}`));
+    }
+    if (stale.length > 0) {
+      lines.push(chalk.yellow(`  Declared signals not found in docs: ${stale.join(", ")}`));
+    }
+  }
+
   lines.push("");
 
   lines.push(`Matched concerns: ${chalk.green(String(result.concerns.matched.length))}`);
@@ -34,8 +45,20 @@ export async function formatLintHuman(result: LintResult): Promise<string> {
   const lines: string[] = [];
 
   lines.push(chalk.bold(`doc-lint: ${result.project}`));
-  lines.push(chalk.dim(`Signals: ${result.signals.join(", ")}`));
+  lines.push(chalk.dim(`Signals: ${result.signals.effective.join(", ")}`));
   lines.push(chalk.dim(`Concerns evaluated: ${result.concerns.matched.join(", ")}`));
+
+  if (result.signals.mismatch) {
+    lines.push("");
+    const { undeclared, stale } = result.signals.mismatch;
+    if (undeclared.length > 0) {
+      lines.push(chalk.yellow(`  Undeclared signals found in docs: ${undeclared.join(", ")}`));
+    }
+    if (stale.length > 0) {
+      lines.push(chalk.yellow(`  Declared signals not found in docs: ${stale.join(", ")}`));
+    }
+  }
+
   lines.push("");
 
   // group findings by severity

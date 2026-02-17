@@ -1,0 +1,17 @@
+version: "1.0"
+
+project:
+  name: "No Signals Project"
+
+documents:
+  required:
+    - role: brd
+      path: docs/brd.md
+    - role: frd
+      path: docs/frd.md
+    - role: add
+      path: docs/add.md
+
+signals:
+  declared:
+    - payments

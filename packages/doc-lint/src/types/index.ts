@@ -30,6 +30,7 @@ export type {
   Finding,
   ContradictionFinding,
   CoverageInfo,
+  SignalAnalysis,
   LintResult,
   AssembleResult,
 } from "./findings.js";

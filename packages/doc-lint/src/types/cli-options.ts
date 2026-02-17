@@ -3,6 +3,8 @@ export interface AssembleOptions {
   format?: "human" | "json";
   contradiction?: boolean;
   concerns?: string;
+  autoDetect?: boolean;
+  warnOnMismatch?: boolean;
 }
 
 export interface InitOptions {
@@ -21,4 +23,6 @@ export interface LintOptions {
   severityThreshold?: string;
   allowImplicit?: boolean;
   allowExternalRefs?: boolean;
+  autoDetect?: boolean;
+  warnOnMismatch?: boolean;
 }

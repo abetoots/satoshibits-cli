@@ -1,0 +1,21 @@
+version: "1.0"
+
+project:
+  name: "Manifest Auto-Detect Project"
+
+documents:
+  required:
+    - role: brd
+      path: docs/brd.md
+    - role: frd
+      path: docs/frd.md
+    - role: add
+      path: docs/add.md
+
+signals:
+  declared:
+    - external-api
+    - payments
+    - webhooks
+  auto_detect: true
+  warn_on_mismatch: true

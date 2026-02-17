@@ -160,6 +160,8 @@ Assembles evaluation prompts without making any API calls. `[path]` is the proje
 | `-f, --format <format>` | Output format: `human` or `json` | `json` |
 | `--no-contradiction` | Skip the contradiction scanner prompt | enabled |
 | `--concerns <ids>` | Only specific concerns (comma-separated) | all matched |
+| `--auto-detect` / `--no-auto-detect` | Auto-detect signals from document content | manifest value or `false` |
+| `--warn-on-mismatch` / `--no-warn-on-mismatch` | Warn when detected signals differ from declared | manifest value or `false` |
 
 ### `doc-lint lint [path]`
 
@@ -174,6 +176,8 @@ Assembles prompts and evaluates them via the Anthropic SDK. `[path]` is the proj
 | `--concerns <ids>` | Only specific concerns (comma-separated) | all matched |
 | `--dry-run` | Show matched concerns without evaluating | - |
 | `--verbose` | Show detailed progress | - |
+| `--auto-detect` / `--no-auto-detect` | Auto-detect signals from document content | manifest value or `false` |
+| `--warn-on-mismatch` / `--no-warn-on-mismatch` | Warn when detected signals differ from declared | manifest value or `false` |
 
 **Exit codes:** `0` = pass, `1` = errors found, `2` = tool error
 
@@ -262,6 +266,17 @@ Signals are tags that describe your system's characteristics. They determine whi
 - **Interaction matrices** activate when *all* of their trigger signals match (`all_of`)
 
 Run `doc-lint list` to see available signals for each concern.
+
+#### Signal Auto-Detection
+
+By default, only the `declared` signals in your manifest are used. Two optional settings let doc-lint detect signals from your document content:
+
+| Setting | Effect |
+|---------|--------|
+| `auto_detect: true` | Scans documents for signal keywords, then **merges** detected signals (high+medium confidence) with declared signals. This expands concern coverage without manual manifest edits. |
+| `warn_on_mismatch: true` | Scans documents and **compares** detected signals against declared signals. Reports undeclared signals (found in docs but not declared) and stale signals (declared but not found in docs). Does NOT merge — effective signals remain the declared list. |
+
+Both can be set together: `auto_detect` merges for expanded coverage while `warn_on_mismatch` reports the drift. Settings can be defined in the manifest or overridden per-run with CLI flags (`--auto-detect`, `--warn-on-mismatch`). CLI flags take precedence over manifest values.
 
 ## Bundled Concerns
 
@@ -357,10 +372,14 @@ const assembled: AssembleResult = assemble({
   configPath: "doc-lint.yaml",       // optional
   contradiction: true,                // default: true
   filterConcernIds: ["idempotency-boundaries"],  // optional
+  autoDetect: true,                   // optional: merge detected signals with declared
+  warnOnMismatch: true,               // optional: report signal drift
 });
 
-console.log(assembled.prompts.length);  // number of prompts generated
+console.log(assembled.prompts.length);   // number of prompts generated
 console.log(assembled.concerns.matched); // ["idempotency-boundaries"]
+console.log(assembled.signals.effective); // signals used for concern matching
+console.log(assembled.signals.mismatch); // { undeclared: [...], stale: [...] } or undefined
 
 // each prompt has system + user messages ready for any LLM
 for (const prompt of assembled.prompts) {
