@@ -36,5 +36,6 @@ export type {
 
 export type {
   AssembleOptions,
+  InitOptions,
   LintOptions,
 } from "./cli-options.js";

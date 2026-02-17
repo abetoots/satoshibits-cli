@@ -5,6 +5,11 @@ export interface AssembleOptions {
   concerns?: string;
 }
 
+export interface InitOptions {
+  yes?: boolean;
+  ignore?: string[];
+}
+
 export interface LintOptions {
   engine?: "sdk";
   config?: string;

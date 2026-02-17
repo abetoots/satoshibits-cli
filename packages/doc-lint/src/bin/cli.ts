@@ -5,7 +5,7 @@ import { join } from "path";
 
 import { getPackageRoot } from "../core/paths.js";
 
-import type { AssembleOptions, LintOptions } from "../types/index.js";
+import type { AssembleOptions, InitOptions, LintOptions } from "../types/index.js";
 
 const packageJsonContent = await readFile(
   join(getPackageRoot(), "package.json"),
@@ -47,6 +47,17 @@ program
   .action(async (projectPath: string | undefined, options: LintOptions) => {
     const { lintCommand } = await import("../commands/lint.js");
     const exitCode = await lintCommand(projectPath, options);
+    process.exit(exitCode);
+  });
+
+program
+  .command("init [path]")
+  .description("Initialize doc-lint.yaml by discovering documents and detecting signals")
+  .option("-y, --yes", "Non-interactive mode (skip prompts)")
+  .option("--ignore <glob>", "Glob pattern to ignore during discovery (repeatable)", (val: string, prev: string[]) => [...prev, val], [] as string[])
+  .action(async (projectPath: string | undefined, options: InitOptions) => {
+    const { initCommand } = await import("../commands/init.js");
+    const exitCode = await initCommand(projectPath, options);
     process.exit(exitCode);
   });
 
