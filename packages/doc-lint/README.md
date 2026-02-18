@@ -111,10 +111,13 @@ signals:
 
 ```bash
 # outputs JSON with all assembled prompts
-doc-lint assemble .
+doc-lint assemble . -f json
 
 # human-readable summary
 doc-lint assemble . -f human
+
+# write each prompt as a standalone .md file (best for LLM handoff)
+doc-lint assemble . -o ./prompts
 ```
 
 Example human output:
@@ -157,11 +160,14 @@ Assembles evaluation prompts without making any API calls. `[path]` is the proje
 | Option | Description | Default |
 |--------|-------------|---------|
 | `-c, --config <file>` | Path to manifest file | Auto-detect `doc-lint.yaml` |
-| `-f, --format <format>` | Output format: `human` or `json` | `json` |
+| `-f, --format <format>` | Output format: `human` or `json` (to stdout) | *required if `-o` not set* |
+| `-o, --output-dir <path>` | Write each prompt as a standalone `.md` file to this directory | *required if `-f` not set* |
 | `--no-contradiction` | Skip the contradiction scanner prompt | enabled |
 | `--concerns <ids>` | Only specific concerns (comma-separated) | all matched |
 | `--auto-detect` / `--no-auto-detect` | Auto-detect signals from document content | manifest value or `false` |
 | `--warn-on-mismatch` / `--no-warn-on-mismatch` | Warn when detected signals differ from declared | manifest value or `false` |
+
+One of `-f` or `-o` must be provided. When `--output-dir` is used, each assembled prompt is written as an individual Markdown file (e.g., `idempotency-boundaries.md`) with YAML front-matter metadata. These files are self-contained and ready to hand off to any external LLM.
 
 ### `doc-lint lint [path]`
 

@@ -5,6 +5,7 @@ export interface AssembleOptions {
   concerns?: string;
   autoDetect?: boolean;
   warnOnMismatch?: boolean;
+  outputDir?: string;
 }
 
 export interface InitOptions {

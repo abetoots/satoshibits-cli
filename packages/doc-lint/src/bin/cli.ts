@@ -22,13 +22,14 @@ program
   .command("assemble [path]")
   .description("Assemble evaluation prompts (no LLM call)")
   .option("-c, --config <file>", "Path to doc-lint.yaml")
-  .option("-f, --format <format>", "Output format (human|json)", "json")
+  .option("-f, --format <format>", "Output format (human|json)")
   .option("--no-contradiction", "Skip contradiction scanner")
   .option("--concerns <ids>", "Only specific concerns (comma-separated)")
   .option("--auto-detect", "Auto-detect signals from document content")
   .option("--no-auto-detect", "Disable auto-detection (overrides manifest)")
   .option("--warn-on-mismatch", "Warn when detected signals differ from declared")
   .option("--no-warn-on-mismatch", "Disable mismatch warnings")
+  .option("-o, --output-dir <path>", "Write each prompt as a standalone .md file to this directory")
   .action(async (projectPath: string | undefined, options: AssembleOptions) => {
     const { assembleCommand } = await import("../commands/assemble.js");
     const exitCode = await assembleCommand(projectPath, options);
