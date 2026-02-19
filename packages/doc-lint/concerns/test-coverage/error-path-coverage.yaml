@@ -399,6 +399,7 @@ examples:
 metadata:
   created: "2026-02"
   last_updated: "2026-02"
+  tier: 2
   author: "doc-lint v0.2"
   related_concerns:
     - "resilience-triad"              # documents the timeout/retry/CB policies that create error paths

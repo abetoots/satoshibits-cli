@@ -43,6 +43,9 @@ export function formatList(concerns: LoadedConcern[]): string {
     for (const c of group) {
       lines.push(`  ${c.id} v${c.version}`);
       lines.push(`    ${c.name}`);
+      if (c.tier != null) {
+        lines.push(`    Tier: ${c.tier}`);
+      }
       lines.push(`    Severity: ${c.severity}`);
       lines.push(`    Triggers (any_of): ${c.triggerSignals.join(", ")}`);
       lines.push("");
@@ -54,6 +57,9 @@ export function formatList(concerns: LoadedConcern[]): string {
     for (const c of interactions) {
       lines.push(`  ${c.id} v${c.version}`);
       lines.push(`    ${c.name}`);
+      if (c.tier != null) {
+        lines.push(`    Tier: ${c.tier}`);
+      }
       lines.push(`    Severity: ${c.severity}`);
       lines.push(`    Triggers (all_of): ${c.triggerSignals.join(", ")}`);
       lines.push("");
@@ -75,7 +81,8 @@ export async function listCommand(): Promise<void> {
   const colored = plain
     .replace(/^Bundled Concerns/m, chalk.bold("Bundled Concerns"))
     .replace(/^(.+ \(\d+\):)$/gm, (match) => chalk.underline(match))
-    .replace(/^( {2}\S+ v\S+)$/gm, (match) => `  ${chalk.green(match.trim())}`);
+    .replace(/^( {2}\S+ v\S+)$/gm, (match) => `  ${chalk.green(match.trim())}`)
+    .replace(/^( {4}Tier: \d+)$/gm, (match) => chalk.dim(match));
 
   console.log(colored);
 }

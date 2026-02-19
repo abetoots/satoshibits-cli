@@ -202,6 +202,12 @@ export function assemble(input: AssembleInput): AssembleResult {
     }
   }
 
+  const matchedDetails = matched.map((c) => ({
+    id: c.id,
+    tier: c.tier,
+    type: c.type,
+  }));
+
   return {
     version: "2.0",
     timestamp: new Date().toISOString(),
@@ -210,6 +216,7 @@ export function assemble(input: AssembleInput): AssembleResult {
     concerns: {
       matched: matched.map((c) => c.id),
       skipped: skipped.map((c) => c.id),
+      matchedDetails,
     },
     prompts,
   };

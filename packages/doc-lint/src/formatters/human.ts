@@ -22,9 +22,47 @@ export async function formatAssembleHuman(result: AssembleResult): Promise<strin
 
   lines.push("");
 
+  // Group matched concerns by tier
+  const byTier = new Map<number | "none", string[]>();
+  for (const detail of result.concerns.matchedDetails) {
+    const key = detail.tier ?? "none";
+    const group = byTier.get(key) ?? [];
+    group.push(detail.id);
+    byTier.set(key, group);
+  }
+
+  const TIER_LABELS: Record<number, string> = {
+    1: "Tier 1 — Foundational Correctness",
+    2: "Tier 2 — Behavioral Integrity",
+    3: "Tier 3 — Structural Coherence",
+  };
+
   lines.push(`Matched concerns: ${chalk.green(String(result.concerns.matched.length))}`);
-  for (const id of result.concerns.matched) {
-    lines.push(`  ${chalk.green("+")} ${id}`);
+
+  for (const tier of [1, 2, 3]) {
+    const ids = byTier.get(tier);
+    if (!ids || ids.length === 0) continue;
+    lines.push(chalk.dim(`  ${TIER_LABELS[tier]}`));
+    for (const id of ids) {
+      lines.push(`    ${chalk.green("+")} ${id}`);
+    }
+  }
+  const ungrouped = byTier.get("none") ?? [];
+  const detailsById = new Map(result.concerns.matchedDetails.map((d) => [d.id, d]));
+  const ungroupedConcerns = ungrouped.filter((id) => detailsById.get(id)?.type !== "interaction");
+  const ungroupedInteractions = ungrouped.filter((id) => detailsById.get(id)?.type === "interaction");
+
+  if (ungroupedConcerns.length > 0) {
+    lines.push(chalk.dim("  Untiered"));
+    for (const id of ungroupedConcerns) {
+      lines.push(`    ${chalk.green("+")} ${id}`);
+    }
+  }
+  if (ungroupedInteractions.length > 0) {
+    lines.push(chalk.dim("  Interactions"));
+    for (const id of ungroupedInteractions) {
+      lines.push(`    ${chalk.green("+")} ${id}`);
+    }
   }
 
   if (result.concerns.skipped.length > 0) {
@@ -150,6 +188,18 @@ export async function formatLintHuman(result: LintResult): Promise<string> {
   // tolerance info
   if (result.toleranceApplied?.severity_threshold) {
     lines.push(chalk.dim(`  Severity threshold: ${result.toleranceApplied.severity_threshold}`));
+  }
+
+  // tier advisory
+  if (result.concerns.matchedDetails.length > 0) {
+    const tierById = new Map(result.concerns.matchedDetails.map((d) => [d.id, d.tier]));
+    const findingTiers = new Set(result.findings.map((f) => tierById.get(f.concernId)));
+
+    if (findingTiers.has(1) && findingTiers.has(3)) {
+      lines.push("");
+      lines.push(chalk.dim("NOTE: Tier 1 (foundational) findings may invalidate Tier 3 (structural)"));
+      lines.push(chalk.dim("findings. Address Tier 1 issues first, then re-run."));
+    }
   }
 
   if (s.errors > 0) {

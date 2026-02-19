@@ -169,6 +169,9 @@ examples:                         # help the LLM calibrate
 metadata:
   created: "2026-02"
   last_updated: "2026-02"
+  tier: 2                           # 1=foundational, 2=behavioral, 3=structural
+  recommended_after:                # concerns that should be resolved first
+    - "some-foundational-concern"
   author: "Your Name"
   references:
     - "Link to relevant standard or resource"
@@ -296,6 +299,8 @@ metadata:
   author: "Your Name"
   related_concerns:
     - "idempotency-boundaries"    # concerns that overlap
+  recommended_after:              # concerns that should be resolved first
+    - "idempotency-boundaries"
   references:
     - "Relevant book, paper, or standard"
 ```
@@ -593,6 +598,52 @@ failure_condition: "Report as ERROR when documentation is insufficient."
 
 ---
 
+## Remediation Order: Tiers
+
+When doc-lint evaluates documentation, all triggered concerns run independently — ordering doesn't affect results. But when teams **fix** the findings, order matters. Foundational issues should be resolved before derived checks, because structural changes invalidate downstream findings.
+
+Each concern carries an optional `tier` in its metadata:
+
+| Tier | Name | Volatility | What It Validates | Fix First? |
+|------|------|------------|-------------------|------------|
+| 1 | Foundational Correctness | Low | Atomic soundness — are requirements feasible? Are failure domains defined? | Yes — fixes here may add/remove requirements or restructure components |
+| 2 | Behavioral Integrity | Low-Medium | Specific invariants — idempotency, resilience, auth, compliance | Second — fixes are typically additive (add missing docs) |
+| 3 | Structural Coherence | High | Cross-document integrity — traceability matrices, requirement-to-test mappings | Last — these are capstone checks whose findings are invalidated by Tier 1/2 fixes |
+| — | Interactions | Variable | Cross-domain failure modes at domain intersections | After relevant concerns — presumes individual domains are stable |
+
+### Current Tier Assignments
+
+**Tier 1 (4 concerns):** `feasibility-check`, `state-ownership-clarity`, `failure-domain-isolation`, `threat-model-coverage`
+
+**Tier 2 (19 concerns):** `idempotency-boundaries`, `resilience-triad`, `durable-persistence`, `api-contract-consistency`, `auth-boundary-consistency`, `input-validation`, `secrets-management`, `dependency-runbook`, `rollback-documentation`, `failure-mode-coverage`, `alerting-slo-alignment`, `sla-architecture-alignment`, `scalability-claim-validation`, `auth-scheme-compliance`, `logging-pii-compliance`, `data-retention-compliance`, `api-versioning-compliance`, `boundary-condition-coverage`, `error-path-coverage`
+
+**Tier 3 (2 concerns):** `horizontal-traceability`, `requirement-test-mapping`
+
+**Interactions (3, no tier):** `async-times-approval`, `retry-times-payment`, `webhook-times-security`
+
+### Choosing a Tier for New Concerns
+
+Ask: "Would fixing other concerns likely invalidate THIS concern's findings?"
+
+- **Rarely/never** → Tier 1 (foundational). Its findings are stable regardless of other changes.
+- **Only if components are restructured** → Tier 2 (behavioral). Fixes are additive.
+- **Yes, frequently** → Tier 3 (structural). It's a derived/summary check.
+
+### `recommended_after`
+
+Use the optional `recommended_after` metadata field when your concern has an explicit remediation dependency:
+
+```yaml
+metadata:
+  tier: 3
+  recommended_after:
+    - "feasibility-check"  # resolve feasibility before tracing
+```
+
+This is advisory — it tells users which concerns to address first, not a hard execution dependency.
+
+---
+
 ## Checklist Before Submitting
 
 1. **Place YAML in correct subdirectory** — `concerns/{category}/your-id.yaml` for concerns, `concerns/interactions/your-id.yaml` for interactions
@@ -632,6 +683,7 @@ The TypeScript types in `src/types/concerns.ts` define the canonical schema shap
 - **`EvidenceField`** — `{ field, type, description?, required?, values?, examples? }`. The `type` field is a descriptive string hint for the LLM — it may use union syntax (e.g., `"string | null"`) even though the TS type is `string`. The `required` property is optional (`boolean | undefined`) and instructs the evaluator whether the output field must be non-null.
 - **`FailureMode`** — `{ id, name, severity, description, question, evidence_required, failure_examples }`
 - **`ChecklistItem`** — `{ id, question }`
+- **`ConcernMetadata`** — `{ created, last_updated, author, related_concerns?, recommended_after?, tier?, references? }`. The `tier` field (1/2/3) indicates remediation priority. The `recommended_after` field lists concern IDs that should be resolved before this one.
 
 **Validation scope:** The loader in `src/core/concerns.ts` validates core metadata (`id`, `version`, `name`, `severity`) and trigger arrays on startup. The full structure of `evaluation`, `failure_modes`, and `evidence_required` is enforced by convention and review — the loader does not deep-validate these sections. Following the skeletons in this guide ensures your concern will work correctly at evaluation time.
 

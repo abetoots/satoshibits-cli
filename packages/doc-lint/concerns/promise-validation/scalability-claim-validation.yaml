@@ -340,6 +340,7 @@ examples:
 metadata:
   created: "2026-02"
   last_updated: "2026-02"
+  tier: 2
   author: "doc-lint v0.2"
   related_concerns:
     - "sla-architecture-alignment"   # throughput SLAs are a subset of this concern

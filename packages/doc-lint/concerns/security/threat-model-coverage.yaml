@@ -348,6 +348,7 @@ examples:
 metadata:
   created: "2026-02"
   last_updated: "2026-02"
+  tier: 1
   author: "doc-lint v0.2"
   related_concerns:
     - "auth-boundary-consistency"   # auth surfaces need both threat models and consistent boundaries

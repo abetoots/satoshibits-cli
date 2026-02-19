@@ -15,7 +15,11 @@ describe("human formatter", () => {
       timestamp: "2026-02-10T00:00:00Z",
       project: "Test Project",
       signals: makeSignals(["payments", "webhooks"]),
-      concerns: { matched: ["idempotency-boundaries"], skipped: ["resilience-triad"] },
+      concerns: {
+        matched: ["idempotency-boundaries"],
+        skipped: ["resilience-triad"],
+        matchedDetails: [{ id: "idempotency-boundaries", tier: 2, type: "concern" as const }],
+      },
       prompts: [
         {
           concernId: "idempotency-boundaries",
@@ -42,7 +46,11 @@ describe("human formatter", () => {
       timestamp: "2026-02-10T00:00:00Z",
       project: "Test",
       signals: makeSignals(["payments"]),
-      concerns: { matched: ["c1"], skipped: [] },
+      concerns: {
+        matched: ["c1"],
+        skipped: [],
+        matchedDetails: [{ id: "c1", tier: 1, type: "concern" as const }],
+      },
       findings: [
         {
           id: "gap-1",
@@ -100,7 +108,11 @@ describe("human formatter", () => {
           stale: ["webhooks"],
         },
       }),
-      concerns: { matched: ["c1"], skipped: [] },
+      concerns: {
+        matched: ["c1"],
+        skipped: [],
+        matchedDetails: [{ id: "c1", tier: 2, type: "concern" as const }],
+      },
       prompts: [],
     };
 
@@ -121,7 +133,11 @@ describe("human formatter", () => {
           stale: [],
         },
       }),
-      concerns: { matched: ["c1"], skipped: [] },
+      concerns: {
+        matched: ["c1"],
+        skipped: [],
+        matchedDetails: [{ id: "c1", tier: 2, type: "concern" as const }],
+      },
       findings: [],
       contradictions: [],
       summary: {
@@ -144,7 +160,7 @@ describe("human formatter", () => {
       timestamp: "2026-02-10T00:00:00Z",
       project: "Test",
       signals: makeSignals([]),
-      concerns: { matched: [], skipped: [] },
+      concerns: { matched: [], skipped: [], matchedDetails: [] },
       findings: [],
       contradictions: [],
       summary: {
@@ -159,5 +175,175 @@ describe("human formatter", () => {
 
     const output = await formatLintHuman(result);
     expect(output).toContain("PASS");
+  });
+
+  it("groups assemble output by tier labels", async () => {
+    const result: AssembleResult = {
+      version: "2.0",
+      timestamp: "2026-02-10T00:00:00Z",
+      project: "Test",
+      signals: makeSignals(["payments"]),
+      concerns: {
+        matched: ["state-ownership-clarity", "idempotency-boundaries", "horizontal-traceability", "cache-invalidation-ix"],
+        skipped: [],
+        matchedDetails: [
+          { id: "state-ownership-clarity", tier: 1, type: "concern" },
+          { id: "idempotency-boundaries", tier: 2, type: "concern" },
+          { id: "horizontal-traceability", tier: 3, type: "concern" },
+          { id: "cache-invalidation-ix", type: "interaction" },
+        ],
+      },
+      prompts: [],
+    };
+
+    const output = await formatAssembleHuman(result);
+    expect(output).toContain("Tier 1");
+    expect(output).toContain("Foundational Correctness");
+    expect(output).toContain("Tier 2");
+    expect(output).toContain("Behavioral Integrity");
+    expect(output).toContain("Tier 3");
+    expect(output).toContain("Structural Coherence");
+    expect(output).toContain("Interactions");
+    expect(output).toContain("cache-invalidation-ix");
+  });
+
+  it("shows tier advisory when tier 1 and tier 3 findings both present", async () => {
+    const result: LintResult = {
+      version: "2.0",
+      timestamp: "2026-02-10T00:00:00Z",
+      project: "Test",
+      signals: makeSignals(["payments"]),
+      concerns: {
+        matched: ["state-ownership", "traceability"],
+        skipped: [],
+        matchedDetails: [
+          { id: "state-ownership", tier: 1, type: "concern" },
+          { id: "traceability", tier: 3, type: "concern" },
+        ],
+      },
+      findings: [
+        {
+          id: "gap-1",
+          concernId: "state-ownership",
+          relatedItem: "test",
+          severity: "error",
+          confidence: "high",
+          description: "Missing state ownership",
+          sourceSearched: "ADD",
+          failureConditionTriggered: "test",
+          risk: "Ambiguous ownership",
+          recommendation: "Clarify owners",
+          requiresHumanReview: false,
+        },
+        {
+          id: "gap-2",
+          concernId: "traceability",
+          relatedItem: "test2",
+          severity: "warn",
+          confidence: "medium",
+          description: "Incomplete traceability",
+          sourceSearched: "FRD",
+          failureConditionTriggered: "test",
+          risk: "Unknown trace",
+          recommendation: "Add trace IDs",
+          requiresHumanReview: false,
+        },
+      ],
+      contradictions: [],
+      summary: {
+        totalFindings: 2,
+        errors: 1,
+        warnings: 1,
+        notes: 0,
+        contradictions: 0,
+        humanReviewRequired: 0,
+      },
+    };
+
+    const output = await formatLintHuman(result);
+    expect(output).toContain("Tier 1 (foundational) findings may invalidate Tier 3 (structural)");
+    expect(output).toContain("Address Tier 1 issues first, then re-run.");
+  });
+
+  it("does not show tier advisory when only tier 1 and tier 2 findings present", async () => {
+    const result: LintResult = {
+      version: "2.0",
+      timestamp: "2026-02-10T00:00:00Z",
+      project: "Test",
+      signals: makeSignals(["payments"]),
+      concerns: {
+        matched: ["state-ownership", "idempotency"],
+        skipped: [],
+        matchedDetails: [
+          { id: "state-ownership", tier: 1, type: "concern" },
+          { id: "idempotency", tier: 2, type: "concern" },
+        ],
+      },
+      findings: [
+        {
+          id: "gap-1",
+          concernId: "state-ownership",
+          relatedItem: "test",
+          severity: "error",
+          confidence: "high",
+          description: "Missing state ownership",
+          sourceSearched: "ADD",
+          failureConditionTriggered: "test",
+          risk: "Ambiguous ownership",
+          recommendation: "Clarify owners",
+          requiresHumanReview: false,
+        },
+        {
+          id: "gap-2",
+          concernId: "idempotency",
+          relatedItem: "test2",
+          severity: "warn",
+          confidence: "medium",
+          description: "Missing idempotency keys",
+          sourceSearched: "FRD",
+          failureConditionTriggered: "test",
+          risk: "Duplicate processing",
+          recommendation: "Add idempotency keys",
+          requiresHumanReview: false,
+        },
+      ],
+      contradictions: [],
+      summary: {
+        totalFindings: 2,
+        errors: 1,
+        warnings: 1,
+        notes: 0,
+        contradictions: 0,
+        humanReviewRequired: 0,
+      },
+    };
+
+    const output = await formatLintHuman(result);
+    expect(output).not.toContain("Tier 1 (foundational) findings may invalidate Tier 3 (structural)");
+  });
+
+  it("labels untiered concerns as Untiered, not Interactions", async () => {
+    const result: AssembleResult = {
+      version: "2.0",
+      timestamp: "2026-02-10T00:00:00Z",
+      project: "Test",
+      signals: makeSignals(["payments"]),
+      concerns: {
+        matched: ["untiered-concern", "some-interaction"],
+        skipped: [],
+        matchedDetails: [
+          { id: "untiered-concern", type: "concern" },
+          { id: "some-interaction", type: "interaction" },
+        ],
+      },
+      prompts: [],
+    };
+
+    const output = await formatAssembleHuman(result);
+    // untiered concern should appear under "Untiered", not "Interactions"
+    expect(output).toContain("Untiered");
+    expect(output).toContain("untiered-concern");
+    expect(output).toContain("Interactions");
+    expect(output).toContain("some-interaction");
   });
 });

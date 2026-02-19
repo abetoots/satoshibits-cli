@@ -62,6 +62,12 @@ export interface SignalAnalysis {
   };
 }
 
+export interface MatchedConcernInfo {
+  id: string;
+  tier?: number;
+  type: "concern" | "interaction";
+}
+
 export interface LintResult {
   version: string;
   timestamp: string;
@@ -70,6 +76,7 @@ export interface LintResult {
   concerns: {
     matched: string[];
     skipped: string[];
+    matchedDetails: MatchedConcernInfo[];
   };
   findings: Finding[];
   contradictions: ContradictionFinding[];
@@ -94,6 +101,7 @@ export interface AssembleResult {
   concerns: {
     matched: string[];
     skipped: string[];
+    matchedDetails: MatchedConcernInfo[];
   };
   prompts: AssembledPrompt[];
 }

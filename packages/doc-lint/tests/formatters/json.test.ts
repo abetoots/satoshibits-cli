@@ -15,7 +15,11 @@ describe("json formatter", () => {
       timestamp: "2026-02-10T00:00:00Z",
       project: "Test",
       signals: makeSignals(["payments"]),
-      concerns: { matched: ["c1"], skipped: ["c2"] },
+      concerns: {
+        matched: ["c1"],
+        skipped: ["c2"],
+        matchedDetails: [{ id: "c1", tier: 2, type: "concern" as const }],
+      },
       prompts: [],
     };
 
@@ -31,7 +35,11 @@ describe("json formatter", () => {
       timestamp: "2026-02-10T00:00:00Z",
       project: "Test",
       signals: makeSignals(["payments"]),
-      concerns: { matched: ["c1"], skipped: [] },
+      concerns: {
+        matched: ["c1"],
+        skipped: [],
+        matchedDetails: [{ id: "c1", tier: 1, type: "concern" as const }],
+      },
       findings: [],
       contradictions: [],
       summary: {

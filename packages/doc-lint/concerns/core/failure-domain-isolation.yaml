@@ -312,6 +312,7 @@ examples:
 metadata:
   created: "2026-02"
   last_updated: "2026-02"
+  tier: 1
   author: "Multi-Expert Consensus (Claude, Gemini, ChatGPT)"
   related_concerns:
     - "resilience-triad"           # circuit breakers are isolation mechanisms

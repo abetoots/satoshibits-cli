@@ -126,4 +126,22 @@ describe("formatList", () => {
     expect(output).toContain("Triggers (any_of):");
     expect(output).toContain("Triggers (all_of):");
   });
+
+  it("shows Tier line when concern has tier", () => {
+    const concerns = [
+      makeConcern({ id: "c1", category: "core", tier: 1 }),
+    ];
+
+    const output = formatList(concerns);
+    expect(output).toContain("Tier: 1");
+  });
+
+  it("omits Tier line when concern has no tier", () => {
+    const concerns = [
+      makeConcern({ id: "c1", category: "core" }),
+    ];
+
+    const output = formatList(concerns);
+    expect(output).not.toContain("Tier:");
+  });
 });

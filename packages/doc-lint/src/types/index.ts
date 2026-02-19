@@ -31,6 +31,7 @@ export type {
   ContradictionFinding,
   CoverageInfo,
   SignalAnalysis,
+  MatchedConcernInfo,
   LintResult,
   AssembleResult,
 } from "./findings.js";

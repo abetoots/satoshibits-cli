@@ -363,6 +363,7 @@ examples:
 metadata:
   created: "2026-02"
   last_updated: "2026-02"
+  tier: 1
   author: "doc-lint v0.2"
   related_concerns:
     - "api-contract-consistency"     # external API contracts must be verified

@@ -79,6 +79,8 @@ export interface ConcernMetadata {
   last_updated: string;
   author: string;
   related_concerns?: string[];
+  recommended_after?: string[];
+  tier?: number;
   references?: string[];
 }
 
@@ -102,4 +104,5 @@ export interface LoadedConcern {
   category: string;
   severity: string;
   triggerSignals: string[];
+  tier?: number;
 }

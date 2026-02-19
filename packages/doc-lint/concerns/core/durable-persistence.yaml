@@ -305,6 +305,7 @@ examples:
 metadata:
   created: "2026-02"
   last_updated: "2026-02"
+  tier: 2
   author: "Multi-Expert Consensus (Claude, Gemini, ChatGPT)"
   related_concerns:
     - "idempotency-boundaries"     # resume/retry must be idempotent

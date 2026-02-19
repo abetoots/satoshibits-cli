@@ -16,7 +16,11 @@ function makeResult(overrides?: Partial<AssembleResult>): AssembleResult {
     timestamp: "2026-02-18T00:00:00Z",
     project: "Test Project",
     signals: makeSignals(["payments", "webhooks"]),
-    concerns: { matched: ["idempotency-boundaries"], skipped: [] },
+    concerns: {
+      matched: ["idempotency-boundaries"],
+      skipped: [],
+      matchedDetails: [{ id: "idempotency-boundaries", tier: 2, type: "concern" as const }],
+    },
     prompts: [
       {
         concernId: "idempotency-boundaries",

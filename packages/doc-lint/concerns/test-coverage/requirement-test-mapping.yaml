@@ -368,6 +368,9 @@ examples:
 metadata:
   created: "2026-02"
   last_updated: "2026-02"
+  tier: 3
+  recommended_after:
+    - "horizontal-traceability"
   author: "doc-lint v0.2"
   related_concerns:
     - "horizontal-traceability"       # requirements must first be traceable before testing can be verified

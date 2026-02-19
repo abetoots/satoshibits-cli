@@ -62,6 +62,7 @@ function loadConcernFile(filePath: string): LoadedConcern | null {
       category: c.category,
       severity: c.severity,
       triggerSignals: validated.triggers.any_of,
+      tier: validated.metadata?.tier,
     };
   }
 
@@ -86,6 +87,7 @@ function loadConcernFile(filePath: string): LoadedConcern | null {
       category: i.category,
       severity: i.severity,
       triggerSignals: uniqueSignals,
+      tier: validated.metadata?.tier,
     };
   }
 
