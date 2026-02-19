@@ -5,7 +5,7 @@ import { join } from "path";
 
 import { getPackageRoot } from "../core/paths.js";
 
-import type { AssembleOptions, InitOptions, LintOptions } from "../types/index.js";
+import type { AssembleOptions, DetectOptions, InitOptions, LintOptions } from "../types/index.js";
 
 const packageJsonContent = await readFile(
   join(getPackageRoot(), "package.json"),
@@ -56,6 +56,18 @@ program
   .action(async (projectPath: string | undefined, options: LintOptions) => {
     const { lintCommand } = await import("../commands/lint.js");
     const exitCode = await lintCommand(projectPath, options);
+    process.exit(exitCode);
+  });
+
+program
+  .command("detect [path]")
+  .description("Generate a signal detection prompt for LLM handoff")
+  .option("-c, --config <file>", "Path to doc-lint.yaml")
+  .option("-f, --format <format>", "Output format (human|json)")
+  .option("-o, --output-dir <path>", "Write signal-detection.md to this directory")
+  .action(async (projectPath: string | undefined, options: DetectOptions) => {
+    const { detectCommand } = await import("../commands/detect.js");
+    const exitCode = await detectCommand(projectPath, options);
     process.exit(exitCode);
   });
 

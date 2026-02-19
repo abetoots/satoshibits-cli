@@ -39,9 +39,10 @@ doc-lint separates **assembly** (free, deterministic) from **evaluation** (optio
 | Layer | Command | Cost | What It Does |
 |-------|---------|------|-------------|
 | **Assemble** | `doc-lint assemble` | Free | Loads manifest, matches concerns, builds prompts with full document content |
+| **Detect** | `doc-lint detect` | Free | Generates a signal detection prompt for LLM handoff |
 | **Lint** | `doc-lint lint` | API calls | Runs assembly, then sends each prompt to an LLM for evaluation |
 
-The assemble layer is the core value. You can inspect exactly what will be sent to the LLM, pipe prompts into your own tooling, or use the `lint` layer for a fully automated flow.
+The assemble layer is the core value. You can inspect exactly what will be sent to the LLM, pipe prompts into your own tooling, or use the `lint` layer for a fully automated flow. The `detect` command generates a standalone prompt that an LLM can use to identify which signals are present in your documentation — useful for bootstrapping or auditing the `signals.declared` list in your manifest.
 
 ## When to Use
 
@@ -139,7 +140,21 @@ Skipped concerns: 4
 Total prompts assembled: 6
 ```
 
-### 3. Run full lint (requires Anthropic API key)
+### 3. Detect signals with LLM assistance (optional)
+
+If you're unsure which signals to declare, generate a detection prompt and hand it to your LLM of choice:
+
+```bash
+# write a self-contained prompt file for LLM handoff
+doc-lint detect . -o ./prompts
+
+# or output as JSON for piping into tooling
+doc-lint detect . -f json
+```
+
+The generated prompt includes the full signal vocabulary, your document content, and a JSON response schema. Feed it to any LLM — the response tells you which signals are present and at what confidence. Use the result to populate or update `signals.declared` in your manifest.
+
+### 4. Run full lint (requires Anthropic API key)
 
 ```bash
 doc-lint lint .
@@ -168,6 +183,20 @@ Assembles evaluation prompts without making any API calls. `[path]` is the proje
 | `--warn-on-mismatch` / `--no-warn-on-mismatch` | Warn when detected signals differ from declared | manifest value or `false` |
 
 One of `-f` or `-o` must be provided. When `--output-dir` is used, each assembled prompt is written as an individual Markdown file (e.g., `idempotency-boundaries.md`) with YAML front-matter metadata. These files are self-contained and ready to hand off to any external LLM.
+
+### `doc-lint detect [path]`
+
+Generates a self-contained signal detection prompt for LLM handoff. The prompt includes the full signal vocabulary, your project documents, and a JSON response schema. `[path]` is the project root directory (defaults to `.`).
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-c, --config <file>` | Path to manifest file | Auto-detect `doc-lint.yaml` |
+| `-f, --format <format>` | Output format: `human` or `json` (to stdout) | *required if `-o` not set* |
+| `-o, --output-dir <path>` | Write `signal-detection.md` to this directory | *required if `-f` not set* |
+
+One of `-f` or `-o` must be provided. The output includes the signal vocabulary (closed set), document content, and a JSON response schema with `signals` (id, confidence, rationale) and `unmappedConcepts` fields.
+
+**Workflow:** `detect` -> feed prompt to LLM -> use response to update `signals.declared` in manifest -> `assemble` or `lint`.
 
 ### `doc-lint lint [path]`
 

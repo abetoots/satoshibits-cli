@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-// keyword-to-signal mapping for all 84 signals used in concern triggers.
+// keyword-to-signal mapping for all signals used in concern triggers.
 // each signal maps to a list of case-insensitive keywords/phrases that
 // indicate presence of that concern area in documentation.
 export const SIGNAL_KEYWORDS: Record<string, string[]> = {
@@ -124,7 +124,7 @@ export const SIGNAL_KEYWORDS: Record<string, string[]> = {
     "batch export",
     "scheduled job",
   ],
-  caching: [
+  caching: [ // no bundled concern yet
     "cache",
     "caching",
     "cache invalidation",
@@ -162,7 +162,7 @@ export const SIGNAL_KEYWORDS: Record<string, string[]> = {
     "hipaa",
     "pci-dss",
   ],
-  containerization: [
+  containerization: [ // no bundled concern yet
     "docker",
     "container",
     "dockerfile",
@@ -354,7 +354,7 @@ export const SIGNAL_KEYWORDS: Record<string, string[]> = {
     "throughput",
     "requests per second",
   ],
-  iac: [
+  iac: [ // no bundled concern yet
     "terraform",
     "pulumi",
     "cloudformation",
@@ -393,7 +393,7 @@ export const SIGNAL_KEYWORDS: Record<string, string[]> = {
     "jwt signing",
     "bearer token",
   ],
-  kubernetes: [
+  kubernetes: [ // no bundled concern yet
     "kubernetes",
     "k8s",
     "helm",
@@ -748,7 +748,7 @@ export const SIGNAL_KEYWORDS: Record<string, string[]> = {
     "webhook signature",
     "webhook verification",
   ],
-  websocket: [
+  websocket: [ // no bundled concern yet
     "websocket",
     "socket.io",
     "real-time connection",

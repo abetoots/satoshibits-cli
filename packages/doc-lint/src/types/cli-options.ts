@@ -1,10 +1,17 @@
-export interface AssembleOptions {
+interface BaseCommandOptions {
   config?: string;
   format?: "human" | "json";
+}
+
+export interface AssembleOptions extends BaseCommandOptions {
   contradiction?: boolean;
   concerns?: string;
   autoDetect?: boolean;
   warnOnMismatch?: boolean;
+  outputDir?: string;
+}
+
+export interface DetectOptions extends BaseCommandOptions {
   outputDir?: string;
 }
 
@@ -13,10 +20,8 @@ export interface InitOptions {
   ignore?: string[];
 }
 
-export interface LintOptions {
+export interface LintOptions extends BaseCommandOptions {
   engine?: "sdk";
-  config?: string;
-  format?: "human" | "json";
   contradiction?: boolean;
   concerns?: string;
   dryRun?: boolean;
