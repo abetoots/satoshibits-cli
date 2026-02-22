@@ -1,5 +1,11 @@
 # @satoshibits/create-auto-loading-claude-skills
 
+## 1.1.1
+
+### Patch Changes
+
+- 3cca4b3: switch to use npm only
+
 ## 1.1.0
 
 ### Minor Changes

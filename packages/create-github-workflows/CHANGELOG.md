@@ -1,5 +1,11 @@
 # @satoshibits/create-github-workflows
 
+## 1.2.1
+
+### Patch Changes
+
+- e9cf2f3: enhances CI with automated security scanning
+
 ## 1.2.0
 
 ### Minor Changes

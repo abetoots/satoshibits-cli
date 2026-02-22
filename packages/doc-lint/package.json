@@ -1,6 +1,6 @@
 {
   "name": "@satoshibits/doc-lint",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "main": "./dist/src/index.mjs",
   "types": "./dist/src/index.d.mts",
   "exports": {
