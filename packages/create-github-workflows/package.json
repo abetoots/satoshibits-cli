@@ -15,7 +15,8 @@
     "prepublishOnly": "npm run build",
     "pre-commit": "pnpm exec lint-staged -c ./.lintstagedrc.mjs --concurrent false",
     "test": "vitest --run --exclude '**/e2e/**'",
-    "test:e2e": "vitest --run tests/e2e"
+    "test:e2e": "vitest --run tests/e2e",
+    "typecheck": "tsc --noEmit"
   },
   "files": [
     "./dist/**/*",
