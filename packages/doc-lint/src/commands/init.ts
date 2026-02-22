@@ -9,9 +9,8 @@ import {
   getAllSignalNames,
 } from "../core/signal-keywords.js";
 
-import type { InitOptions } from "../types/index.js";
-import type { DetectedSignal, SignalConfidence } from "../core/signal-keywords.js";
-import type { DocLintManifest, DocumentRef, ProjectClassification } from "../types/index.js";
+import type { SignalConfidence } from "../core/signal-keywords.js";
+import type { InitOptions, DocLintManifest, DocumentRef, ProjectClassification } from "../types/index.js";
 
 const CLASSIFICATION_OPTIONS: ProjectClassification[] = [
   "standard",
@@ -152,7 +151,7 @@ async function initInteractive(
   projectPath: string,
   ignorePatterns?: string[],
 ): Promise<InitResult> {
-  const { input, confirm, checkbox, select } = await import("@inquirer/prompts");
+  const { input, checkbox, select } = await import("@inquirer/prompts");
 
   console.log("\nInitializing doc-lint manifest...\n");
   console.log("Scanning for architecture documents...");

@@ -29,9 +29,9 @@ describe("discoverDocuments", () => {
 
     const result = await discoverDocuments(tmpDir);
 
-    expect(result.candidates["brd"]).toContain("docs/brd.md");
-    expect(result.candidates["frd"]).toContain("docs/frd.md");
-    expect(result.candidates["add"]).toContain("docs/add.md");
+    expect(result.candidates.brd).toContain("docs/brd.md");
+    expect(result.candidates.frd).toContain("docs/frd.md");
+    expect(result.candidates.add).toContain("docs/add.md");
     expect(result.missingRoles).not.toContain("brd");
     expect(result.missingRoles).not.toContain("frd");
     expect(result.missingRoles).not.toContain("add");
@@ -44,12 +44,12 @@ describe("discoverDocuments", () => {
 
     const result = await discoverDocuments(tmpDir);
 
-    expect(result.candidates["brd"]).toBeDefined();
-    expect(result.candidates["brd"]!.length).toBeGreaterThan(0);
-    expect(result.candidates["frd"]).toBeDefined();
-    expect(result.candidates["frd"]!.length).toBeGreaterThan(0);
-    expect(result.candidates["add"]).toBeDefined();
-    expect(result.candidates["add"]!.length).toBeGreaterThan(0);
+    expect(result.candidates.brd).toBeDefined();
+    expect(result.candidates.brd!.length).toBeGreaterThan(0);
+    expect(result.candidates.frd).toBeDefined();
+    expect(result.candidates.frd!.length).toBeGreaterThan(0);
+    expect(result.candidates.add).toBeDefined();
+    expect(result.candidates.add!.length).toBeGreaterThan(0);
   });
 
   it("reports missing roles", async () => {
@@ -58,7 +58,7 @@ describe("discoverDocuments", () => {
 
     const result = await discoverDocuments(tmpDir);
 
-    expect(result.candidates["brd"]).toBeDefined();
+    expect(result.candidates.brd).toBeDefined();
     expect(result.missingRoles).toContain("frd");
     expect(result.missingRoles).toContain("add");
   });
@@ -69,7 +69,7 @@ describe("discoverDocuments", () => {
 
     const result = await discoverDocuments(tmpDir);
 
-    const brdPaths = result.candidates["brd"] ?? [];
+    const brdPaths = result.candidates.brd ?? [];
     expect(brdPaths).toContain("docs/brd.md");
     expect(brdPaths.every((p) => !p.includes("node_modules"))).toBe(true);
   });
@@ -80,7 +80,7 @@ describe("discoverDocuments", () => {
 
     const result = await discoverDocuments(tmpDir);
 
-    const addPaths = result.candidates["add"] ?? [];
+    const addPaths = result.candidates.add ?? [];
     expect(addPaths.every((p) => !p.includes(".git"))).toBe(true);
   });
 
@@ -90,7 +90,7 @@ describe("discoverDocuments", () => {
 
     const result = await discoverDocuments(tmpDir);
 
-    expect(result.candidates["brd"]!.length).toBeGreaterThanOrEqual(2);
+    expect(result.candidates.brd!.length).toBeGreaterThanOrEqual(2);
   });
 
   it("discovers optional roles (api_spec, runbook)", async () => {
@@ -99,8 +99,8 @@ describe("discoverDocuments", () => {
 
     const result = await discoverDocuments(tmpDir);
 
-    expect(result.candidates["api_spec"]).toBeDefined();
-    expect(result.candidates["runbook"]).toBeDefined();
+    expect(result.candidates.api_spec).toBeDefined();
+    expect(result.candidates.runbook).toBeDefined();
   });
 
   it("finds suffixed brd/frd/add filenames", async () => {
@@ -110,12 +110,12 @@ describe("discoverDocuments", () => {
 
     const result = await discoverDocuments(tmpDir);
 
-    expect(result.candidates["brd"]).toBeDefined();
-    expect(result.candidates["brd"]!.some((p) => p.includes("platform-core-brd.md"))).toBe(true);
-    expect(result.candidates["frd"]).toBeDefined();
-    expect(result.candidates["frd"]!.some((p) => p.includes("platform-core-frd.md"))).toBe(true);
-    expect(result.candidates["add"]).toBeDefined();
-    expect(result.candidates["add"]!.some((p) => p.includes("platform-core-add.md"))).toBe(true);
+    expect(result.candidates.brd).toBeDefined();
+    expect(result.candidates.brd!.some((p) => p.includes("platform-core-brd.md"))).toBe(true);
+    expect(result.candidates.frd).toBeDefined();
+    expect(result.candidates.frd!.some((p) => p.includes("platform-core-frd.md"))).toBe(true);
+    expect(result.candidates.add).toBeDefined();
+    expect(result.candidates.add!.some((p) => p.includes("platform-core-add.md"))).toBe(true);
   });
 
   it("finds underscore-suffixed brd/frd/add filenames", async () => {
@@ -125,12 +125,12 @@ describe("discoverDocuments", () => {
 
     const result = await discoverDocuments(tmpDir);
 
-    expect(result.candidates["brd"]).toBeDefined();
-    expect(result.candidates["brd"]!.some((p) => p.includes("my_project_brd.md"))).toBe(true);
-    expect(result.candidates["frd"]).toBeDefined();
-    expect(result.candidates["frd"]!.some((p) => p.includes("my_project_frd.md"))).toBe(true);
-    expect(result.candidates["add"]).toBeDefined();
-    expect(result.candidates["add"]!.some((p) => p.includes("my_project_add.md"))).toBe(true);
+    expect(result.candidates.brd).toBeDefined();
+    expect(result.candidates.brd!.some((p) => p.includes("my_project_brd.md"))).toBe(true);
+    expect(result.candidates.frd).toBeDefined();
+    expect(result.candidates.frd!.some((p) => p.includes("my_project_frd.md"))).toBe(true);
+    expect(result.candidates.add).toBeDefined();
+    expect(result.candidates.add!.some((p) => p.includes("my_project_add.md"))).toBe(true);
   });
 
   it("finds infixed brd/frd/add filenames", async () => {
@@ -140,12 +140,12 @@ describe("discoverDocuments", () => {
 
     const result = await discoverDocuments(tmpDir);
 
-    expect(result.candidates["brd"]).toBeDefined();
-    expect(result.candidates["brd"]!.some((p) => p.includes("platform-brd-v2.md"))).toBe(true);
-    expect(result.candidates["frd"]).toBeDefined();
-    expect(result.candidates["frd"]!.some((p) => p.includes("platform-frd-v2.md"))).toBe(true);
-    expect(result.candidates["add"]).toBeDefined();
-    expect(result.candidates["add"]!.some((p) => p.includes("platform-add-v2.md"))).toBe(true);
+    expect(result.candidates.brd).toBeDefined();
+    expect(result.candidates.brd!.some((p) => p.includes("platform-brd-v2.md"))).toBe(true);
+    expect(result.candidates.frd).toBeDefined();
+    expect(result.candidates.frd!.some((p) => p.includes("platform-frd-v2.md"))).toBe(true);
+    expect(result.candidates.add).toBeDefined();
+    expect(result.candidates.add!.some((p) => p.includes("platform-add-v2.md"))).toBe(true);
   });
 
   it("finds prefixed runbook filenames", async () => {
@@ -153,8 +153,8 @@ describe("discoverDocuments", () => {
 
     const result = await discoverDocuments(tmpDir);
 
-    expect(result.candidates["runbook"]).toBeDefined();
-    expect(result.candidates["runbook"]!.some((p) => p.includes("01-runbook.md"))).toBe(true);
+    expect(result.candidates.runbook).toBeDefined();
+    expect(result.candidates.runbook!.some((p) => p.includes("01-runbook.md"))).toBe(true);
   });
 
   it("finds underscore-prefixed runbook filenames", async () => {
@@ -162,8 +162,8 @@ describe("discoverDocuments", () => {
 
     const result = await discoverDocuments(tmpDir);
 
-    expect(result.candidates["runbook"]).toBeDefined();
-    expect(result.candidates["runbook"]!.some((p) => p.includes("team_runbook.md"))).toBe(true);
+    expect(result.candidates.runbook).toBeDefined();
+    expect(result.candidates.runbook!.some((p) => p.includes("team_runbook.md"))).toBe(true);
   });
 
   it("skips binary files", async () => {
@@ -176,7 +176,7 @@ describe("discoverDocuments", () => {
 
     const result = await discoverDocuments(tmpDir);
 
-    const addPaths = result.candidates["add"] ?? [];
+    const addPaths = result.candidates.add ?? [];
     expect(addPaths.every((p) => !p.endsWith(".png"))).toBe(true);
   });
 
@@ -188,7 +188,7 @@ describe("discoverDocuments", () => {
 
     const result = await discoverDocuments(tmpDir);
 
-    const brdPaths = result.candidates["brd"] ?? [];
+    const brdPaths = result.candidates.brd ?? [];
     // the large brd.md should be skipped, but requirements.md still matches
     expect(brdPaths).not.toContain("docs/brd.md");
     expect(brdPaths).toContain("docs/requirements.md");
@@ -208,7 +208,7 @@ describe("discoverDocuments", () => {
 
     const result = await discoverDocuments(tmpDir, ["**/archived/**"]);
 
-    const brdPaths = result.candidates["brd"] ?? [];
+    const brdPaths = result.candidates.brd ?? [];
     expect(brdPaths).toContain("docs/brd.md");
     expect(brdPaths.every((p) => !p.includes("archived"))).toBe(true);
   });
@@ -225,8 +225,8 @@ describe("discoverDocuments", () => {
       "**/deprecated/**",
     ]);
 
-    const brdPaths = result.candidates["brd"] ?? [];
-    const frdPaths = result.candidates["frd"] ?? [];
+    const brdPaths = result.candidates.brd ?? [];
+    const frdPaths = result.candidates.frd ?? [];
     expect(brdPaths.every((p) => !p.includes("archived"))).toBe(true);
     expect(frdPaths.every((p) => !p.includes("deprecated"))).toBe(true);
   });
@@ -238,7 +238,7 @@ describe("discoverDocuments", () => {
 
     const result = await discoverDocuments(tmpDir, ["**/archived/**"]);
 
-    const brdPaths = result.candidates["brd"] ?? [];
+    const brdPaths = result.candidates.brd ?? [];
     expect(brdPaths).toContain("docs/brd.md");
     expect(brdPaths.every((p) => !p.includes("node_modules"))).toBe(true);
     expect(brdPaths.every((p) => !p.includes("archived"))).toBe(true);
@@ -271,14 +271,14 @@ describe("getMissingRequiredRoles", () => {
 
 describe("ROLE_PATTERNS", () => {
   it("has patterns for all required roles", () => {
-    expect(ROLE_PATTERNS["brd"]).toBeDefined();
-    expect(ROLE_PATTERNS["frd"]).toBeDefined();
-    expect(ROLE_PATTERNS["add"]).toBeDefined();
+    expect(ROLE_PATTERNS.brd).toBeDefined();
+    expect(ROLE_PATTERNS.frd).toBeDefined();
+    expect(ROLE_PATTERNS.add).toBeDefined();
   });
 
   it("has patterns for optional roles", () => {
-    expect(ROLE_PATTERNS["api_spec"]).toBeDefined();
-    expect(ROLE_PATTERNS["runbook"]).toBeDefined();
-    expect(ROLE_PATTERNS["security_standards"]).toBeDefined();
+    expect(ROLE_PATTERNS.api_spec).toBeDefined();
+    expect(ROLE_PATTERNS.runbook).toBeDefined();
+    expect(ROLE_PATTERNS.security_standards).toBeDefined();
   });
 });

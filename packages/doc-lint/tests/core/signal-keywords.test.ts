@@ -320,7 +320,7 @@ describe("detectSignals", () => {
     const keywordToSignals: Record<string, string[]> = {};
     for (const [signal, keywords] of Object.entries(SIGNAL_KEYWORDS)) {
       for (const kw of keywords) {
-        if (!keywordToSignals[kw]) keywordToSignals[kw] = [];
+        keywordToSignals[kw] ??= [];
         keywordToSignals[kw].push(signal);
       }
     }
