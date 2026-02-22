@@ -2,7 +2,7 @@ import chalk from "chalk";
 import ora from "ora";
 // eslint-disable-next-line import-x/no-named-as-default -- prompts library exports default function named 'prompts'
 import prompts from "prompts";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import fs from "fs";
 import path from "path";
 
@@ -132,26 +132,17 @@ export async function upgradeCommand(options: UpgradeOptions) {
         spinner.text = "Installing dependencies...";
 
         try {
-          // use --ignore-workspace to handle monorepo environments
-          execSync("pnpm install --silent --ignore-workspace", {
+          execFileSync("npm", ["install", "--silent"], {
             cwd: hooksDir,
             stdio: "ignore",
           });
         } catch {
-          // fallback to npm
-          try {
-            execSync("npm install --silent", {
-              cwd: hooksDir,
-              stdio: "ignore",
-            });
-          } catch {
-            spinner.warn("Could not install dependencies automatically");
-            console.log(
-              chalk.yellow(
-                "\n⚠️  Please run: cd .claude/hooks && npm install\n",
-              ),
-            );
-          }
+          spinner.warn("Could not install dependencies automatically");
+          console.log(
+            chalk.yellow(
+              "\n⚠️  Please run: cd .claude/hooks && npm install\n",
+            ),
+          );
         }
       }
     }

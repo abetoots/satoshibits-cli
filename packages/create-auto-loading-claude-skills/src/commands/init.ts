@@ -340,27 +340,20 @@ export async function initCommand(options: InitOptions) {
     spinner.text = "Installing hook dependencies...";
 
     // 11. Install dependencies in .claude/hooks/
-    // use execFileSync to avoid shell injection with unusual paths
+    // Always use npm for hook dependencies - the .claude/hooks/ directory is an
+    // isolated, self-contained package and should not participate in workspace
+    // dependency graphs (pnpm workspaces, yarn workspaces, etc.)
     const hooksPath = path.join(cwd, ".claude/hooks");
     try {
-      // use --ignore-workspace to handle monorepo environments
-      execFileSync("pnpm", ["install", "--silent", "--ignore-workspace"], {
+      execFileSync("npm", ["install", "--silent"], {
         cwd: hooksPath,
         stdio: "ignore",
       });
     } catch {
-      // fallback to npm if pnpm not available or fails
-      try {
-        execFileSync("npm", ["install", "--silent"], {
-          cwd: hooksPath,
-          stdio: "ignore",
-        });
-      } catch {
-        spinner.warn("Could not install hook dependencies automatically");
-        console.log(
-          chalk.yellow("\n⚠️  Please run: cd .claude/hooks && npm install\n"),
-        );
-      }
+      spinner.warn("Could not install hook dependencies automatically");
+      console.log(
+        chalk.yellow("\n⚠️  Please run: cd .claude/hooks && npm install\n"),
+      );
     }
 
     spinner.succeed(chalk.green("Auto-loading skill system initialized!\n"));
