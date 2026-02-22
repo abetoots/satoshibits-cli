@@ -30,6 +30,7 @@ export interface AssembleInput {
   configPath?: string;
   contradiction?: boolean;
   filterConcernIds?: string[];
+  tierFilter?: number | "all";
   autoDetect?: boolean; // CLI override for manifest.signals.auto_detect
   warnOnMismatch?: boolean; // CLI override for manifest.signals.warn_on_mismatch
 }
@@ -166,11 +167,24 @@ export function assemble(input: AssembleInput): AssembleResult {
   }
 
   const filterIds = input.filterConcernIds;
-  const { matched, skipped } = matchConcerns(
+  let { matched, skipped } = matchConcerns(
     effectiveSignals,
     allConcerns,
     filterIds,
   );
+
+  // apply tier filter: cumulative (--tier 2 = tier <= 2), interactions only with "all"
+  const tierFilter = input.tierFilter;
+  if (tierFilter !== undefined && tierFilter !== "all") {
+    const maxTier = tierFilter;
+    const tierSkipped = matched.filter(
+      (c) => c.tier == null || c.tier > maxTier,
+    );
+    matched = matched.filter(
+      (c) => c.tier != null && c.tier <= maxTier,
+    );
+    skipped = [...skipped, ...tierSkipped];
+  }
 
   const prompts: AssembledPrompt[] = [];
 

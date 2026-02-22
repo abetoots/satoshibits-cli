@@ -6,12 +6,21 @@ import { formatAssembleHuman } from "../formatters/human.js";
 import { writePromptFiles } from "../formatters/files.js";
 
 import type { AssembleOptions } from "../types/index.js";
+import { parseTierFlag } from "../core/tier.js";
 
 export async function assembleCommand(
   projectPath: string | undefined,
   options: AssembleOptions,
 ): Promise<number> {
   const resolved = path.resolve(projectPath ?? ".");
+
+  const tierFilter = parseTierFlag(options.tier);
+  if (tierFilter === null) {
+    console.error(
+      `Error: invalid --tier value "${options.tier}". Use 1, 2, 3, or all`,
+    );
+    return 2;
+  }
 
   const filterConcernIds = options.concerns
     ? options.concerns.split(",").map((s) => s.trim())
@@ -21,9 +30,9 @@ export async function assembleCommand(
     console.error(
       "Error: specify an output mode — either -f (human|json) or -o <dir>\n\n" +
       "Examples:\n" +
-      "  doc-lint assemble . -f json            # JSON to stdout\n" +
-      "  doc-lint assemble . -f human           # human-readable summary to stdout\n" +
-      "  doc-lint assemble . -o ./prompts       # one .md file per prompt, ready for LLM handoff",
+      "  doc-lint assemble . --tier 1 -f json            # JSON to stdout\n" +
+      "  doc-lint assemble . --tier all -f human          # human-readable summary to stdout\n" +
+      "  doc-lint assemble . --tier 1 -o ./prompts        # one .md file per prompt, ready for LLM handoff",
     );
     return 2;
   }
@@ -33,6 +42,7 @@ export async function assembleCommand(
     configPath: options.config,
     contradiction: options.contradiction,
     filterConcernIds,
+    tierFilter,
     autoDetect: options.autoDetect,
     warnOnMismatch: options.warnOnMismatch,
   });

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 
 import { applyToleranceFilter, applyExclusionFilter, buildCoverageInfo, filterExcludedConcernPrompts } from "../../src/core/evaluator.js";
 
-import type { Finding, Severity, Confidence, AssembledPrompt, ToleranceConfig, ExclusionEntry } from "../../src/types/index.js";
+import type { Finding, Severity, Confidence, AssembledPrompt, ToleranceConfig, ExclusionEntry, LoadedConcern, ConcernSchema, InteractionSchema } from "../../src/types/index.js";
 
 function makeFinding(overrides: Partial<Finding> = {}): Finding {
   return {
@@ -181,6 +181,124 @@ describe("concern-level exclusion filtering", () => {
       expect(result.kept.find((p) => p.type === "contradiction")).toBeDefined();
       expect(result.excludedConcernIds).toEqual([]);
     });
+  });
+});
+
+describe("tier filtering", () => {
+  // Replicates the tier filter logic from assemble() for unit testing
+  function applyTierFilter(
+    matched: LoadedConcern[],
+    skipped: LoadedConcern[],
+    tierFilter: number | "all" | undefined,
+  ): { matched: LoadedConcern[]; skipped: LoadedConcern[] } {
+    if (tierFilter === undefined || tierFilter === "all") {
+      return { matched, skipped };
+    }
+    const maxTier = tierFilter;
+    const tierSkipped = matched.filter(
+      (c) => c.tier == null || c.tier > maxTier,
+    );
+    const tierMatched = matched.filter(
+      (c) => c.tier != null && c.tier <= maxTier,
+    );
+    return { matched: tierMatched, skipped: [...skipped, ...tierSkipped] };
+  }
+
+  function makeTieredConcern(id: string, tier?: number): LoadedConcern {
+    return {
+      schema: {} as ConcernSchema,
+      filePath: `/fake/${id}.yaml`,
+      id,
+      version: "1.0",
+      name: id,
+      type: "concern",
+      category: "core",
+      severity: "error",
+      triggerSignals: ["payments"],
+      tier,
+    };
+  }
+
+  function makeTieredInteraction(id: string): LoadedConcern {
+    return {
+      schema: {} as InteractionSchema,
+      filePath: `/fake/${id}.yaml`,
+      id,
+      version: "1.0",
+      name: id,
+      type: "interaction",
+      category: "interactions",
+      severity: "warn",
+      triggerSignals: ["payments", "webhooks"],
+    };
+  }
+
+  const concerns = [
+    makeTieredConcern("feasibility-check", 1),
+    makeTieredConcern("idempotency-boundaries", 2),
+    makeTieredConcern("horizontal-traceability", 3),
+    makeTieredInteraction("cache-ix"),
+  ];
+
+  it("--tier 1 keeps only tier 1 concerns", () => {
+    const result = applyTierFilter(concerns, [], 1);
+    expect(result.matched.map((c) => c.id)).toEqual(["feasibility-check"]);
+    expect(result.skipped).toHaveLength(3);
+  });
+
+  it("--tier 2 keeps tier 1 + 2 (cumulative)", () => {
+    const result = applyTierFilter(concerns, [], 2);
+    expect(result.matched.map((c) => c.id)).toEqual([
+      "feasibility-check",
+      "idempotency-boundaries",
+    ]);
+    expect(result.skipped).toHaveLength(2);
+  });
+
+  it("--tier 3 keeps tier 1 + 2 + 3, excludes interactions", () => {
+    const result = applyTierFilter(concerns, [], 3);
+    expect(result.matched.map((c) => c.id)).toEqual([
+      "feasibility-check",
+      "idempotency-boundaries",
+      "horizontal-traceability",
+    ]);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]!.id).toBe("cache-ix");
+  });
+
+  it("--tier all keeps everything including interactions", () => {
+    const result = applyTierFilter(concerns, [], "all");
+    expect(result.matched).toHaveLength(4);
+    expect(result.skipped).toHaveLength(0);
+  });
+
+  it("untiered concerns are excluded from numeric tiers", () => {
+    const withUntiered = [
+      ...concerns,
+      makeTieredConcern("untiered-concern"),
+    ];
+    const result = applyTierFilter(withUntiered, [], 2);
+    expect(result.matched.map((c) => c.id)).toEqual([
+      "feasibility-check",
+      "idempotency-boundaries",
+    ]);
+    expect(result.skipped.map((c) => c.id)).toContain("untiered-concern");
+  });
+
+  it("untiered concerns are included with --tier all", () => {
+    const withUntiered = [
+      ...concerns,
+      makeTieredConcern("untiered-concern"),
+    ];
+    const result = applyTierFilter(withUntiered, [], "all");
+    expect(result.matched).toHaveLength(5);
+  });
+
+  it("preserves existing skipped concerns", () => {
+    const alreadySkipped = [makeTieredConcern("already-skipped", 2)];
+    const result = applyTierFilter(concerns, alreadySkipped, 1);
+    expect(result.skipped).toHaveLength(4); // 3 tier-filtered + 1 already skipped
+    expect(result.skipped.map((c) => c.id)).toContain("already-skipped");
   });
 });
 

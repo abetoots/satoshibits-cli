@@ -6,12 +6,21 @@ import { formatAssembleJson, formatLintJson } from "../formatters/json.js";
 import { SdkEngine } from "../core/engine/sdk-engine.js";
 
 import type { LintOptions, ToleranceConfig, Severity } from "../types/index.js";
+import { parseTierFlag } from "../core/tier.js";
 
 export async function lintCommand(
   projectPath: string | undefined,
   options: LintOptions,
 ): Promise<number> {
   const resolved = path.resolve(projectPath ?? ".");
+
+  const tierFilter = parseTierFlag(options.tier);
+  if (tierFilter === null) {
+    console.error(
+      `Error: invalid --tier value "${options.tier}". Use 1, 2, 3, or all`,
+    );
+    return 2;
+  }
 
   const filterConcernIds = options.concerns
     ? options.concerns.split(",").map((s) => s.trim())
@@ -24,6 +33,7 @@ export async function lintCommand(
       configPath: options.config,
       contradiction: options.contradiction,
       filterConcernIds,
+      tierFilter,
       autoDetect: options.autoDetect,
       warnOnMismatch: options.warnOnMismatch,
     });
@@ -66,6 +76,7 @@ export async function lintCommand(
     configPath: options.config,
     contradiction: options.contradiction,
     filterConcernIds,
+    tierFilter,
     engine,
     verbose: options.verbose,
     onProgress,
