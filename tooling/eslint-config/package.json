@@ -20,13 +20,13 @@
   "description": "The eslint configuration for satoshibits projects.",
   "peerDependencies": {
     "@eslint/js": "^9.22.0",
-    "@typescript-eslint/utils": "^8.26.1",
+    "@typescript-eslint/utils": "^8.56.0",
     "eslint": "^9.22.0",
     "eslint-config-prettier": "^10.1.1",
-    "eslint-import-resolver-typescript": "^3.6.3",
+    "eslint-import-resolver-typescript": "^4.4.4",
     "eslint-plugin-import-x": "^4.3.1",
     "typescript": "^5.6.2",
-    "typescript-eslint": "^8.26.1"
+    "typescript-eslint": "^8.56.0"
   },
   "repository": {
     "type": "git",
@@ -39,12 +39,12 @@
   "devDependencies": {
     "@eslint/js": "^9.22.0",
     "@repo/typescript-config": "workspace:^",
-    "@typescript-eslint/utils": "^8.26.1",
+    "@typescript-eslint/utils": "^8.56.0",
     "eslint": "^9.22.0",
     "eslint-config-prettier": "^10.1.1",
-    "eslint-import-resolver-typescript": "^3.6.3",
+    "eslint-import-resolver-typescript": "^4.4.4",
     "eslint-plugin-import-x": "^4.3.1",
     "typescript": "^5.6.2",
-    "typescript-eslint": "^8.26.1"
+    "typescript-eslint": "^8.56.0"
   }
 }
