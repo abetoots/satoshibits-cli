@@ -1,5 +1,11 @@
 # @satoshibits/create-github-workflows
 
+## 1.3.0
+
+### Minor Changes
+
+- e2567b5: feat(create-github-workflows): adds security, maintenance, and docs workflows support- Introduces CodeQL analysis, dependency audit, stale issue handling, Dependabot config, and docs deployment to GitHub Pages.- Expands workflow registry, CLI prompts, config, and template rendering to cover security, maintenance, and documentation workflows, making CI/CD setup more comprehensive and automated.- Improves preset completeness and output handling for non-standard workflow files.
+
 ## 1.2.1
 
 ### Patch Changes
