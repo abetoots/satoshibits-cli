@@ -27,6 +27,7 @@ import {
   askDeploymentConfig,
   askWorkflows,
   askGenerateReleaseConfig,
+  askDocsConfig,
 } from '../prompts/questions.js';
 import type {
   InitOptions,
@@ -35,6 +36,7 @@ import type {
   SecretInfo,
   Preset,
   DockerConfig,
+  DocsConfig,
   DeployEnvironment,
   NpmConfig,
 } from '../types.js';
@@ -233,6 +235,11 @@ async function createConfigInteractive(
     deployEnvironments.map((d) => d.name)
   );
 
+  // docs config - only ask if docs-deploy is selected
+  const docs: DocsConfig | null = workflows.includes('docs-deploy')
+    ? await askDocsConfig()
+    : null;
+
   return {
     version: CONFIG_VERSION,
     projectName,
@@ -245,6 +252,7 @@ async function createConfigInteractive(
     deployEnvironments,
     workflows,
     npm,
+    docs,
     createdAt: new Date().toISOString().slice(0, 10),
   };
 }
@@ -270,6 +278,7 @@ async function generateWorkflows(
       deployEnvironments: config.deployEnvironments,
       releaseStrategy: config.releaseStrategy,
       npm: config.npm,
+      docs: config.docs,
     }
   );
 
@@ -282,7 +291,10 @@ async function generateWorkflows(
 
     try {
       const content = renderAndValidate(workflowInfo.templateFile, context);
-      const outputPath = path.join(workflowsDir, workflowInfo.outputFile);
+      const outputDir = workflowInfo.outputDir
+        ? path.join(cwd, workflowInfo.outputDir)
+        : workflowsDir;
+      const outputPath = path.join(outputDir, workflowInfo.outputFile);
 
       const result = await writeFileWithProtection(outputPath, content, {
         force,

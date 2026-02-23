@@ -20,7 +20,7 @@ export type DeploymentPlatform = 'digitalocean' | 'kubernetes' | 'aws-ecs';
 // WORKFLOW TYPES
 // ═══════════════════════════════════════════════════════════════════════════
 
-export type WorkflowCategory = 'ci' | 'release' | 'publish' | 'deploy';
+export type WorkflowCategory = 'ci' | 'release' | 'publish' | 'deploy' | 'security' | 'maintenance' | 'docs';
 
 export type CIWorkflow = 'pr-validation' | 'build';
 
@@ -30,7 +30,13 @@ export type PublishWorkflow = 'npm' | 'docker';
 
 export type DeployWorkflow = 'staging' | 'preview' | 'production';
 
-export type WorkflowName = CIWorkflow | ReleaseWorkflow | PublishWorkflow | DeployWorkflow;
+export type SecurityWorkflow = 'codeql' | 'dependency-audit';
+
+export type MaintenanceWorkflow = 'dependabot' | 'stale';
+
+export type DocsWorkflow = 'docs-deploy';
+
+export type WorkflowName = CIWorkflow | ReleaseWorkflow | PublishWorkflow | DeployWorkflow | SecurityWorkflow | MaintenanceWorkflow | DocsWorkflow;
 
 export interface WorkflowInfo {
   name: WorkflowName;
@@ -38,6 +44,8 @@ export interface WorkflowInfo {
   description: string;
   templateFile: string;
   outputFile: string;
+  /** defaults to '.github/workflows', override for non-workflow files like dependabot.yml */
+  outputDir?: string;
   requiredSecrets: string[];
 }
 
@@ -83,6 +91,8 @@ export interface WorkflowConfig {
   workflows: WorkflowName[];
   /** npm publishing configuration */
   npm: NpmConfig | null;
+  /** docs deployment configuration */
+  docs: DocsConfig | null;
   /** timestamp when created */
   createdAt: string;
 }
@@ -143,6 +153,13 @@ export interface NpmConfig {
 // TEMPLATE CONTEXT
 // ═══════════════════════════════════════════════════════════════════════════
 
+export interface DocsConfig {
+  /** build script name, e.g. "build:docs" */
+  buildScript: string;
+  /** output directory for built docs, e.g. "./docs/.vitepress/dist" */
+  outputDir: string;
+}
+
 export interface TemplateContext {
   /** project name */
   projectName: string;
@@ -160,6 +177,8 @@ export interface TemplateContext {
   releaseStrategy: ReleaseStrategy;
   /** npm configuration */
   npm: NpmConfig | null;
+  /** docs deployment configuration */
+  docs: DocsConfig | null;
   /** additional context from preset */
   [key: string]: unknown;
 }
@@ -341,6 +360,14 @@ export const WORKFLOW_SECRETS: Record<WorkflowName, SecretInfo[]> = {
   'staging': [],
   'preview': [],
   'production': [],
+  // security workflows — use GITHUB_TOKEN automatically
+  'codeql': [],
+  'dependency-audit': [],
+  // maintenance workflows — no secrets needed
+  'dependabot': [],
+  'stale': [],
+  // docs workflows — uses GITHUB_TOKEN via Pages permissions
+  'docs-deploy': [],
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -419,6 +446,50 @@ export const WORKFLOW_REGISTRY: Record<WorkflowName, WorkflowInfo> = {
     description: 'Tag-triggered production deployment',
     templateFile: 'deploy/production.yml.hbs',
     outputFile: 'deploy-production.yml',
+    requiredSecrets: [],
+  },
+  // security
+  'codeql': {
+    name: 'codeql',
+    category: 'security',
+    description: 'GitHub CodeQL static analysis for security vulnerabilities',
+    templateFile: 'security/codeql.yml.hbs',
+    outputFile: 'codeql.yml',
+    requiredSecrets: [],
+  },
+  'dependency-audit': {
+    name: 'dependency-audit',
+    category: 'security',
+    description: 'Scheduled dependency vulnerability audit with issue reporting',
+    templateFile: 'security/dependency-audit.yml.hbs',
+    outputFile: 'dependency-audit.yml',
+    requiredSecrets: [],
+  },
+  // maintenance
+  'dependabot': {
+    name: 'dependabot',
+    category: 'maintenance',
+    description: 'Automated dependency updates via Dependabot',
+    templateFile: 'maintenance/dependabot.yml.hbs',
+    outputFile: 'dependabot.yml',
+    outputDir: '.github',
+    requiredSecrets: [],
+  },
+  'stale': {
+    name: 'stale',
+    category: 'maintenance',
+    description: 'Automatically close stale issues and PRs',
+    templateFile: 'maintenance/stale.yml.hbs',
+    outputFile: 'stale.yml',
+    requiredSecrets: [],
+  },
+  // docs
+  'docs-deploy': {
+    name: 'docs-deploy',
+    category: 'docs',
+    description: 'Deploy documentation to GitHub Pages',
+    templateFile: 'docs/deploy-docs.yml.hbs',
+    outputFile: 'deploy-docs.yml',
     requiredSecrets: [],
   },
 };

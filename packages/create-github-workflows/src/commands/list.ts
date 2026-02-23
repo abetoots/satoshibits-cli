@@ -2,8 +2,10 @@
  * list command - shows available and installed workflows
  */
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import chalk from 'chalk';
-import { configExists, loadConfig, getInstalledWorkflows } from '../config/manager.js';
+import { configExists, loadConfig, getInstalledWorkflows, getWorkflowsPath } from '../config/manager.js';
 import { WORKFLOW_REGISTRY, type WorkflowName } from '../types.js';
 
 /**
@@ -32,6 +34,9 @@ export function listCommand(): void {
     release: { title: 'Release', workflows: ['release-please', 'changesets'] as WorkflowName[] },
     publish: { title: 'Publish', workflows: ['npm', 'docker'] as WorkflowName[] },
     deploy: { title: 'Deploy', workflows: ['staging', 'preview', 'production'] as WorkflowName[] },
+    security: { title: 'Security', workflows: ['codeql', 'dependency-audit'] as WorkflowName[] },
+    maintenance: { title: 'Maintenance', workflows: ['dependabot', 'stale'] as WorkflowName[] },
+    docs: { title: 'Docs', workflows: ['docs-deploy'] as WorkflowName[] },
   };
 
   for (const [, { title, workflows }] of Object.entries(categories)) {
@@ -39,7 +44,11 @@ export function listCommand(): void {
 
     for (const workflowName of workflows) {
       const info = WORKFLOW_REGISTRY[workflowName];
-      const isInstalled = installedFiles.includes(info.outputFile);
+      // check actual file path — respects outputDir override (e.g. dependabot in .github/)
+      const actualDir = info.outputDir
+        ? path.join(cwd, info.outputDir)
+        : getWorkflowsPath(cwd);
+      const isInstalled = fs.existsSync(path.join(actualDir, info.outputFile));
       const isConfigured = configuredWorkflows.includes(workflowName);
 
       let status: string;

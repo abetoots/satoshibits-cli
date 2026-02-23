@@ -115,7 +115,8 @@ function registerHelpers(): void {
       case 'yarn':
         return 'yarn audit --level high';
       case 'bun':
-        return 'bun pm audit --audit-level=high';
+        // bun does not have a built-in audit command; generate a lockfile for npm audit
+        return 'npm install --package-lock-only && npm audit --audit-level=high';
       default:
         return 'npm audit --audit-level=high';
     }
@@ -198,6 +199,7 @@ export function createTemplateContext(
     deployEnvironments: [],
     releaseStrategy: 'release-please',
     npm: null,
+    docs: null,
     ...additionalContext,
   };
 }

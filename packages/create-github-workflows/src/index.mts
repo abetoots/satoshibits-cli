@@ -67,26 +67,37 @@ program
   .addHelpText('after', `
 Workflows:
   CI:
-    pr-validation  Fast PR feedback (lint, typecheck, test)
-    build          Main branch protection with Docker build
+    pr-validation    Fast PR feedback (lint, typecheck, test)
+    build            Main branch protection with Docker build
 
   Release:
-    release-please  Automated version/changelog management
-    changesets      Monorepo release management
+    release-please   Automated version/changelog management
+    changesets       Monorepo release management
 
   Publish:
-    npm            NPM package publishing
-    docker         Docker image promotion
+    npm              NPM package publishing
+    docker           Docker image promotion
 
   Deploy:
-    staging        Manual staging deployment
-    preview        Manual preview deployment
-    production     Tag-triggered production deployment
+    staging          Manual staging deployment
+    preview          Manual preview deployment
+    production       Tag-triggered production deployment
+
+  Security:
+    codeql           CodeQL static analysis
+    dependency-audit Weekly dependency vulnerability scan
+
+  Maintenance:
+    dependabot       Automated dependency updates (Dependabot config)
+    stale            Auto-close stale issues and PRs
+
+  Docs:
+    docs-deploy      Deploy documentation to GitHub Pages
 
 Examples:
   create-github-workflows add pr-validation
-  create-github-workflows add release-please --force
-  create-github-workflows add docker
+  create-github-workflows add codeql
+  create-github-workflows add dependabot --force
   `)
   .action(async (workflow: string, options: AddOptions) => {
     await addCommand(workflow, options);

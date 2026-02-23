@@ -1,0 +1,43 @@
+name: CodeQL Analysis
+
+# Static analysis for security vulnerabilities
+# Uses GitHub CodeQL to scan JavaScript/TypeScript code
+# Runs on push to main, PRs, and weekly schedule
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly scan: Monday at 6am UTC
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  security-events: write
+  contents: read
+
+# Cancel in-progress runs for same ref
+concurrency:
+  group: codeql-$\{{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:javascript-typescript

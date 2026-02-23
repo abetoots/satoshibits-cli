@@ -51,6 +51,9 @@ describe('createTemplateContext', () => {
     expect(context.isMonorepo).toBe(false);
     expect(context.docker).toBeNull();
     expect(context.deployEnvironments).toEqual([]);
+    expect(context.releaseStrategy).toBe('release-please');
+    expect(context.npm).toBeNull();
+    expect(context.docs).toBeNull();
   });
 
   it('merges additional context', () => {

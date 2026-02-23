@@ -1,0 +1,77 @@
+name: Deploy Docs
+
+# Deploys documentation to GitHub Pages
+# Requires GitHub Pages configured to use GitHub Actions as source
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'package.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Cancel in-progress deployments
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+{{#if (eq packageManager "pnpm")}}
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+{{/if}}
+{{#if (eq packageManager "bun")}}
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+{{/if}}
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "{{nodeVersion}}"
+{{#if (eq packageManager "pnpm")}}
+          cache: "pnpm"
+{{else if (eq packageManager "yarn")}}
+          cache: "yarn"
+{{else if (eq packageManager "npm")}}
+          cache: "npm"
+{{/if}}
+
+      - name: Install dependencies
+        run: {{{installCmd packageManager}}}
+
+      - name: Build documentation
+        run: {{{runCmd packageManager}}} {{#if docs}}{{docs.buildScript}}{{else}}build:docs{{/if}}
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: {{#if docs}}{{docs.outputDir}}{{else}}./dist{{/if}}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: $\{{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

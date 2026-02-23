@@ -1,0 +1,94 @@
+name: Dependency Audit
+
+# Scheduled dependency vulnerability audit
+# Opens a GitHub issue if vulnerabilities are found
+
+on:
+  schedule:
+    # Weekly: Monday at 9am UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+{{#if (eq packageManager "pnpm")}}
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+{{/if}}
+{{#if (eq packageManager "bun")}}
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+{{/if}}
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "{{nodeVersion}}"
+{{#if (eq packageManager "pnpm")}}
+          cache: "pnpm"
+{{else if (eq packageManager "yarn")}}
+          cache: "yarn"
+{{else if (eq packageManager "npm")}}
+          cache: "npm"
+{{/if}}
+
+      - name: Install dependencies
+        run: {{{installCmd packageManager}}}
+
+      - name: Run security audit
+        id: audit
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          {{{auditCmd packageManager}}} 2>&1 | tee audit-output.txt
+
+      - name: Create issue on failure
+        if: steps.audit.outcome == 'failure'
+        env:
+          GH_TOKEN: $\{{ secrets.GITHUB_TOKEN }}
+        run: |
+          TITLE="Security: dependency audit found vulnerabilities ($(date +%Y-%m-%d))"
+
+          # Build issue body using a file to avoid shell quoting issues
+          {
+            echo "## Dependency Audit Failed"
+            echo ""
+            echo "The scheduled dependency audit found vulnerabilities that need attention."
+            echo ""
+            echo "### Audit Output"
+            echo '```'
+            cat audit-output.txt
+            echo '```'
+            echo ""
+            echo "### Next Steps"
+            echo "1. Review the vulnerabilities listed above"
+            echo "2. Run \`{{{auditCmd packageManager}}}\` locally to reproduce"
+            echo "3. Update affected packages or add overrides for false positives"
+            echo ""
+            echo "---"
+            echo "*This issue was automatically created by the dependency-audit workflow.*"
+          } > issue-body.md
+
+          # Ensure the security label exists
+          gh label create "security" --color "D93F0B" --description "Security-related issues" 2>/dev/null || true
+
+          # Check for existing open audit issue to avoid duplicates
+          EXISTING=$(gh issue list --label "security" --state open --search "dependency audit found vulnerabilities" --json number --jq '.[0].number // empty')
+
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body-file issue-body.md
+          else
+            gh issue create --title "$TITLE" --body-file issue-body.md --label "security"
+          fi

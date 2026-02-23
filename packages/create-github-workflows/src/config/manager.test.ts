@@ -132,6 +132,7 @@ describe("createDefaultConfig", () => {
       "npm",
     ]);
     expect(config.npm).toBeNull();
+    expect(config.docs).toBeNull();
     expect(config.createdAt).toBeDefined();
   });
 });

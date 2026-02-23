@@ -113,6 +113,7 @@ export function createDefaultConfig(
     deployEnvironments: [],
     workflows,
     npm: null,
+    docs: null,
     createdAt: new Date().toISOString().slice(0, 10),
   };
 }

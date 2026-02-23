@@ -11,6 +11,7 @@ import type {
   PackageManager,
   DeploymentPlatform,
   DeployEnvironment,
+  DocsConfig,
   DigitalOceanConfig,
   KubernetesConfig,
   AwsEcsConfig,
@@ -463,6 +464,35 @@ export async function askGenerateReleaseConfig(existingConfig: boolean): Promise
 }
 
 /**
+ * asks for docs deployment configuration
+ */
+export async function askDocsConfig(): Promise<DocsConfig> {
+  const buildScript = await input({
+    message: 'Docs build script name:',
+    default: 'build:docs',
+    validate: (value) => {
+      if (!value.trim()) {
+        return 'Build script name is required';
+      }
+      return true;
+    },
+  });
+
+  const outputDir = await input({
+    message: 'Docs output directory:',
+    default: './dist',
+    validate: (value) => {
+      if (!value.trim()) {
+        return 'Output directory is required';
+      }
+      return true;
+    },
+  });
+
+  return { buildScript, outputDir };
+}
+
+/**
  * asks which workflows to include
  */
 export async function askWorkflows(
@@ -529,6 +559,14 @@ export async function askWorkflows(
       checked: deployEnvironments.includes('production'),
       disabled: !deployEnvironments.includes('production') ? 'Not configured' : undefined,
     },
+    // security
+    { name: 'CodeQL Analysis', value: 'codeql', checked: true },
+    { name: 'Dependency Audit', value: 'dependency-audit', checked: false },
+    // maintenance
+    { name: 'Dependabot', value: 'dependabot', checked: true },
+    { name: 'Stale Issues/PRs', value: 'stale', checked: false },
+    // docs
+    { name: 'Deploy Docs (GitHub Pages)', value: 'docs-deploy', checked: false },
   ];
 
   // filter out disabled workflows for selection

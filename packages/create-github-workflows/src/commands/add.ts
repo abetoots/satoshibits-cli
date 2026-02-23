@@ -57,6 +57,7 @@ export async function addCommand(
           deployEnvironments: config.deployEnvironments,
           releaseStrategy: config.releaseStrategy,
           npm: config.npm,
+          docs: config.docs,
         }
       )
     : createTemplateContext(
@@ -70,7 +71,10 @@ export async function addCommand(
 
   try {
     const content = renderAndValidate(workflowInfo.templateFile, context);
-    const outputPath = path.join(getWorkflowsPath(cwd), workflowInfo.outputFile);
+    const outputDir = workflowInfo.outputDir
+      ? path.join(cwd, workflowInfo.outputDir)
+      : getWorkflowsPath(cwd);
+    const outputPath = path.join(outputDir, workflowInfo.outputFile);
 
     const result = await writeFileWithProtection(outputPath, content, {
       force: options.force,
@@ -80,15 +84,16 @@ export async function addCommand(
 
     spinner.succeed(`Generated ${workflowInfo.name}`);
 
+    const displayDir = workflowInfo.outputDir ?? '.github/workflows';
     if (result.action === 'created') {
-      console.log(chalk.gray(`  Created: .github/workflows/${workflowInfo.outputFile}`));
+      console.log(chalk.gray(`  Created: ${displayDir}/${workflowInfo.outputFile}`));
     } else if (result.action === 'updated' || result.action === 'backed-up') {
-      console.log(chalk.gray(`  Updated: .github/workflows/${workflowInfo.outputFile}`));
+      console.log(chalk.gray(`  Updated: ${displayDir}/${workflowInfo.outputFile}`));
       if (result.backupPath) {
         console.log(chalk.gray(`  Backup: ${path.basename(result.backupPath)}`));
       }
     } else {
-      console.log(chalk.gray(`  Skipped: .github/workflows/${workflowInfo.outputFile}`));
+      console.log(chalk.gray(`  Skipped: ${displayDir}/${workflowInfo.outputFile}`));
     }
 
     // update config if it exists
@@ -130,15 +135,19 @@ function isValidWorkflow(name: string): name is WorkflowName {
  * lists available workflows
  */
 function listAvailableWorkflows(): void {
-  const categories = {
-    ci: [] as { name: string; description: string }[],
-    release: [] as { name: string; description: string }[],
-    publish: [] as { name: string; description: string }[],
-    deploy: [] as { name: string; description: string }[],
+  const categories: Record<string, { name: string; description: string }[]> = {
+    ci: [],
+    release: [],
+    publish: [],
+    deploy: [],
+    security: [],
+    maintenance: [],
+    docs: [],
   };
 
   for (const [name, info] of Object.entries(WORKFLOW_REGISTRY)) {
-    categories[info.category].push({ name, description: info.description });
+    const cat = categories[info.category];
+    if (cat) cat.push({ name, description: info.description });
   }
 
   for (const [category, workflows] of Object.entries(categories)) {
