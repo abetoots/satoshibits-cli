@@ -1,6 +1,6 @@
 {
   "name": "@satoshibits/create-docs",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "CLI for generating standardized document templates (BRD, FRD, ADD, TSD)",
   "type": "module",
   "main": "dist/src/index.js",
