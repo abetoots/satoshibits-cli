@@ -44,7 +44,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build, lint, typecheck, and test
-        run: turbo run build lint typecheck test test:e2e
+        run: pnpm exec turbo run build lint typecheck test test:e2e
 
       - name: Check changeset status
         run: pnpm exec changeset status --since=origin/main

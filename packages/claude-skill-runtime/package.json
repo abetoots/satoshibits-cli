@@ -55,5 +55,8 @@
     "type": "git",
     "url": "https://github.com/abetoots/satoshibits-cli.git"
   },
-  "homepage": "https://github.com/abetoots/satoshibits-cli/packages/claude-skill-runtime"
+  "homepage": "https://github.com/abetoots/satoshibits-cli/packages/claude-skill-runtime",
+  "publishConfig": {
+    "access": "public"
+  }
 }

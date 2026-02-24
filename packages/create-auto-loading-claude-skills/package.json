@@ -85,5 +85,8 @@
     "type": "git",
     "url": "https://github.com/abetoots/satoshibits-cli.git"
   },
-  "homepage": "https://github.com/abetoots/satoshibits-cli/packages/create-auto-loading-claude-skills"
+  "homepage": "https://github.com/abetoots/satoshibits-cli/packages/create-auto-loading-claude-skills",
+  "publishConfig": {
+    "access": "public"
+  }
 }
