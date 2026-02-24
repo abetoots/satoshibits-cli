@@ -12,7 +12,7 @@ import {
   incrementAdrCounter,
   getDocsPath,
 } from '../config/manager.js';
-import { newDocQuestions } from '../prompts/questions.js';
+import { newDocQuestions, type NewDocAnswers } from '../prompts/questions.js';
 import {
   renderTemplate,
   createTemplateContext,
@@ -62,11 +62,13 @@ export async function newCommand(options: NewOptions): Promise<void> {
   }
 
   const { type, name } = options;
-  let title = name;
 
-  // prompt for title if not provided
-  if (!title) {
-    const answers = await inquirer.prompt(newDocQuestions);
+  // prompt for title if not provided, then narrow to string
+  let title: string;
+  if (name) {
+    title = name;
+  } else {
+    const answers = await inquirer.prompt<NewDocAnswers>(newDocQuestions);
     title = answers.title;
   }
 

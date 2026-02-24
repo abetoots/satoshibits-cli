@@ -13,6 +13,7 @@ import {
   createDefaultConfig,
   getDocsPath,
 } from '../config/manager.js';
+import type { DistinctQuestion } from 'inquirer';
 import {
   initQuestions,
   answersToVariance,
@@ -27,9 +28,6 @@ interface InitOptions {
   yes?: boolean;
   force?: boolean;
 }
-
-// type for question items that may have a name property (questions have name, separators don't)
-interface QuestionItem { name?: string; [key: string]: unknown }
 
 // directory structure to create
 const DOCS_STRUCTURE = [
@@ -88,9 +86,9 @@ function inferVarianceFromExistingSpecs(existingSpecs: Set<string>): Partial<Var
  * filters out questions that correspond to existing spec files
  */
 function filterQuestionsForExistingSpecs(
-  questions: QuestionItem[],
+  questions: DistinctQuestion<InitAnswers>[],
   existingSpecs: Set<string>
-): QuestionItem[] {
+): DistinctQuestion<InitAnswers>[] {
   // collect all question names to skip based on existing specs
   const questionsToSkip = new Set<string>();
 
@@ -107,8 +105,7 @@ function filterQuestionsForExistingSpecs(
     return questions;
   }
 
-  // filter out questions by name (separators have no name, so they pass through)
-  return questions.filter((q) => !q.name || !questionsToSkip.has(q.name));
+  return questions.filter((q) => !questionsToSkip.has(q.name));
 }
 
 // core documents to generate for each profile
@@ -191,20 +188,20 @@ export async function initCommand(options: InitOptions = {}): Promise<void> {
     console.log(chalk.blue('Using default configuration...'));
   } else if (options.profile) {
     // prompt with pre-selected profile
-    let questionsArray = (initQuestions as QuestionItem[]).filter((q) => q.name !== 'profile');
+    let questionsArray = initQuestions.filter((q) => q.name !== 'profile');
     // filter out questions for existing specs (unless --force)
     if (!options.force && existingSpecs.size > 0) {
       questionsArray = filterQuestionsForExistingSpecs(questionsArray, existingSpecs);
     }
-    const partialAnswers = await inquirer.prompt<Omit<InitAnswers, 'profile'>>(questionsArray);
+    const partialAnswers = await inquirer.prompt<InitAnswers>(questionsArray);
     answers = { ...partialAnswers, profile: options.profile };
   } else {
     // full interactive mode
     // filter out questions for existing specs (unless --force)
     const questionsToUse = !options.force && existingSpecs.size > 0
-      ? filterQuestionsForExistingSpecs(initQuestions as QuestionItem[], existingSpecs)
+      ? filterQuestionsForExistingSpecs(initQuestions, existingSpecs)
       : initQuestions;
-    answers = await inquirer.prompt(questionsToUse);
+    answers = await inquirer.prompt<InitAnswers>(questionsToUse);
   }
 
   // merge inferred variance from existing specs with prompted answers

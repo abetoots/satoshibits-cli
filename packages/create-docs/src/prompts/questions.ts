@@ -3,7 +3,8 @@
  * implements tiered decision points with expert-aligned recommendations
  */
 
-import type { QuestionCollection } from 'inquirer';
+import inquirer from 'inquirer';
+import type { DistinctQuestion } from 'inquirer';
 import type {
   ProjectProfile,
   VarianceConfig,
@@ -29,6 +30,8 @@ import type {
   FeatureFlags,
   AuthStrategy,
 } from '../types.js';
+
+const { Separator } = inquirer;
 
 export interface InitAnswers {
   // required fields
@@ -91,10 +94,8 @@ export const QuestionNames = {
 
 export type QuestionName = (typeof QuestionNames)[keyof typeof QuestionNames];
 
-// separator for visual grouping in prompts
-const separator = (text: string) => ({ type: 'separator' as const, line: `\n─── ${text} ───` });
 
-export const initQuestions: QuestionCollection<InitAnswers> = [
+export const initQuestions: DistinctQuestion<InitAnswers>[] = [
   // ═══════════════════════════════════════════════════════════════════════════
   // PROJECT BASICS
   // ═══════════════════════════════════════════════════════════════════════════
@@ -110,7 +111,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
     },
   },
   {
-    type: 'list',
+    type: 'select',
     name: 'profile',
     message: 'Select a project profile:',
     choices: [
@@ -136,7 +137,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
 
   // --- Data Layer ---
   {
-    type: 'list',
+    type: 'select',
     name: 'databaseEngine',
     message: 'Primary database engine:',
     choices: [
@@ -152,7 +153,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
         name: 'MongoDB - Document store for flexible schemas',
         value: 'mongodb',
       },
-      separator(''),
+      new Separator(),
       {
         name: 'None - No database for this project',
         value: 'none',
@@ -161,7 +162,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
     default: 'postgres',
   },
   {
-    type: 'list',
+    type: 'select',
     name: 'ormStrategy',
     message: 'Database access strategy:',
     when: (answers) => answers.databaseEngine !== 'none',
@@ -190,7 +191,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
     default: true,
   },
   {
-    type: 'list',
+    type: 'select',
     name: 'apiStyle',
     message: 'API architecture style:',
     when: (answers) => answers.hasApi,
@@ -211,7 +212,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
     default: 'rest',
   },
   {
-    type: 'list',
+    type: 'select',
     name: 'apiVersioning',
     message: 'API versioning strategy:',
     when: (answers) => answers.hasApi,
@@ -234,7 +235,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
 
   // --- Authentication ---
   {
-    type: 'list',
+    type: 'select',
     name: 'identityProvider',
     message: 'Identity provider:',
     choices: (answers) => {
@@ -256,7 +257,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
           name: 'AWS Cognito - Best for AWS-native projects',
           value: 'cognito',
         },
-        separator(''),
+        new Separator(),
         {
           name: 'Custom - Build your own (Not recommended)',
           value: 'custom',
@@ -270,7 +271,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
     default: 'auth0',
   },
   {
-    type: 'list',
+    type: 'select',
     name: 'authStrategy',
     message: 'Authentication token strategy:',
     when: (answers) => answers.identityProvider !== 'none',
@@ -289,7 +290,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
 
   // --- Infrastructure ---
   {
-    type: 'list',
+    type: 'select',
     name: 'cloudProvider',
     message: 'Primary cloud provider:',
     choices: [
@@ -313,7 +314,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
     default: 'aws',
   },
   {
-    type: 'list',
+    type: 'select',
     name: 'gitStrategy',
     message: 'Git branching strategy:',
     choices: [
@@ -335,7 +336,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
 
   // --- Caching ---
   {
-    type: 'list',
+    type: 'select',
     name: 'cacheLayer',
     message: 'Caching layer:',
     when: (answers) => answers.databaseEngine !== 'none',
@@ -364,7 +365,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
     default: false,
   },
   {
-    type: 'list',
+    type: 'select',
     name: 'messagingPattern',
     message: 'Async messaging pattern:',
     when: (answers) => answers.hasAsyncProcessing,
@@ -381,7 +382,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
     default: 'queue',
   },
   {
-    type: 'list',
+    type: 'select',
     name: 'messageBroker',
     message: 'Message broker:',
     when: (answers) => answers.hasAsyncProcessing,
@@ -408,7 +409,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
         },
       ];
     },
-    default: (answers: InitAnswers) => (answers.cloudProvider === 'aws' ? 'sqs' : 'redis'),
+    default: (answers: Partial<InitAnswers>) => (answers.cloudProvider === 'aws' ? 'sqs' : 'redis'),
   },
 
   // --- Frontend ---
@@ -420,7 +421,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
     when: (answers) => answers.profile !== 'library',
   },
   {
-    type: 'list',
+    type: 'select',
     name: 'frontendFramework',
     message: 'Frontend framework:',
     when: (answers) => answers.hasFrontend,
@@ -441,7 +442,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
     default: 'react',
   },
   {
-    type: 'list',
+    type: 'select',
     name: 'stylingApproach',
     message: 'Styling approach:',
     when: (answers) => answers.hasFrontend,
@@ -482,12 +483,12 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
 
   // --- Observability ---
   {
-    type: 'list',
+    type: 'select',
     name: 'observabilityStack',
     message: 'Observability stack:',
     when: (answers) => answers.advancedConfig,
     choices: (answers) => {
-      const isCloudNative = ['aws', 'gcp', 'azure'].includes(answers.cloudProvider);
+      const isCloudNative = answers.cloudProvider != null && ['aws', 'gcp', 'azure'].includes(answers.cloudProvider);
       return [
         {
           name: isCloudNative
@@ -514,7 +515,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
     default: 'cloud-native',
   },
   {
-    type: 'list',
+    type: 'select',
     name: 'errorTracking',
     message: 'Error tracking service:',
     when: (answers) => answers.advancedConfig,
@@ -537,7 +538,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
 
   // --- Testing ---
   {
-    type: 'list',
+    type: 'select',
     name: 'testingFramework',
     message: 'Unit testing framework:',
     when: (answers) => answers.advancedConfig,
@@ -554,7 +555,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
     default: 'vitest',
   },
   {
-    type: 'list',
+    type: 'select',
     name: 'e2eFramework',
     message: 'E2E testing framework:',
     when: (answers) => answers.advancedConfig,
@@ -573,7 +574,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
 
   // --- Deployment ---
   {
-    type: 'list',
+    type: 'select',
     name: 'containerOrchestration',
     message: 'Container orchestration:',
     when: (answers) => answers.advancedConfig,
@@ -598,7 +599,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
     default: 'serverless',
   },
   {
-    type: 'list',
+    type: 'select',
     name: 'iacTool',
     message: 'Infrastructure as Code tool:',
     when: (answers) => answers.advancedConfig && answers.containerOrchestration !== 'paas',
@@ -623,7 +624,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
     default: 'terraform',
   },
   {
-    type: 'list',
+    type: 'select',
     name: 'deploymentStrategy',
     message: 'Deployment strategy:',
     when: (answers) => answers.advancedConfig,
@@ -644,7 +645,7 @@ export const initQuestions: QuestionCollection<InitAnswers> = [
     default: 'rolling',
   },
   {
-    type: 'list',
+    type: 'select',
     name: 'featureFlags',
     message: 'Feature flag management:',
     when: (answers) => answers.advancedConfig,
@@ -731,7 +732,7 @@ export interface NewDocAnswers {
   title: string;
 }
 
-export const newDocQuestions: QuestionCollection<NewDocAnswers> = [
+export const newDocQuestions: DistinctQuestion<NewDocAnswers>[] = [
   {
     type: 'input',
     name: 'title',

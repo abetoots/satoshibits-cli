@@ -45,7 +45,6 @@
     "@eslint/compat": "^2.0.2",
     "@repo/typescript-config": "workspace:^",
     "@satoshibits/eslint-config": "workspace:^",
-    "@types/inquirer": "^9.0.7",
     "@types/node": "^25.3.0",
     "@typescript-eslint/utils": "^8.56.0",
     "eslint": "^9.39.2",
