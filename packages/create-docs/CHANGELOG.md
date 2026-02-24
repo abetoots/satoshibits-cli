@@ -1,5 +1,11 @@
 # @satoshibits/create-docs
 
+## 1.0.4
+
+### Patch Changes
+
+- 8681ca9: v9 -> v13 inquirer change
+
 ## 1.0.3
 
 ### Patch Changes
