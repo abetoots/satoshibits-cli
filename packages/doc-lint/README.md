@@ -38,11 +38,26 @@ doc-lint separates **assembly** (free, deterministic) from **evaluation** (optio
 
 | Layer | Command | Cost | What It Does |
 |-------|---------|------|-------------|
-| **Assemble** | `doc-lint assemble` | Free | Loads manifest, matches concerns, builds prompts with full document content |
+| **Assemble** | `doc-lint assemble --tier <level>` | Free | Loads manifest, matches concerns by tier, builds prompts with full document content |
 | **Detect** | `doc-lint detect` | Free | Generates a signal detection prompt for LLM handoff |
-| **Lint** | `doc-lint lint` | API calls | Runs assembly, then sends each prompt to an LLM for evaluation |
+| **Lint** | `doc-lint lint --tier <level>` | API calls | Runs assembly, then sends each prompt to an LLM for evaluation |
 
 The assemble layer is the core value. You can inspect exactly what will be sent to the LLM, pipe prompts into your own tooling, or use the `lint` layer for a fully automated flow. The `detect` command generates a standalone prompt that an LLM can use to identify which signals are present in your documentation — useful for bootstrapping or auditing the `signals.declared` list in your manifest.
+
+## Tier System
+
+Concerns are assigned to **tiers** that control evaluation scope. The `--tier` flag is required for `assemble` and `lint` commands:
+
+| Tier | Scope | What It Includes |
+|------|-------|-----------------|
+| `1` | Foundational | Core correctness checks (e.g., failure-domain-isolation, state-ownership-clarity) |
+| `2` | Behavioral | Tier 1 + behavioral integrity (e.g., idempotency-boundaries, api-contract-consistency, resilience-triad) |
+| `3` | Structural | Tier 1 + 2 + structural coherence (e.g., horizontal-traceability) |
+| `all` | Everything | All tiers + interaction matrices |
+
+Tiers are **cumulative**: `--tier 2` includes all concerns with tier <= 2. Interaction matrices (cross-domain checks) are only included with `--tier all`. Concerns without a tier assignment are excluded unless `--tier all` is used.
+
+Start with `--tier 1` for foundational gaps, then expand scope as your documentation matures.
 
 ## When to Use
 
@@ -77,9 +92,27 @@ The `ANTHROPIC_API_KEY` environment variable must be set in your shell. doc-lint
 
 ## Quick Start
 
-### 1. Create a manifest
+### 0. Explore available concerns
 
-Create `doc-lint.yaml` in your project root:
+```bash
+doc-lint list
+```
+
+This shows all 28 bundled concerns grouped by category, with their trigger signals, severity, and tier. Use this to understand which signals to declare in your manifest.
+
+### 1. Initialize a manifest
+
+The fastest way to get started — `init` discovers your documents and detects signals automatically:
+
+```bash
+# interactive mode (prompts for document selection, signal confirmation)
+doc-lint init .
+
+# non-interactive mode (auto-selects first match, uses high+medium confidence signals)
+doc-lint init . --yes
+```
+
+Or create `doc-lint.yaml` (or `doc-lint.yml`) manually in your project root:
 
 ```yaml
 version: "1.0"
@@ -111,14 +144,14 @@ signals:
 ### 2. Assemble evaluation prompts
 
 ```bash
-# outputs JSON with all assembled prompts
-doc-lint assemble . -f json
+# outputs JSON with all assembled prompts (tier 1 = foundational checks)
+doc-lint assemble . --tier 1 -f json
 
-# human-readable summary
-doc-lint assemble . -f human
+# human-readable summary with all tiers
+doc-lint assemble . --tier all -f human
 
 # write each prompt as a standalone .md file (best for LLM handoff)
-doc-lint assemble . -o ./prompts
+doc-lint assemble . --tier 1 -o ./prompts
 ```
 
 Example human output:
@@ -126,18 +159,16 @@ Example human output:
 ```
 doc-lint assemble: My Payment Service
 Signals: external-api, payments, webhooks
-Matched concerns: 5
-  + api-contract-consistency
-  + idempotency-boundaries
-  + resilience-triad
-  + retry-times-payment
-  + webhook-times-security
-Skipped concerns: 4
-  - durable-persistence
-  - failure-domain-isolation
-  - state-ownership-clarity
-  - async-times-approval
-Total prompts assembled: 6
+Matched concerns (tier 1): 2
+  + feasibility-check [tier 1]
+  + threat-model-coverage [tier 1]
+Skipped concerns: 9
+  - api-contract-consistency [tier 2]
+  - idempotency-boundaries [tier 2]
+  - resilience-triad [tier 2]
+  - input-validation [tier 2]
+  - ...
+Total prompts assembled: 3
 ```
 
 ### 3. Detect signals with LLM assistance (optional)
@@ -157,16 +188,35 @@ The generated prompt includes the full signal vocabulary, your document content,
 ### 4. Run full lint (requires Anthropic API key)
 
 ```bash
-doc-lint lint .
+# foundational checks only
+doc-lint lint . --tier 1
 
-# with verbose progress
-doc-lint lint . --verbose
+# all checks including interaction matrices
+doc-lint lint . --tier all --verbose
 
 # dry run — show which concerns matched without calling the API
-doc-lint lint . --dry-run
+doc-lint lint . --tier all --dry-run
+
+# filter to only show errors and warnings
+doc-lint lint . --tier 2 --severity-threshold warn
 ```
 
 ## CLI Reference
+
+### `doc-lint init [path]`
+
+Initializes a `doc-lint.yaml` manifest by discovering documents and detecting signals. `[path]` is the project root directory (defaults to `.`).
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-y, --yes` | Non-interactive mode: auto-select first match per role, include high+medium confidence signals | interactive |
+| `--ignore <glob>` | Glob pattern to ignore during discovery (repeatable) | - |
+
+**Interactive mode** (default): Discovers documents matching known role patterns (BRD, FRD, ADD, plus optional roles like API specs and runbooks). For each role, prompts you to select from candidates or enter a path manually. Detects signals from document content and lets you confirm/toggle which to include. Prompts for project name and classification.
+
+**Non-interactive mode** (`--yes`): Auto-selects the first match for each required role (errors if none found). Includes signals detected at high or medium confidence. Uses directory basename as project name and "standard" as classification.
+
+**Discovery patterns:** Searches for files matching role-specific patterns (e.g., `brd.md`, `*-brd.md`, `business-requirements*` for BRD). Built-in ignores: `node_modules`, `.git`, `dist`, `build`, `coverage`, `.next`. Files over 1MB and binary files are skipped.
 
 ### `doc-lint assemble [path]`
 
@@ -174,7 +224,8 @@ Assembles evaluation prompts without making any API calls. `[path]` is the proje
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `-c, --config <file>` | Path to manifest file | Auto-detect `doc-lint.yaml` |
+| `--tier <level>` | **Required.** Tier scope: `1`, `2`, `3`, or `all` | - |
+| `-c, --config <file>` | Path to manifest file | Auto-detect `doc-lint.yaml` or `doc-lint.yml` |
 | `-f, --format <format>` | Output format: `human` or `json` (to stdout) | *required if `-o` not set* |
 | `-o, --output-dir <path>` | Write each prompt as a standalone `.md` file to this directory | *required if `-f` not set* |
 | `--no-contradiction` | Skip the contradiction scanner prompt | enabled |
@@ -182,7 +233,7 @@ Assembles evaluation prompts without making any API calls. `[path]` is the proje
 | `--auto-detect` / `--no-auto-detect` | Auto-detect signals from document content | manifest value or `false` |
 | `--warn-on-mismatch` / `--no-warn-on-mismatch` | Warn when detected signals differ from declared | manifest value or `false` |
 
-One of `-f` or `-o` must be provided. When `--output-dir` is used, each assembled prompt is written as an individual Markdown file (e.g., `idempotency-boundaries.md`) with YAML front-matter metadata. These files are self-contained and ready to hand off to any external LLM.
+One of `-f` or `-o` must be provided. If both are given, `-o` takes priority. When `--output-dir` is used, each assembled prompt is written as an individual Markdown file (e.g., `idempotency-boundaries.md`) with YAML front-matter metadata. These files are self-contained and ready to hand off to any external LLM.
 
 ### `doc-lint detect [path]`
 
@@ -190,11 +241,11 @@ Generates a self-contained signal detection prompt for LLM handoff. The prompt i
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `-c, --config <file>` | Path to manifest file | Auto-detect `doc-lint.yaml` |
+| `-c, --config <file>` | Path to manifest file | Auto-detect `doc-lint.yaml` or `doc-lint.yml` |
 | `-f, --format <format>` | Output format: `human` or `json` (to stdout) | *required if `-o` not set* |
 | `-o, --output-dir <path>` | Write `signal-detection.md` to this directory | *required if `-f` not set* |
 
-One of `-f` or `-o` must be provided. The output includes the signal vocabulary (closed set), document content, and a JSON response schema with `signals` (id, confidence, rationale) and `unmappedConcepts` fields.
+One of `-f` or `-o` must be provided. If both are given, `-o` takes priority. The output includes the signal vocabulary (closed set), document content, and a JSON response schema with `signals` (id, confidence, rationale) and `unmappedConcepts` fields.
 
 **Workflow:** `detect` -> feed prompt to LLM -> use response to update `signals.declared` in manifest -> `assemble` or `lint`.
 
@@ -204,27 +255,33 @@ Assembles prompts and evaluates them via the Anthropic SDK. `[path]` is the proj
 
 | Option | Description | Default |
 |--------|-------------|---------|
+| `--tier <level>` | **Required.** Tier scope: `1`, `2`, `3`, or `all` | - |
 | `--engine <engine>` | Evaluation engine (currently only `sdk`) | `sdk` |
-| `-c, --config <file>` | Path to manifest file | Auto-detect `doc-lint.yaml` |
+| `-c, --config <file>` | Path to manifest file | Auto-detect `doc-lint.yaml` or `doc-lint.yml` |
 | `-f, --format <format>` | Output format: `human` or `json` | `human` |
 | `--no-contradiction` | Skip the contradiction scanner | enabled |
 | `--concerns <ids>` | Only specific concerns (comma-separated) | all matched |
 | `--dry-run` | Show matched concerns without evaluating | - |
 | `--verbose` | Show detailed progress | - |
+| `--severity-threshold <level>` | Minimum severity to display: `error`, `warn`, or `note` | all findings |
+| `--allow-implicit` | Record that implicit documentation is accepted as coverage | - |
+| `--allow-external-refs` | Record that external references are accepted as partial coverage | - |
 | `--auto-detect` / `--no-auto-detect` | Auto-detect signals from document content | manifest value or `false` |
 | `--warn-on-mismatch` / `--no-warn-on-mismatch` | Warn when detected signals differ from declared | manifest value or `false` |
 
 **Exit codes:** `0` = pass, `1` = errors found, `2` = tool error
 
+**Tolerance flags:** `--severity-threshold` actively filters findings from output. `--allow-implicit` and `--allow-external-refs` are recorded in the result's `toleranceApplied` field for audit purposes but do not currently filter findings.
+
 **Understanding findings:** Each finding has a `severity` (error, warn, note) and a `confidence` (high, medium, low). High-confidence errors are hard blockers. Low-confidence errors are flagged with `requiresHumanReview: true` — they indicate a potential gap that the evaluator could not confirm with certainty.
 
 ### `doc-lint list`
 
-Lists all bundled concerns grouped by category (core, promise-validation, security, operational, compliance, test-coverage) with trigger signals and severity.
+Lists all bundled concerns grouped by category (core, promise-validation, security, operational, compliance, test-coverage) with trigger signals, severity, version, and tier assignment. Interaction matrices are shown in a separate section.
 
 ## Manifest Reference
 
-The `doc-lint.yaml` manifest declares your project's documents and signals.
+The `doc-lint.yaml` (or `doc-lint.yml`) manifest declares your project's documents and signals.
 
 ```yaml
 version: "1.0"            # manifest schema version
@@ -264,15 +321,10 @@ signals:
   auto_detect: false        # optional: auto-detect signals from documents
   warn_on_mismatch: true    # optional: warn when detected signals differ from declared
 
-options:                    # optional overrides
-  contradiction: false      # disable contradiction scanner
-  concerns:                 # restrict to specific concern IDs
-    - idempotency-boundaries
-
 tolerance:                  # optional: filter findings by severity
   severity_threshold: warn  # only report findings at this level or above (error, warn, note)
-  allow_implicit: false     # optional
-  allow_external_refs: true # optional
+  allow_implicit: false     # recorded in output but not currently enforced as a filter
+  allow_external_refs: true # recorded in output but not currently enforced as a filter
 
 exclusions:                 # optional: skip specific components or concerns
   - component: legacy-auth-module       # exclude findings for this component
@@ -298,7 +350,7 @@ The `role` field is a semantic tag that maps your document to its function in th
 Signals are tags that describe your system's characteristics. They determine which bundled concerns are activated:
 
 - **Core concerns** activate when *any* of their trigger signals match (`any_of`)
-- **Interaction matrices** activate when *all* of their trigger signals match (`all_of`)
+- **Interaction matrices** activate when *all* of their trigger signals match (`all_of`), with optional `alternative_triggers` providing additional activation paths
 
 Run `doc-lint list` to see available signals for each concern.
 
@@ -313,9 +365,22 @@ By default, only the `declared` signals in your manifest are used. Two optional 
 
 Both can be set together: `auto_detect` merges for expanded coverage while `warn_on_mismatch` reports the drift. Settings can be defined in the manifest or overridden per-run with CLI flags (`--auto-detect`, `--warn-on-mismatch`). CLI flags take precedence over manifest values.
 
+**How detection works:** doc-lint preprocesses documents (strips YAML frontmatter, code blocks, inline code, URLs) then matches against a vocabulary of signal keywords using case-insensitive word-boundary matching. Confidence is assigned based on keyword coverage: **high** (>= 3 matched keywords AND >= 60% of signal's keyword list), **medium** (>= 2 AND >= 30%), **low** (below medium). Only high and medium confidence signals are included in auto-detect merges and `init --yes` mode.
+
+### Exclusion Behavior
+
+Exclusions work at two levels, applied independently (OR, not AND):
+
+- **Concern-level** (`concernId`): Excludes the entire prompt from evaluation, saving API calls. Applied before evaluation.
+- **Component-level** (`component`): Excludes findings where `relatedItem` matches the component name exactly or starts with `component.` (prefix match). Applied after evaluation.
+
+When an exclusion entry has both `component` and `concernId`, each filter operates at its own stage — `concernId` filters prompts pre-evaluation and `component` filters findings post-evaluation. They are not applied as a combined AND condition.
+
+The contradiction scanner is never excluded, even if listed in exclusions.
+
 ## Bundled Concerns
 
-doc-lint ships with 28 bundled concerns across 7 categories. Run `doc-lint list` for the full listing with trigger signals.
+doc-lint ships with 28 bundled concerns across 6 categories, plus 3 interaction matrices. Run `doc-lint list` for the full listing with trigger signals.
 
 ### Core (7)
 
@@ -378,13 +443,13 @@ Validates that architectural promises (SLAs, scalability claims, feasibility) ar
 
 ### Interaction Matrices (3)
 
-Interaction matrices activate when *all* trigger signals are present. They check for failure modes that emerge at the intersection of two domains — gaps that pass single-concern review but fail in combination.
+Interaction matrices activate when *all* primary trigger signals are present (or any `alternative_triggers` set matches). They check for failure modes that emerge at the intersection of two domains — gaps that pass single-concern review but fail in combination. Only included with `--tier all`.
 
-| ID | What It Checks | Failure Modes | Triggers (all_of) |
-|----|---------------|---------------|-------------------|
-| `async-times-approval` | Approval workflows processed asynchronously | duplicate-approval, approval-timeout, orphaned-workflow, race-condition, order-inversion | async-workflows, approval-gates |
-| `retry-times-payment` | Payment operations with retry policies | partial-completion, inconsistent-state, refund-ambiguity, timeout-ambiguity | payments, retry-policy, external-api |
-| `webhook-times-security` | Webhooks received from external providers | event-spoofing, replay-attack, payload-tampering, timing-attack | webhooks, external-api, payments, security |
+| ID | What It Checks | Failure Modes | Primary triggers (all_of) | Alternative triggers |
+|----|---------------|---------------|--------------------------|---------------------|
+| `async-times-approval` | Approval workflows processed asynchronously | duplicate-approval, approval-timeout, orphaned-workflow, race-condition, order-inversion | async-workflows, approval-gates | [message-queue, authorization], [event-driven, workflow-approval], [eventual-consistency, human-in-loop] |
+| `retry-times-payment` | Payment operations with retry policies | partial-completion, inconsistent-state, refund-ambiguity, timeout-ambiguity | payments, retry-policy | [payments, external-api], [payments, resilience-triad] |
+| `webhook-times-security` | Webhooks received from external providers | event-spoofing, replay-attack, payload-tampering, timing-attack | webhooks, external-api | [webhooks, payments], [webhooks, security], [inbound-events, external-api] |
 
 ### Contradiction Scanner
 
@@ -407,12 +472,15 @@ const assembled: AssembleResult = assemble({
   configPath: "doc-lint.yaml",       // optional
   contradiction: true,                // default: true
   filterConcernIds: ["idempotency-boundaries"],  // optional
+  tierFilter: 2,                      // 1, 2, 3, or "all" (omit to include all tiers)
   autoDetect: true,                   // optional: merge detected signals with declared
   warnOnMismatch: true,               // optional: report signal drift
 });
 
+console.log(assembled.version);          // "2.0"
 console.log(assembled.prompts.length);   // number of prompts generated
 console.log(assembled.concerns.matched); // ["idempotency-boundaries"]
+console.log(assembled.concerns.matchedDetails); // [{ id, tier?, type }]
 console.log(assembled.signals.effective); // signals used for concern matching
 console.log(assembled.signals.mismatch); // { undeclared: [...], stale: [...] } or undefined
 
@@ -425,14 +493,58 @@ for (const prompt of assembled.prompts) {
 
 // full lint with Anthropic SDK
 const engine = new SdkEngine();  // reads ANTHROPIC_API_KEY from env
+// or: new SdkEngine("sk-ant-...")  // pass API key directly
 const result: LintResult = await lint({
   projectPath: "./my-project",
   engine,
+  tierFilter: "all",
   onProgress: (msg) => console.error(msg),
+  tolerance: {                        // optional
+    severity_threshold: "warn",
+  },
 });
 
 console.log(result.summary);
 // { totalFindings: 3, errors: 1, warnings: 2, notes: 0, contradictions: 0, humanReviewRequired: 1 }
+console.log(result.coverage);
+// { concernsEvaluated: [...], concernsSkipped: [...], concernsExcluded: [...], documentsLoaded: [...], documentsMissing: [...] }
+```
+
+### Key Exports
+
+```typescript
+// Functions
+import { assemble, lint, SdkEngine } from "@satoshibits/doc-lint";
+
+// Input types
+import type { AssembleInput, LintInput } from "@satoshibits/doc-lint";
+
+// Result types
+import type {
+  AssembleResult,
+  LintResult,
+  Finding,
+  ContradictionFinding,
+  Severity,
+  Confidence,
+} from "@satoshibits/doc-lint";
+
+// Engine types (for custom engines)
+import type {
+  EvaluationEngine,
+  EvaluationResult,
+} from "@satoshibits/doc-lint";
+
+// Schema and manifest types
+import type {
+  DocLintManifest,
+  DocumentRef,
+  ConcernSchema,
+  InteractionSchema,
+  ConcernOrInteraction,
+  LoadedConcern,
+  AssembledPrompt,
+} from "@satoshibits/doc-lint";
 ```
 
 ### Custom Evaluation Engines
@@ -457,12 +569,13 @@ class MyEngine implements EvaluationEngine {
 const result = await lint({
   projectPath: ".",
   engine: new MyEngine(),
+  tierFilter: "all",
 });
 ```
 
 ### Output Structure
 
-Each finding in the `LintResult` has this shape:
+Results use schema version `"2.0"`. Each finding in the `LintResult` has this shape:
 
 ```typescript
 interface Finding {
@@ -480,7 +593,7 @@ interface Finding {
 }
 ```
 
-Example JSON finding (from `doc-lint lint . -f json`):
+Example JSON finding (from `doc-lint lint . --tier all -f json`):
 
 ```json
 {
@@ -498,7 +611,9 @@ Example JSON finding (from `doc-lint lint . -f json`):
 }
 ```
 
-Contradiction findings have a different structure with `statementA`, `statementB`, `conflictType`, and `explanation` fields.
+Contradiction findings have a different structure with `statementA`, `statementB`, `conflictType` (`quantitative`, `temporal`, `behavioral`, `scope`), and `explanation` fields.
+
+The `LintResult` also includes `toleranceApplied`, `exclusionsApplied`, and `coverage` fields for audit and CI integration.
 
 ## How Concern Matching Works
 
@@ -510,17 +625,124 @@ signals:                       core/idempotency-boundaries.yaml
     - payments        ──match──>   any_of: [..., payments, ...]
     - webhooks
                                interactions/retry-times-payment.yaml
-    - payments ─────┐            triggers:
-    - external-api ─┤──match──>    all_of: [payments, retry-policy, external-api]
+                                 triggers:
+    - payments ─────┐              all_of: [payments, retry-policy]
                     │
-                    └─ "retry-policy" NOT declared → interaction NOT loaded
+                    └─ "retry-policy" NOT declared → primary trigger NOT met
+
+                                 alternative_triggers:
+    - payments ─────┐              - all_of: [payments, external-api]  ← MATCH
+    - external-api ─┘
+                                 → interaction loaded via alternative trigger
 ```
 
-Core concerns use `any_of` (any signal match loads the concern). Interaction matrices use `all_of` (every signal must be present). This prevents noise: interaction matrices only fire when all the interacting domains are actually present in your system.
+Core concerns use `any_of` (any signal match loads the concern). Interaction matrices use `all_of` (every signal must be present) with optional `alternative_triggers` providing additional activation paths. This prevents noise: interaction matrices only fire when all the interacting domains are actually present in your system.
+
+## Concern Schema Structure
+
+Each bundled concern is a YAML file with a formally-defined structure. This section documents the schema for users who want to understand how concerns work internally.
+
+### Standard Concern
+
+```yaml
+concern:
+  id: "idempotency-boundaries"   # unique identifier
+  version: "1.0"
+  name: "Idempotency Boundaries"
+  category: "core"               # core | security | operational | compliance | promise-validation | test-coverage
+  severity: "error"              # error | warn | note
+
+  description: |
+    What this concern checks and why it matters.
+
+triggers:
+  any_of:                        # concern loads if ANY of these signals are declared
+    - external-api
+    - webhooks
+    - payments
+  escalate_if:                   # optional: signals that increase urgency
+    - payments
+
+evaluation:
+  question: "..."                # the evaluation task for the LLM
+  checklist:                     # optional: sub-tasks for structured evaluation
+    - id: "check-1"
+      question: "Is X documented?"
+  evidence_required:             # defines the JSON output schema for findings
+    - field: "component_name"
+      type: "string"
+      description: "Name of the component"
+      required: true
+    - field: "idempotency_documented"
+      type: "boolean"
+      values: [true, false, null]
+  failure_condition: |           # defines what constitutes a gap
+    idempotency_documented is FALSE or null
+  recommendation_template: |     # optional: markdown template for recommendations
+    Document the idempotency mechanism for {{component_name}}.
+
+metadata:
+  tier: 2                        # evaluation tier (1=foundational, 2=behavioral, 3=structural)
+  created: "2025-01"
+  last_updated: "2025-06"        # optional
+  author: "doc-lint"
+  related_concerns:              # optional: cross-references
+    - resilience-triad
+  recommended_after:             # optional: evaluation ordering hints
+    - api-contract-consistency
+  references:                    # optional: external reference URLs
+    - "https://example.com/idempotency-patterns"
+```
+
+### Interaction Matrix
+
+```yaml
+interaction:
+  id: "retry-times-payment"
+  version: "1.0"
+  name: "Retry Policy x Payments"
+  category: "interaction"
+  severity: "error"
+  description: |
+    What failure modes this interaction creates.
+
+triggers:
+  all_of:                        # ALL signals must be present
+    - payments
+    - retry-policy
+  alternative_triggers:          # optional: additional activation paths
+    - all_of: [payments, external-api]
+
+failure_modes:                   # specific failure modes to evaluate
+  - id: "partial-completion"
+    name: "Partial Completion"
+    severity: "error"
+    description: "..."
+    question: "..."              # LLM evaluation question for this mode
+    evidence_required:
+      - field: "component"
+        type: "string"
+    failure_examples:
+      - "Payment succeeds but fulfillment fails"
+
+evaluation:
+  preamble: "..."                # optional context for the evaluator
+  combined_question: "..."       # overall evaluation task
+  output_format: "..."           # JSON schema specification
+  failure_condition: "..."
+
+recommendations:                 # optional: templates keyed by failure mode id
+  partial-completion: |
+    Document what happens when payment succeeds but fulfillment fails.
+
+metadata:
+  tier: null                     # interactions only load with --tier all
+  created: "2025-01"
+```
 
 ## Custom Concerns
 
-Custom user-defined concern schemas are not yet supported. The current version ships with 28 bundled concerns across 7 categories covering distributed systems, security, operational readiness, compliance, and test coverage patterns. Custom concerns are planned for a future release.
+Custom user-defined concern schemas are not yet supported. The current version ships with 28 bundled concerns across 6 categories plus 3 interaction matrices, covering distributed systems, security, operational readiness, compliance, and test coverage patterns. Custom concerns are planned for a future release.
 
 To use a custom evaluation engine with your own prompt logic, implement the `EvaluationEngine` interface (see [Programmatic API](#custom-evaluation-engines) above).
 
@@ -530,6 +752,7 @@ To use a custom evaluation engine with your own prompt logic, implement the `Eva
 - **Anthropic SDK only** — the built-in CLI engine uses the Anthropic API; use the programmatic API with a custom `EvaluationEngine` for other providers
 - **Required document roles** — manifests must include `brd`, `frd`, and `add` roles in `documents.required`
 - **No `.env` loading** — `ANTHROPIC_API_KEY` must be set as a shell environment variable
+- **Tolerance filtering** — only `severity_threshold` actively filters findings; `allow_implicit` and `allow_external_refs` are recorded but not enforced
 
 ## License
 
