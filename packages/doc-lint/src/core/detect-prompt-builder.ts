@@ -6,10 +6,18 @@ export interface DetectPrompt {
   user: string;
 }
 
+export interface DetectDocumentReference {
+  role: string;
+  label: string;
+  path: string;
+}
+
 export interface DetectResult {
   timestamp: string;
   project: string;
+  projectRoot?: string;
   documents: string[];
+  documentRefs?: DetectDocumentReference[];
   prompt: DetectPrompt;
 }
 
@@ -25,15 +33,26 @@ function buildSignalVocabulary(): string {
   return lines.join("\n");
 }
 
-// build the documents section — each document with its full content
-function buildDocumentsSection(documents: LoadedDocument[]): string {
-  const sections: string[] = [];
-  for (const doc of documents) {
-    sections.push(
-      `### ${doc.label} (\`${doc.path}\`)\n\n${doc.content.trim()}`,
-    );
+// build the documents section — each document with its full content or path references
+function buildDocumentsSection(documents: LoadedDocument[], inline: boolean): string {
+  if (inline) {
+    const sections: string[] = [];
+    for (const doc of documents) {
+      sections.push(
+        `### ${doc.label} (\`${doc.path}\`)\n\n${doc.content.trim()}`,
+      );
+    }
+    return sections.join("\n\n---\n\n");
   }
-  return sections.join("\n\n---\n\n");
+
+  const lines = [
+    "Read the following files fully before analysis:",
+    "",
+  ];
+  for (const doc of documents) {
+    lines.push(`- **${doc.label}** (${doc.role}): \`${doc.path}\``);
+  }
+  return lines.join("\n");
 }
 
 const SYSTEM_PROMPT = `You are a documentation signal detector for doc-lint, a documentation linter that evaluates architecture documents against concern schemas.
@@ -47,9 +66,11 @@ Respond with valid JSON matching the response schema exactly. No markdown fences
 export function buildDetectPrompt(
   projectName: string,
   documents: LoadedDocument[],
+  options: { inline?: boolean; projectRoot?: string } = {},
 ): DetectResult {
+  const inline = options.inline !== false;
   const vocabulary = buildSignalVocabulary();
-  const documentsSection = buildDocumentsSection(documents);
+  const documentsSection = buildDocumentsSection(documents, inline);
   const signalCount = Object.keys(SIGNAL_KEYWORDS).length;
 
   const user = `# Signal Detection
@@ -87,10 +108,21 @@ ${vocabulary}
 
 ${documentsSection}`;
 
-  return {
+  const result: DetectResult = {
     timestamp: new Date().toISOString(),
     project: projectName,
     documents: documents.map((d) => d.path),
     prompt: { system: SYSTEM_PROMPT, user },
   };
+
+  if (!inline) {
+    result.projectRoot = options.projectRoot ?? process.cwd();
+    result.documentRefs = documents.map((d) => ({
+      role: d.role,
+      label: d.label,
+      path: d.path,
+    }));
+  }
+
+  return result;
 }

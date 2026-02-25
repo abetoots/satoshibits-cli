@@ -10,10 +10,12 @@ export interface AssembleOptions extends BaseCommandOptions {
   autoDetect?: boolean;
   warnOnMismatch?: boolean;
   outputDir?: string;
+  inline?: boolean;
 }
 
 export interface DetectOptions extends BaseCommandOptions {
   outputDir?: string;
+  inline?: boolean;
 }
 
 export interface InitOptions {

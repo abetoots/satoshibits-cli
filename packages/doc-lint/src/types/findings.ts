@@ -1,3 +1,9 @@
+export interface DocumentReference {
+  role: string;
+  label: string;
+  path: string;
+}
+
 export interface AssembledPrompt {
   concernId: string;
   concernVersion: string;
@@ -10,6 +16,7 @@ export interface AssembledPrompt {
     documentsIncluded: string[];
     templateVersion: string;
   };
+  documents?: DocumentReference[];
 }
 
 export type Severity = "error" | "warn" | "note";
@@ -97,6 +104,7 @@ export interface AssembleResult {
   version: string;
   timestamp: string;
   project: string;
+  projectRoot?: string;
   signals: SignalAnalysis;
   concerns: {
     matched: string[];

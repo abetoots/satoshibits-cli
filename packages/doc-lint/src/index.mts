@@ -14,6 +14,7 @@ export type {
   ConcernOrInteraction,
   LoadedConcern,
   AssembledPrompt,
+  DocumentReference,
   AssembleResult,
   LintResult,
   Finding,

@@ -5,7 +5,7 @@ import { isConcernSchema, isInteractionSchema } from "../types/concerns.js";
 import { getConcernsDir } from "./paths.js";
 
 import type { LoadedDocument } from "./documents.js";
-import type { AssembledPrompt, LoadedConcern } from "../types/index.js";
+import type { AssembledPrompt, DocumentReference, LoadedConcern } from "../types/index.js";
 
 const TEMPLATE_VERSION = "1.0";
 
@@ -17,13 +17,34 @@ function loadTemplate(name: string): string {
   return fs.readFileSync(templatePath, "utf8");
 }
 
-function formatDocumentsBlock(docs: LoadedDocument[]): string {
-  return docs
-    .map(
-      (doc) =>
-        `### ${doc.label} (${doc.role})\n\n\`\`\`\n${doc.content}\n\`\`\``,
-    )
-    .join("\n\n");
+function formatDocumentsBlock(docs: LoadedDocument[], inline: boolean): string {
+  if (inline) {
+    return docs
+      .map(
+        (doc) =>
+          `### ${doc.label} (${doc.role})\n\n\`\`\`\n${doc.content}\n\`\`\``,
+      )
+      .join("\n\n");
+  }
+
+  const lines = [
+    "## Documents",
+    "",
+    "Read the following files fully before evaluation:",
+    "",
+  ];
+  for (const doc of docs) {
+    lines.push(`- **${doc.label}** (${doc.role}): \`${doc.path}\``);
+  }
+  return lines.join("\n");
+}
+
+function buildDocumentReferences(docs: LoadedDocument[]): DocumentReference[] {
+  return docs.map((doc) => ({
+    role: doc.role,
+    label: doc.label,
+    path: doc.path,
+  }));
 }
 
 function getResponseSchema(concern: LoadedConcern): object {
@@ -60,10 +81,11 @@ function getResponseSchema(concern: LoadedConcern): object {
 export function buildEvaluationPrompt(
   concern: LoadedConcern,
   docs: LoadedDocument[],
+  inline = true,
 ): AssembledPrompt {
   const template = loadTemplate("evaluation.md");
   const concernYaml = fs.readFileSync(concern.filePath, "utf8");
-  const documentsBlock = formatDocumentsBlock(docs);
+  const documentsBlock = formatDocumentsBlock(docs, inline);
 
   const userPrompt = template
     .replace("{{CONCERN_YAML}}", concernYaml)
@@ -71,7 +93,7 @@ export function buildEvaluationPrompt(
 
   const system = buildSystemMessage(concern);
 
-  return {
+  const prompt: AssembledPrompt = {
     concernId: concern.id,
     concernVersion: concern.version,
     concernName: concern.name,
@@ -84,11 +106,17 @@ export function buildEvaluationPrompt(
       templateVersion: TEMPLATE_VERSION,
     },
   };
+
+  if (!inline) {
+    prompt.documents = buildDocumentReferences(docs);
+  }
+
+  return prompt;
 }
 
-export function buildContradictionPrompt(docs: LoadedDocument[]): AssembledPrompt {
+export function buildContradictionPrompt(docs: LoadedDocument[], inline = true): AssembledPrompt {
   const template = loadTemplate("contradiction.md");
-  const documentsBlock = formatDocumentsBlock(docs);
+  const documentsBlock = formatDocumentsBlock(docs, inline);
 
   const userPrompt = template.replace("{{DOCUMENTS}}", documentsBlock);
 
@@ -97,7 +125,7 @@ export function buildContradictionPrompt(docs: LoadedDocument[]): AssembledPromp
     "You compare statements across multiple documents to find conflicts. " +
     "Be precise: only flag genuine contradictions, not complementary information.";
 
-  return {
+  const prompt: AssembledPrompt = {
     concernId: "contradiction-scanner",
     concernVersion: "1.0",
     concernName: "Cross-Document Contradiction Scanner",
@@ -120,6 +148,12 @@ export function buildContradictionPrompt(docs: LoadedDocument[]): AssembledPromp
       templateVersion: TEMPLATE_VERSION,
     },
   };
+
+  if (!inline) {
+    prompt.documents = buildDocumentReferences(docs);
+  }
+
+  return prompt;
 }
 
 function buildSystemMessage(concern: LoadedConcern): string {

@@ -25,6 +25,7 @@ export {
 
 export type {
   AssembledPrompt,
+  DocumentReference,
   Severity,
   Confidence,
   Finding,

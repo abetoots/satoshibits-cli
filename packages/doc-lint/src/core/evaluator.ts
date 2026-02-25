@@ -1,3 +1,5 @@
+import * as path from "node:path";
+
 import type {
   AssembledPrompt,
   AssembleResult,
@@ -33,6 +35,7 @@ export interface AssembleInput {
   tierFilter?: number | "all";
   autoDetect?: boolean; // CLI override for manifest.signals.auto_detect
   warnOnMismatch?: boolean; // CLI override for manifest.signals.warn_on_mismatch
+  inline?: boolean; // default: true. Set to false for path references.
 }
 
 export interface LintInput extends AssembleInput {
@@ -186,17 +189,18 @@ export function assemble(input: AssembleInput): AssembleResult {
     skipped = [...skipped, ...tierSkipped];
   }
 
+  const inline = input.inline !== false;
   const prompts: AssembledPrompt[] = [];
 
   for (const concern of matched) {
-    const prompt = buildEvaluationPrompt(concern, docs.all);
+    const prompt = buildEvaluationPrompt(concern, docs.all, inline);
     prompts.push(prompt);
   }
 
   // contradiction scanner runs on all docs unless disabled
   const enableContradiction = input.contradiction !== false;
   if (enableContradiction) {
-    const contradictionPrompt = buildContradictionPrompt(docs.all);
+    const contradictionPrompt = buildContradictionPrompt(docs.all, inline);
     prompts.push(contradictionPrompt);
   }
 
@@ -222,7 +226,7 @@ export function assemble(input: AssembleInput): AssembleResult {
     type: c.type,
   }));
 
-  return {
+  const result: AssembleResult = {
     version: "2.0",
     timestamp: new Date().toISOString(),
     project: manifest.project.name,
@@ -234,13 +238,20 @@ export function assemble(input: AssembleInput): AssembleResult {
     },
     prompts,
   };
+
+  if (!inline) {
+    result.projectRoot = path.resolve(input.projectPath);
+  }
+
+  return result;
 }
 
 // lint composes assemble — the two-layer architecture is enforced structurally
 export async function lint(input: LintInput): Promise<LintResult> {
   const manifest = loadManifest(input.projectPath, input.configPath);
   const docs = loadDocuments(manifest, input.projectPath);
-  const assembled = assemble(input);
+  // lint always needs inlined content for the evaluation engine
+  const assembled = assemble({ ...input, inline: true });
   // noop when no progress callback provided
   // eslint-disable-next-line @typescript-eslint/no-empty-function -- intentional no-op fallback
   const progress = input.onProgress ?? ((_msg: string) => {});

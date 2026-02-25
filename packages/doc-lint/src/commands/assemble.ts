@@ -45,6 +45,7 @@ export async function assembleCommand(
     tierFilter,
     autoDetect: options.autoDetect,
     warnOnMismatch: options.warnOnMismatch,
+    inline: options.inline,
   });
 
   if (options.outputDir) {

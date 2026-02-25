@@ -96,4 +96,62 @@ describe("buildDetectPrompt", () => {
     const lastIdx = result.prompt.user.indexOf(`**${signalNames[signalNames.length - 1]}**`);
     expect(firstIdx).toBeLessThan(lastIdx);
   });
+
+  describe("inline=false (reference mode)", () => {
+    it("uses path references instead of inlining content", () => {
+      const result = buildDetectPrompt("Test", makeDocs(), { inline: false, projectRoot: "/my/project" });
+
+      // should NOT contain document content
+      expect(result.prompt.user).not.toContain("Payment processing system.");
+      expect(result.prompt.user).not.toContain("REST API endpoints.");
+
+      // should contain file path references
+      expect(result.prompt.user).toContain("Read the following files fully before analysis:");
+      expect(result.prompt.user).toContain("`docs/brd.md`");
+      expect(result.prompt.user).toContain("`docs/frd.md`");
+    });
+
+    it("sets projectRoot when inline=false", () => {
+      const result = buildDetectPrompt("Test", makeDocs(), { inline: false, projectRoot: "/my/project" });
+      expect(result.projectRoot).toBe("/my/project");
+    });
+
+    it("populates documentRefs when inline=false", () => {
+      const result = buildDetectPrompt("Test", makeDocs(), { inline: false, projectRoot: "/my/project" });
+
+      expect(result.documentRefs).toBeDefined();
+      expect(result.documentRefs).toHaveLength(2);
+      expect(result.documentRefs).toEqual([
+        { role: "brd", label: "BRD", path: "docs/brd.md" },
+        { role: "frd", label: "FRD", path: "docs/frd.md" },
+      ]);
+    });
+
+    it("omits projectRoot and documentRefs in default inline mode", () => {
+      const result = buildDetectPrompt("Test", makeDocs());
+
+      expect(result.projectRoot).toBeUndefined();
+      expect(result.documentRefs).toBeUndefined();
+    });
+
+    it("treats missing options as inline=true", () => {
+      const result = buildDetectPrompt("Test", makeDocs());
+
+      expect(result.prompt.user).toContain("Payment processing system.");
+      expect(result.prompt.user).not.toContain("Read the following files fully before analysis:");
+    });
+
+    it("defaults projectRoot to cwd when not provided in reference mode", () => {
+      const result = buildDetectPrompt("Test", makeDocs(), { inline: false });
+      expect(result.projectRoot).toBe(process.cwd());
+    });
+
+    it("documents array is always populated regardless of inline mode", () => {
+      const inlineResult = buildDetectPrompt("Test", makeDocs());
+      const refResult = buildDetectPrompt("Test", makeDocs(), { inline: false });
+
+      expect(inlineResult.documents).toEqual(["docs/brd.md", "docs/frd.md"]);
+      expect(refResult.documents).toEqual(["docs/brd.md", "docs/frd.md"]);
+    });
+  });
 });

@@ -44,6 +44,33 @@ doc-lint separates **assembly** (free, deterministic) from **evaluation** (optio
 
 The assemble layer is the core value. You can inspect exactly what will be sent to the LLM, pipe prompts into your own tooling, or use the `lint` layer for a fully automated flow. The `detect` command generates a standalone prompt that an LLM can use to identify which signals are present in your documentation — useful for bootstrapping or auditing the `signals.declared` list in your manifest.
 
+### Reference Mode (`--no-inline`)
+
+By default, `assemble` and `detect` embed the full content of each document into the generated prompts. This makes prompts self-contained but large. The `--no-inline` flag switches to **reference mode**, where prompts contain file paths instead of content:
+
+```bash
+# default: document content inlined into prompts
+doc-lint assemble . --tier 1 -f json
+
+# reference mode: prompts contain file paths, consumer reads them
+doc-lint assemble . --tier 1 -f json --no-inline
+```
+
+In reference mode, prompts instruct the evaluator to "read the following files fully before evaluation" and list each document by label, role, and path. The JSON output includes a `projectRoot` field (absolute path) and each prompt gains a `documents` array with structured references:
+
+```json
+{
+  "projectRoot": "/absolute/path/to/project",
+  "prompts": [{
+    "documents": [
+      { "role": "brd", "label": "BRD", "path": "docs/brd.md" }
+    ]
+  }]
+}
+```
+
+Use `--no-inline` when the consumer has filesystem access (agentic CLIs, IDEs with tool-use, CI pipelines) and you want smaller prompts or to avoid duplicating document content across multiple prompt files.
+
 ## Tier System
 
 Concerns are assigned to **tiers** that control evaluation scope. The `--tier` flag is required for `assemble` and `lint` commands:
@@ -232,6 +259,7 @@ Assembles evaluation prompts without making any API calls. `[path]` is the proje
 | `--concerns <ids>` | Only specific concerns (comma-separated) | all matched |
 | `--auto-detect` / `--no-auto-detect` | Auto-detect signals from document content | manifest value or `false` |
 | `--warn-on-mismatch` / `--no-warn-on-mismatch` | Warn when detected signals differ from declared | manifest value or `false` |
+| `--no-inline` | Reference documents by file path instead of inlining content | inline (content embedded) |
 
 One of `-f` or `-o` must be provided. If both are given, `-o` takes priority. When `--output-dir` is used, each assembled prompt is written as an individual Markdown file (e.g., `idempotency-boundaries.md`) with YAML front-matter metadata. These files are self-contained and ready to hand off to any external LLM.
 
@@ -244,6 +272,7 @@ Generates a self-contained signal detection prompt for LLM handoff. The prompt i
 | `-c, --config <file>` | Path to manifest file | Auto-detect `doc-lint.yaml` or `doc-lint.yml` |
 | `-f, --format <format>` | Output format: `human` or `json` (to stdout) | *required if `-o` not set* |
 | `-o, --output-dir <path>` | Write `signal-detection.md` to this directory | *required if `-f` not set* |
+| `--no-inline` | Reference documents by file path instead of inlining content | inline (content embedded) |
 
 One of `-f` or `-o` must be provided. If both are given, `-o` takes priority. The output includes the signal vocabulary (closed set), document content, and a JSON response schema with `signals` (id, confidence, rationale) and `unmappedConcepts` fields.
 
@@ -475,6 +504,7 @@ const assembled: AssembleResult = assemble({
   tierFilter: 2,                      // 1, 2, 3, or "all" (omit to include all tiers)
   autoDetect: true,                   // optional: merge detected signals with declared
   warnOnMismatch: true,               // optional: report signal drift
+  inline: false,                      // optional: false = file path references instead of content
 });
 
 console.log(assembled.version);          // "2.0"
@@ -539,6 +569,7 @@ import type {
 import type {
   DocLintManifest,
   DocumentRef,
+  DocumentReference,
   ConcernSchema,
   InteractionSchema,
   ConcernOrInteraction,

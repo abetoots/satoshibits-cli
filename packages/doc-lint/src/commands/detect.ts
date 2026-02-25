@@ -49,7 +49,10 @@ export async function detectCommand(
 
   const manifest = loadManifest(resolved, options.config);
   const docs = loadDocuments(manifest, resolved);
-  const result = buildDetectPrompt(manifest.project.name, docs.all);
+  const result = buildDetectPrompt(manifest.project.name, docs.all, {
+    inline: options.inline,
+    projectRoot: resolved,
+  });
 
   if (options.outputDir) {
     const outputPath = path.resolve(options.outputDir);

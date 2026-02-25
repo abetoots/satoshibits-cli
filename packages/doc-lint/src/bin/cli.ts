@@ -31,6 +31,7 @@ program
   .option("--warn-on-mismatch", "Warn when detected signals differ from declared")
   .option("--no-warn-on-mismatch", "Disable mismatch warnings")
   .option("-o, --output-dir <path>", "Write each prompt as a standalone .md file to this directory")
+  .option("--no-inline", "Reference documents by file path instead of inlining content")
   .action(async (projectPath: string | undefined, options: AssembleOptions) => {
     const { assembleCommand } = await import("../commands/assemble.js");
     const exitCode = await assembleCommand(projectPath, options);
@@ -67,6 +68,7 @@ program
   .option("-c, --config <file>", "Path to doc-lint.yaml")
   .option("-f, --format <format>", "Output format (human|json)")
   .option("-o, --output-dir <path>", "Write signal-detection.md to this directory")
+  .option("--no-inline", "Reference documents by file path instead of inlining content")
   .action(async (projectPath: string | undefined, options: DetectOptions) => {
     const { detectCommand } = await import("../commands/detect.js");
     const exitCode = await detectCommand(projectPath, options);
