@@ -10,7 +10,7 @@
     "pre-commit": "turbo pre-commit",
     "test": "turbo test",
     "test:e2e": "turbo test:e2e",
-    "ci:publish": "node scripts/check-new-packages.js && turbo run build && pnpm publish -r"
+    "ci:publish": "node scripts/check-new-packages.js && turbo run build && pnpm publish -r --access public"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.9",
