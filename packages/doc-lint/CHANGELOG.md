@@ -1,5 +1,11 @@
 # @satoshibits/doc-lint
 
+## 1.1.0
+
+### Minor Changes
+
+- 2b28891: adds new operational, security, and core concerns
+
 ## 1.0.1
 
 ### Patch Changes
