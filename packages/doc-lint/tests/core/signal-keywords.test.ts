@@ -29,10 +29,10 @@ function writeDoc(name: string, content: string): string {
 }
 
 describe("SIGNAL_KEYWORDS", () => {
-  it("has entries for all 89 known signals", () => {
-    // the concern YAML files use 84 core signals + 5 new taxonomy signals
+  it("has entries for all 93 known signals", () => {
+    // 89 original signals + 4 new (ai-provider, cost-management, multi-region, schema-evolution)
     const signalCount = Object.keys(SIGNAL_KEYWORDS).length;
-    expect(signalCount).toBe(89);
+    expect(signalCount).toBe(93);
   });
 
   it("every signal has at least 3 keywords", () => {
@@ -611,7 +611,7 @@ describe("preprocessContent", () => {
 describe("getAllSignalNames", () => {
   it("returns sorted list of all signal names", () => {
     const names = getAllSignalNames();
-    expect(names.length).toBe(89);
+    expect(names.length).toBe(93);
     // verify sorted
     const sorted = [...names].sort();
     expect(names).toEqual(sorted);

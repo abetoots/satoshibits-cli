@@ -12,16 +12,16 @@ describe("concerns", () => {
   it("loads all bundled concerns", () => {
     const concerns = loadAllConcerns();
 
-    // 7 core + 3 interactions + 3 promise-validation + 4 security
-    // + 4 operational + 4 compliance + 3 test-coverage = 28 total
-    expect(concerns.length).toBe(28);
+    // 10 core + 3 interactions + 3 promise-validation + 5 security
+    // + 9 operational + 4 compliance + 3 test-coverage = 37 total
+    expect(concerns.length).toBe(37);
 
     const coreCount = concerns.filter((c) => c.type === "concern").length;
     const interactionCount = concerns.filter((c) => c.type === "interaction").length;
 
-    // core(7) + promise-validation(3) + security(4) + operational(4)
-    // + compliance(4) + test-coverage(3) = 25 concerns
-    expect(coreCount).toBe(25);
+    // core(10) + promise-validation(3) + security(5) + operational(9)
+    // + compliance(4) + test-coverage(3) = 34 concerns
+    expect(coreCount).toBe(34);
     expect(interactionCount).toBe(3);
   });
 

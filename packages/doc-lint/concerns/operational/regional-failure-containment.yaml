@@ -1,0 +1,231 @@
+# =============================================================================
+# CONCERN: Regional Failure Containment
+# =============================================================================
+# This concern validates that multi-region claims document failover trigger,
+# data consistency mode, and failback procedure. Multi-region architectures
+# without explicit failover contracts provide false confidence - the system
+# appears highly available but may fail to actually failover when needed.
+#
+# WHY THIS MATTERS:
+# Multi-region deployments are expensive and complex. When a team claims
+# "active-active" or "multi-region failover" without documenting how failover
+# is triggered, what data consistency is maintained during failover, and how
+# to fail back, they're describing aspirational architecture rather than
+# operational reality. Untested, undocumented failover is worse than no
+# failover - it creates false confidence that delays incident response.
+# =============================================================================
+
+concern:
+  id: "regional-failure-containment"
+  version: "1.0"
+  name: "Regional Failure Containment"
+  category: "operational"
+  severity: "error"
+
+  description: |
+    Every multi-region claim must document:
+    1. Failover trigger (what conditions cause failover, manual vs. automatic)
+    2. Data consistency mode during failover (sync, async, eventual)
+    3. Failback procedure (how to return to normal after recovery)
+    4. Regional isolation boundaries (blast radius of a regional failure)
+
+# -----------------------------------------------------------------------------
+# TRIGGERS: When to load this concern
+# -----------------------------------------------------------------------------
+triggers:
+  any_of:
+    - multi-region
+    - availability
+    - distributed
+
+  escalate_if:
+    - payments
+
+# -----------------------------------------------------------------------------
+# EVALUATION: The reasoning task
+# -----------------------------------------------------------------------------
+evaluation:
+  question: |
+    Systematically identify every multi-region claim in the documented system,
+    then evaluate whether each documents failover triggers, data consistency,
+    and failback procedures.
+
+    STEP 1: IDENTIFY MULTI-REGION CLAIMS
+    Scan all documents for multi-region architecture:
+    - Active-active deployments
+    - Active-passive (primary/secondary) regions
+    - Cross-region failover configurations
+    - Geo-replicated databases or caches
+    - Regional load balancing (Route 53, Cloud DNS, Traffic Manager)
+    - Look for: multi-region, active-active, active-passive, failover,
+      cross-region, geo-replication, regional
+
+    STEP 2: FOR EACH CLAIM, CHECK FAILOVER TRIGGER
+    a) What conditions trigger failover?
+       - Health check failures (how many, how long?)
+       - Manual decision (who decides, what's the process?)
+       - Automated failover (what system detects and triggers?)
+    b) What is the expected failover time (RTO)?
+    c) Is there a documented decision tree for partial vs. full failover?
+
+    STEP 3: FOR EACH CLAIM, CHECK DATA CONSISTENCY
+    a) What replication mode is used?
+       - Synchronous (strong consistency, higher latency)
+       - Asynchronous (eventual consistency, potential data loss)
+    b) What is the replication lag under normal conditions?
+    c) What is the maximum acceptable data loss (RPO)?
+    d) How are conflicts resolved in active-active setups?
+
+    STEP 4: FOR EACH CLAIM, CHECK FAILBACK PROCEDURE
+    a) How does the system return to normal after the failed region recovers?
+    b) Is failback automatic or manual?
+    c) How is data reconciled between regions after failback?
+    d) Is there a verification step before failback completes?
+
+    STEP 5: FLAG GAPS
+    Any multi-region claim without documented failover triggers, data
+    consistency mode, or failback procedure is a gap.
+
+  checklist:
+    - id: "region-inventory"
+      question: "Are all multi-region deployments identified with their topology (active-active, active-passive)?"
+    - id: "failover-trigger"
+      question: "Is the failover trigger (conditions, mechanism, decision process) documented?"
+    - id: "data-consistency"
+      question: "Is the data consistency mode during failover documented (RPO, replication lag)?"
+    - id: "failback-procedure"
+      question: "Is the failback procedure documented for returning to normal operations?"
+    - id: "regional-isolation"
+      question: "Are regional isolation boundaries documented (what fails when a region fails)?"
+
+  evidence_required:
+    - field: "deployment_name"
+      type: "string"
+      description: "Name of the multi-region deployment (e.g., 'OrderService active-active US-East/US-West', 'Primary DB active-passive EU/US')"
+      required: true
+
+    - field: "failover_trigger_documented"
+      type: "boolean"
+      description: "Whether failover trigger conditions are documented"
+      required: true
+
+    - field: "data_consistency_documented"
+      type: "boolean"
+      description: "Whether data consistency mode during failover is documented"
+      required: true
+
+    - field: "failback_documented"
+      type: "boolean"
+      description: "Whether the failback procedure is documented"
+      required: true
+
+    - field: "source_location"
+      type: "string"
+      description: "Where this multi-region claim is documented (e.g., 'ADD Section 6.2 - High Availability')"
+      required: true
+
+    - field: "confidence"
+      type: "enum"
+      values: ["high", "medium", "low"]
+      description: "Your confidence that this assessment is accurate"
+      required: true
+
+  failure_condition: |
+    Report as ERROR when ANY of the following are true:
+
+    1. failover_trigger_documented is FALSE - the team cannot reliably
+       trigger failover when needed
+
+    2. data_consistency_documented is FALSE for a system handling
+       financial transactions - data loss during failover could cause
+       monetary discrepancies
+
+    3. All three documented fields are FALSE - the multi-region claim
+       is completely undocumented operationally
+
+    Report as WARNING when:
+
+    1. failback_documented is FALSE - the team may be unable to return
+       to normal operations after recovery
+
+    2. data_consistency_documented is FALSE - teams cannot reason about
+       potential data loss during failover
+
+    3. Failover is documented as "manual" without a documented runbook
+       or decision tree
+
+    4. Active-active is claimed but conflict resolution is not documented
+
+  recommendation_template: |
+    ## Gap: {deployment_name} - Missing Regional Failover Documentation
+
+    **Location:** {source_location}
+
+    ### Required Documentation
+
+    1. **Failover Trigger**
+       - What conditions trigger failover?
+       - Example: "Route 53 health checks: 3 consecutive failures (30s
+         interval) trigger automatic DNS failover to US-West. Manual
+         override available via runbook in PagerDuty."
+
+    2. **Data Consistency**
+       - What is the replication mode and acceptable data loss?
+       - Example: "Async replication with ~2s lag. RPO: 5 seconds.
+         During failover, transactions in the replication lag window
+         may be lost. Reconciliation job runs on failback."
+
+    3. **Failback Procedure**
+       - How to return to normal after recovery?
+       - Example: "Manual failback after region recovery: 1) Verify
+         replication caught up, 2) Run reconciliation job, 3) Gradually
+         shift traffic back over 30 minutes, 4) Verify metrics."
+
+# -----------------------------------------------------------------------------
+# EXAMPLES
+# -----------------------------------------------------------------------------
+examples:
+  well_documented:
+    - source: "ADD Section 6.2 - High Availability"
+      text: |
+        "OrderService runs active-passive across US-East (primary) and
+        US-West (secondary). Failover trigger: Route 53 health checks,
+        3 failures triggers automatic DNS switch (RTO: ~60s). Database:
+        async replication, ~2s lag, RPO: 5s. Failback: manual after
+        replication sync verified, traffic shifted gradually over 30min."
+      assessment: |
+        deployment_name: "OrderService active-passive US-East/US-West"
+        failover_trigger_documented: true
+        data_consistency_documented: true
+        failback_documented: true
+        confidence: "high"
+
+  poorly_documented:
+    - source: "ADD Section 3.1"
+      text: |
+        "The system is deployed across multiple regions for high
+        availability and disaster recovery."
+      assessment: |
+        deployment_name: "System multi-region deployment (unspecified)"
+        failover_trigger_documented: false
+        data_consistency_documented: false
+        failback_documented: false
+        confidence: "high"
+        gap: "Multi-region claimed but no failover trigger, data consistency
+              mode, or failback procedure documented. Cannot determine if
+              failover actually works or what data loss to expect."
+
+# -----------------------------------------------------------------------------
+# METADATA
+# -----------------------------------------------------------------------------
+metadata:
+  created: "2026-02"
+  last_updated: "2026-02"
+  tier: 2
+  author: "Multi-Expert Consensus (Claude, Gemini, Codex)"
+  related_concerns:
+    - "failure-mode-coverage"
+    - "sla-architecture-alignment"
+  references:
+    - "AWS Multi-Region Architecture: https://aws.amazon.com/solutions/implementations/multi-region-application-architecture/"
+    - "Azure Traffic Manager: https://learn.microsoft.com/en-us/azure/traffic-manager/"

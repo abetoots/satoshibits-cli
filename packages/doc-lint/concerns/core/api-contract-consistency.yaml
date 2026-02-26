@@ -122,6 +122,8 @@ evaluation:
       question: "If ADD claims idempotency, does the API spec define the idempotency mechanism?"
     - id: "response-contracts"
       question: "Do response schemas in API spec match what FRD promises to clients?"
+    - id: "collection-boundedness"
+      question: "For each collection/list endpoint, is there a documented bounded retrieval contract (pagination mode, max page size, stable ordering)?"
 
   evidence_required:
     - field: "claim_source"

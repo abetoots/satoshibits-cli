@@ -1,0 +1,256 @@
+# =============================================================================
+# CONCERN: LLM Safety Envelope
+# =============================================================================
+# This concern validates that each LLM integration documents prompt-injection
+# defenses, output validation, deterministic/fallback strategy, and token/cost
+# limits. LLM integrations without safety envelopes are vulnerable to prompt
+# injection, generate unvalidated outputs, and can incur unbounded API costs.
+#
+# WHY THIS MATTERS:
+# LLM integrations are fundamentally different from traditional API calls.
+# Inputs (prompts) can be manipulated by adversarial users to override system
+# instructions (prompt injection). Outputs are non-deterministic and can
+# contain hallucinated data, harmful content, or leaked system prompts.
+# Token usage directly drives cost, and without limits, a single user session
+# can generate hundreds of dollars in API charges.
+# =============================================================================
+
+concern:
+  id: "llm-safety-envelope"
+  version: "1.0"
+  name: "LLM Safety Envelope"
+  category: "security"
+  severity: "error"
+
+  description: |
+    Each LLM integration must document:
+    1. Prompt-injection defenses (how adversarial input is mitigated)
+    2. Output validation (how LLM responses are validated before use)
+    3. Deterministic/fallback strategy (what happens when LLM fails or is unavailable)
+    4. Token and cost limits (per-request and per-user/session bounds)
+
+# -----------------------------------------------------------------------------
+# TRIGGERS: When to load this concern
+# -----------------------------------------------------------------------------
+triggers:
+  any_of:
+    - ai-provider
+
+  escalate_if:
+    - payments
+    - pii
+
+# -----------------------------------------------------------------------------
+# EVALUATION: The reasoning task
+# -----------------------------------------------------------------------------
+evaluation:
+  question: |
+    Systematically identify every LLM integration in the documented system,
+    then evaluate whether each has a documented safety envelope.
+
+    STEP 1: IDENTIFY LLM INTEGRATIONS
+    Scan all documents for LLM/AI model usage:
+    - Direct API calls to model providers (OpenAI, Anthropic, Google, etc.)
+    - AI gateway/proxy services (LiteLLM, Portkey, Helicone)
+    - Embedded model usage (local inference, fine-tuned models)
+    - RAG (Retrieval-Augmented Generation) pipelines
+    - Agent frameworks (LangChain, LlamaIndex, CrewAI)
+    - Look for: LLM, model, prompt, completion, token, embedding, AI
+
+    STEP 2: FOR EACH INTEGRATION, CHECK PROMPT-INJECTION DEFENSES
+    a) How is user input separated from system instructions?
+       - System/user message separation?
+       - Input sanitization or filtering?
+       - Instruction hierarchy enforcement?
+    b) Are there documented attack scenarios and mitigations?
+    c) Is there monitoring for prompt injection attempts?
+
+    STEP 3: FOR EACH INTEGRATION, CHECK OUTPUT VALIDATION
+    a) How are LLM responses validated before use?
+       - Schema validation (structured output)?
+       - Content filtering (harmful/inappropriate content)?
+       - Hallucination detection (fact-checking against ground truth)?
+    b) What happens when validation fails?
+    c) Are outputs sanitized before display to users?
+
+    STEP 4: FOR EACH INTEGRATION, CHECK FALLBACK STRATEGY
+    a) What happens when the LLM is unavailable or returns errors?
+       - Fallback to simpler model?
+       - Fallback to deterministic logic?
+       - Graceful degradation with cached responses?
+    b) What is the timeout for LLM API calls?
+    c) How are rate limits from the provider handled?
+
+    STEP 5: FOR EACH INTEGRATION, CHECK TOKEN/COST LIMITS
+    a) Per-request token limits (max input + output tokens)?
+    b) Per-user/session rate limits?
+    c) Global cost caps (daily/monthly budget)?
+    d) How are limits enforced? (client-side, gateway, provider-side)
+
+    STEP 6: FLAG GAPS
+    Any LLM integration without documented defenses, validation, fallback,
+    or cost limits is a gap.
+
+  checklist:
+    - id: "integration-inventory"
+      question: "Are all LLM integrations identified with their provider and purpose?"
+    - id: "prompt-injection-defense"
+      question: "Does each integration document prompt-injection defenses?"
+    - id: "output-validation"
+      question: "Does each integration document output validation before use?"
+    - id: "fallback-strategy"
+      question: "Does each integration document fallback behavior when the LLM is unavailable?"
+    - id: "token-cost-limits"
+      question: "Does each integration document token and cost limits?"
+
+  evidence_required:
+    - field: "integration_name"
+      type: "string"
+      description: "Name of the LLM integration (e.g., 'GPT-4 product description generator', 'Claude customer support agent', 'RAG pipeline for knowledge base search')"
+      required: true
+
+    - field: "prompt_injection_defense_documented"
+      type: "boolean"
+      description: "Whether prompt-injection defenses are documented"
+      required: true
+
+    - field: "output_validation_documented"
+      type: "boolean"
+      description: "Whether output validation is documented"
+      required: true
+
+    - field: "fallback_strategy_documented"
+      type: "boolean"
+      description: "Whether fallback/degradation strategy is documented"
+      required: true
+
+    - field: "token_cost_limits_documented"
+      type: "boolean"
+      description: "Whether token and cost limits are documented"
+      required: true
+
+    - field: "source_location"
+      type: "string"
+      description: "Where this integration is documented (e.g., 'ADD Section 4.5 - AI Architecture')"
+      required: true
+
+    - field: "confidence"
+      type: "enum"
+      values: ["high", "medium", "low"]
+      description: "Your confidence that this assessment is accurate"
+      required: true
+
+  failure_condition: |
+    Report as ERROR when ANY of the following are true:
+
+    1. prompt_injection_defense_documented is FALSE for any user-facing LLM
+       integration - adversarial users can override system instructions
+
+    2. output_validation_documented is FALSE and the LLM output is used in
+       business-critical decisions or displayed to users - hallucinated or
+       harmful content can reach end users
+
+    3. token_cost_limits_documented is FALSE - unbounded token usage can
+       generate unexpected costs
+
+    4. All four documented fields are FALSE - the integration has no
+       safety envelope at all
+
+    Report as WARNING when:
+
+    1. fallback_strategy_documented is FALSE - LLM unavailability causes
+       complete feature failure
+
+    2. prompt_injection_defense_documented is TRUE but relies solely on
+       "system prompt instructions" without structural defenses
+
+    3. token_cost_limits_documented is TRUE at request level but no
+       per-user/session limits exist
+
+  recommendation_template: |
+    ## Gap: {integration_name} - Missing LLM Safety Envelope
+
+    **Location:** {source_location}
+
+    ### Required Documentation
+
+    1. **Prompt-Injection Defenses**
+       - How is user input isolated from system instructions?
+       - Example: "User input is placed in a separate user message.
+         System prompt uses instruction hierarchy markers. Input is
+         scanned for known injection patterns before sending to model.
+         Monitoring alerts on anomalous prompt patterns."
+
+    2. **Output Validation**
+       - How are LLM responses validated?
+       - Example: "Structured output mode with JSON schema validation.
+         Content filtered for PII leakage and harmful content.
+         Hallucination check against product database for factual claims."
+
+    3. **Fallback Strategy**
+       - What happens when the LLM fails?
+       - Example: "On timeout (30s) or error, fall back to template-based
+         responses. If fallback fails, return generic message with option
+         to contact human support."
+
+    4. **Token/Cost Limits**
+       - What are the per-request and per-user bounds?
+       - Example: "Max 4096 input + 1024 output tokens per request.
+         Per-user: 100 requests/hour. Global: $500/day budget via
+         AI gateway. Over-limit requests return 429."
+
+# -----------------------------------------------------------------------------
+# EXAMPLES
+# -----------------------------------------------------------------------------
+examples:
+  well_documented:
+    - source: "ADD Section 4.5 - AI Architecture"
+      text: |
+        "Product description generator uses GPT-4 via AI gateway.
+        Prompt injection: user input placed in separate message, input
+        scanned for injection patterns, system prompt uses delimiters.
+        Output: JSON schema validation, content filter for inappropriate
+        content, product facts checked against catalog DB.
+        Fallback: on timeout (30s), return cached description or generic
+        template. Cost: max 2048 tokens/request, 50 req/user/hour,
+        $200/day budget via Helicone gateway."
+      assessment: |
+        integration_name: "GPT-4 product description generator"
+        prompt_injection_defense_documented: true
+        output_validation_documented: true
+        fallback_strategy_documented: true
+        token_cost_limits_documented: true
+        confidence: "high"
+
+  poorly_documented:
+    - source: "ADD Section 3.2"
+      text: |
+        "The customer support chatbot uses an LLM to answer user questions
+        based on our knowledge base."
+      assessment: |
+        integration_name: "Customer support chatbot (LLM)"
+        prompt_injection_defense_documented: false
+        output_validation_documented: false
+        fallback_strategy_documented: false
+        token_cost_limits_documented: false
+        confidence: "high"
+        gap: "No safety envelope documented. Users can potentially inject
+              prompts to override system behavior, outputs are not validated
+              for accuracy or harmful content, no fallback exists for LLM
+              outages, and token usage is unbounded."
+
+# -----------------------------------------------------------------------------
+# METADATA
+# -----------------------------------------------------------------------------
+metadata:
+  created: "2026-02"
+  last_updated: "2026-02"
+  tier: 2
+  author: "Multi-Expert Consensus (Claude, Gemini, Codex)"
+  related_concerns:
+    - "input-validation"
+    - "threat-model-coverage"
+    - "cost-budget-enforcement"
+  references:
+    - "OWASP Top 10 for LLM Applications: https://owasp.org/www-project-top-10-for-large-language-model-applications/"
+    - "NIST AI Risk Management Framework: https://www.nist.gov/artificial-intelligence/ai-risk-management-framework"

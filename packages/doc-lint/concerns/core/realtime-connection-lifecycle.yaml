@@ -1,0 +1,249 @@
+# =============================================================================
+# CONCERN: Realtime Connection Lifecycle
+# =============================================================================
+# This concern validates that persistent connections (WebSockets, SSE, gRPC
+# streams) document authentication at connect time, heartbeat/timeout behavior,
+# reconnection strategy, and backpressure handling.
+#
+# WHY THIS MATTERS:
+# Persistent connections are fundamentally different from request/response APIs.
+# They maintain state across the connection lifetime, consume server resources
+# continuously, and must handle network instability gracefully. Without
+# documented lifecycle management, persistent connections become resource leaks,
+# security gaps (unauthenticated connections), or sources of data loss (dropped
+# messages during reconnection).
+# =============================================================================
+
+concern:
+  id: "realtime-connection-lifecycle"
+  version: "1.0"
+  name: "Realtime Connection Lifecycle"
+  category: "core"
+  severity: "error"
+
+  description: |
+    Every persistent connection in the system must document:
+    1. Authentication at connect time (how connections are authorized)
+    2. Heartbeat and timeout behavior (how dead connections are detected)
+    3. Reconnection strategy (how clients recover from disconnection)
+    4. Backpressure handling (what happens when consumers fall behind)
+
+# -----------------------------------------------------------------------------
+# TRIGGERS: When to load this concern
+# -----------------------------------------------------------------------------
+triggers:
+  any_of:
+    - websocket
+
+# -----------------------------------------------------------------------------
+# EVALUATION: The reasoning task
+# -----------------------------------------------------------------------------
+evaluation:
+  question: |
+    Systematically identify every persistent connection in the documented
+    system, then evaluate whether each has a documented lifecycle contract.
+
+    STEP 1: IDENTIFY PERSISTENT CONNECTIONS
+    Scan all documents for persistent/long-lived connections:
+    - WebSocket connections (ws://, wss://)
+    - Server-Sent Events (SSE)
+    - gRPC streaming (bidirectional, server-side, client-side)
+    - MQTT connections
+    - Long-polling endpoints
+    - Any connection described as "persistent", "real-time", or "streaming"
+
+    STEP 2: FOR EACH CONNECTION, CHECK AUTH AT CONNECT
+    a) How is the connection authenticated?
+       - Token in query string or header during handshake?
+       - Cookie-based session?
+       - First-message authentication?
+    b) How is the connection authorized for specific channels/topics?
+    c) What happens when auth expires during an active connection?
+    d) Can an unauthenticated connection exist temporarily?
+
+    STEP 3: FOR EACH CONNECTION, CHECK HEARTBEAT/TIMEOUT
+    a) Is there a heartbeat mechanism?
+       - WebSocket ping/pong frames?
+       - Application-level heartbeat messages?
+    b) What is the timeout for detecting dead connections?
+    c) What happens when a heartbeat is missed?
+    d) How are zombie connections cleaned up?
+
+    STEP 4: FOR EACH CONNECTION, CHECK RECONNECTION
+    a) What triggers a reconnection attempt?
+    b) What is the reconnection strategy?
+       - Immediate retry?
+       - Exponential backoff?
+       - Backoff with jitter?
+    c) How is state restored after reconnection?
+       - Resume from last message ID?
+       - Full state resync?
+       - Client-side replay buffer?
+    d) What is the maximum reconnection window?
+
+    STEP 5: FOR EACH CONNECTION, CHECK BACKPRESSURE
+    a) What happens when the consumer falls behind?
+       - Messages buffered (how large is the buffer)?
+       - Messages dropped (which ones)?
+       - Connection terminated?
+    b) Is there a documented maximum message rate?
+
+    STEP 6: FLAG GAPS
+    Any persistent connection without documented auth, heartbeat, reconnection,
+    or backpressure handling is a gap.
+
+  checklist:
+    - id: "connection-inventory"
+      question: "Are all persistent connections identified with their protocol and purpose?"
+    - id: "auth-at-connect"
+      question: "Does each connection document authentication at connect time?"
+    - id: "heartbeat-timeout"
+      question: "Does each connection document heartbeat mechanism and timeout behavior?"
+    - id: "reconnection-strategy"
+      question: "Does each connection document client reconnection strategy and state recovery?"
+    - id: "backpressure-handling"
+      question: "Does each connection document backpressure behavior when consumers fall behind?"
+
+  evidence_required:
+    - field: "connection_type"
+      type: "string"
+      description: "Type and purpose of the connection (e.g., 'WebSocket: order status updates', 'SSE: dashboard metrics stream', 'gRPC stream: log tailing')"
+      required: true
+
+    - field: "auth_at_connect_documented"
+      type: "boolean"
+      description: "Whether authentication at connection time is documented"
+      required: true
+
+    - field: "heartbeat_documented"
+      type: "boolean"
+      description: "Whether heartbeat/timeout mechanism is documented"
+      required: true
+
+    - field: "reconnection_documented"
+      type: "boolean"
+      description: "Whether client reconnection strategy is documented"
+      required: true
+
+    - field: "backpressure_documented"
+      type: "boolean"
+      description: "Whether backpressure handling is documented"
+      required: true
+
+    - field: "source_location"
+      type: "string"
+      description: "Where this connection is documented (e.g., 'ADD Section 3.4 - Real-Time Architecture')"
+      required: true
+
+    - field: "confidence"
+      type: "enum"
+      values: ["high", "medium", "low"]
+      description: "Your confidence that this assessment is accurate"
+      required: true
+
+  failure_condition: |
+    Report as ERROR when ANY of the following are true:
+
+    1. auth_at_connect_documented is FALSE - unauthenticated persistent
+       connections are a security risk and resource exhaustion vector
+
+    2. heartbeat_documented is FALSE and reconnection_documented is FALSE -
+       dead connections cannot be detected and clients cannot recover
+
+    3. All four documented fields are FALSE - the connection has no
+       lifecycle management at all
+
+    Report as WARNING when:
+
+    1. heartbeat_documented is FALSE - dead connections leak server resources
+
+    2. reconnection_documented is FALSE - clients have no recovery path
+       after disconnection
+
+    3. backpressure_documented is FALSE - slow consumers may cause
+       unbounded memory growth or data loss
+
+  recommendation_template: |
+    ## Gap: {connection_type} - Missing Connection Lifecycle Documentation
+
+    **Location:** {source_location}
+
+    ### Required Documentation
+
+    1. **Authentication at Connect**
+       - How is the connection authenticated during handshake?
+       - Example: "JWT token passed as query parameter during WebSocket
+         upgrade. Token is validated before upgrade completes. If token
+         expires during connection, server sends auth_expired message
+         and closes connection with code 4001."
+
+    2. **Heartbeat/Timeout**
+       - How are dead connections detected?
+       - Example: "Server sends WebSocket ping every 30s. If no pong
+         received within 10s, connection is closed. Client-side: if no
+         message received for 45s, initiate reconnection."
+
+    3. **Reconnection Strategy**
+       - How does the client recover from disconnection?
+       - Example: "Exponential backoff starting at 1s, max 30s, with
+         jitter. On reconnect, client sends last_event_id to resume
+         from last received message. Server replays missed events from
+         event store (retention: 24h)."
+
+    4. **Backpressure**
+       - What happens when the consumer falls behind?
+       - Example: "Server buffers up to 1000 messages per connection.
+         If buffer exceeds 1000, oldest messages are dropped and a
+         gap_detected message is sent so client can request full sync."
+
+# -----------------------------------------------------------------------------
+# EXAMPLES
+# -----------------------------------------------------------------------------
+examples:
+  well_documented:
+    - source: "ADD Section 3.4 - WebSocket Architecture"
+      text: |
+        "Order status WebSocket: clients connect to wss://api/orders/stream
+        with JWT in Authorization header. Server validates token during
+        upgrade handshake. Ping/pong every 30s, timeout at 45s. On disconnect,
+        client reconnects with exponential backoff (1s-30s) and sends
+        last_event_id. Server replays missed events. Buffer: 500 messages
+        per connection; overflow drops oldest and sends resync signal."
+      assessment: |
+        connection_type: "WebSocket: order status updates"
+        auth_at_connect_documented: true
+        heartbeat_documented: true
+        reconnection_documented: true
+        backpressure_documented: true
+        confidence: "high"
+
+  poorly_documented:
+    - source: "ADD Section 2.3"
+      text: |
+        "The dashboard uses WebSockets for real-time updates."
+      assessment: |
+        connection_type: "WebSocket: dashboard real-time updates"
+        auth_at_connect_documented: false
+        heartbeat_documented: false
+        reconnection_documented: false
+        backpressure_documented: false
+        confidence: "high"
+        gap: "No lifecycle management documented. Unauthenticated connections
+              are a security risk. No heartbeat means dead connections leak
+              resources. No reconnection strategy means clients lose updates
+              on any network interruption."
+
+# -----------------------------------------------------------------------------
+# METADATA
+# -----------------------------------------------------------------------------
+metadata:
+  created: "2026-02"
+  last_updated: "2026-02"
+  tier: 2
+  author: "Multi-Expert Consensus (Claude, Gemini, Codex)"
+  related_concerns:
+    - "auth-boundary-consistency"
+    - "resilience-triad"
+  references:
+    - "RFC 6455: The WebSocket Protocol"
+    - "OWASP WebSocket Security: https://cheatsheetseries.owasp.org/cheatsheets/WebSocket_Security_Cheat_Sheet.html"

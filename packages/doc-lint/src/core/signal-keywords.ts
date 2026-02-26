@@ -12,6 +12,16 @@ export const SIGNAL_KEYWORDS: Record<string, string[]> = {
     "done criteria",
     "pass criteria",
   ],
+  "ai-provider": [
+    "llm",
+    "language model",
+    "model provider",
+    "ai gateway",
+    "prompt completion",
+    "token usage",
+    "model fallback",
+    "hallucination",
+  ],
   alerting: [
     "alerting",
     "alert rule",
@@ -83,6 +93,8 @@ export const SIGNAL_KEYWORDS: Record<string, string[]> = {
     "passkey",
     "webauthn",
     "totp",
+    "magic link",
+    "passwordless",
   ],
   authorization: [
     "authorization",
@@ -124,7 +136,7 @@ export const SIGNAL_KEYWORDS: Record<string, string[]> = {
     "batch export",
     "scheduled job",
   ],
-  caching: [ // no bundled concern yet
+  caching: [
     "cache",
     "caching",
     "cache invalidation",
@@ -162,7 +174,7 @@ export const SIGNAL_KEYWORDS: Record<string, string[]> = {
     "hipaa",
     "pci-dss",
   ],
-  containerization: [ // no bundled concern yet
+  containerization: [
     "docker",
     "container",
     "dockerfile",
@@ -170,6 +182,16 @@ export const SIGNAL_KEYWORDS: Record<string, string[]> = {
     "container registry",
     "oci",
     "containerd",
+  ],
+  "cost-management": [
+    "cost attribution",
+    "cost center",
+    "budget",
+    "spending limit",
+    "cost allocation",
+    "cost tracking",
+    "cost cap",
+    "billing budget",
   ],
   credentials: [
     "credential",
@@ -354,7 +376,7 @@ export const SIGNAL_KEYWORDS: Record<string, string[]> = {
     "throughput",
     "requests per second",
   ],
-  iac: [ // no bundled concern yet
+  iac: [
     "terraform",
     "pulumi",
     "cloudformation",
@@ -393,7 +415,7 @@ export const SIGNAL_KEYWORDS: Record<string, string[]> = {
     "jwt signing",
     "bearer token",
   ],
-  kubernetes: [ // no bundled concern yet
+  kubernetes: [
     "kubernetes",
     "k8s",
     "helm",
@@ -479,6 +501,15 @@ export const SIGNAL_KEYWORDS: Record<string, string[]> = {
     "cross-component",
     "component boundary",
     "system component",
+  ],
+  "multi-region": [
+    "multi-region",
+    "active-active",
+    "active-passive",
+    "cross-region failover",
+    "regional isolation",
+    "geo-replication",
+    "region failover",
   ],
   "multi-tenant": [
     "multi-tenant",
@@ -656,6 +687,16 @@ export const SIGNAL_KEYWORDS: Record<string, string[]> = {
     "scaling strategy",
     "capacity planning",
   ],
+  "schema-evolution": [
+    "schema evolution",
+    "backward compatible event",
+    "consumer-driven contract",
+    "versioned event",
+    "protobuf evolution",
+    "avro compatibility",
+    "schema registry",
+    "event versioning",
+  ],
   secrets: [
     "application secret",
     "secret management",
@@ -748,7 +789,7 @@ export const SIGNAL_KEYWORDS: Record<string, string[]> = {
     "webhook signature",
     "webhook verification",
   ],
-  websocket: [ // no bundled concern yet
+  websocket: [
     "websocket",
     "socket.io",
     "real-time connection",

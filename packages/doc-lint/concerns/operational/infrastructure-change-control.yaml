@@ -1,0 +1,219 @@
+# =============================================================================
+# CONCERN: Infrastructure Change Control
+# =============================================================================
+# This concern validates that production infrastructure components are mapped
+# to IaC source, have a documented promotion path, and include drift detection.
+# Infrastructure managed outside of code or without change tracking creates
+# snowflake environments that cannot be reproduced or audited.
+#
+# WHY THIS MATTERS:
+# Manual infrastructure changes are the leading cause of configuration drift,
+# environment inconsistency, and unauditable production modifications. When
+# infrastructure is not managed as code, there is no review process, no
+# rollback path, and no way to reproduce the environment. Drift between
+# IaC definitions and actual state means the code no longer describes reality.
+# =============================================================================
+
+concern:
+  id: "infrastructure-change-control"
+  version: "1.0"
+  name: "Infrastructure Change Control"
+  category: "operational"
+  severity: "warn"
+
+  description: |
+    Every production infrastructure component must document:
+    1. IaC source (Terraform, Pulumi, CloudFormation, etc.)
+    2. Promotion path (how changes move from dev to staging to production)
+    3. Drift detection (how divergence between code and reality is detected)
+
+# -----------------------------------------------------------------------------
+# TRIGGERS: When to load this concern
+# -----------------------------------------------------------------------------
+triggers:
+  any_of:
+    - iac
+
+# -----------------------------------------------------------------------------
+# EVALUATION: The reasoning task
+# -----------------------------------------------------------------------------
+evaluation:
+  question: |
+    Systematically identify every production infrastructure component in
+    the documented system, then evaluate whether each is mapped to IaC
+    source with a promotion path and drift detection.
+
+    STEP 1: IDENTIFY INFRASTRUCTURE COMPONENTS
+    Scan all documents for production infrastructure:
+    - Compute (VMs, containers, serverless functions, auto-scaling groups)
+    - Networking (VPCs, subnets, security groups, load balancers, DNS)
+    - Storage (databases, object storage, file systems, caches)
+    - Identity and access (IAM roles, service accounts, policies)
+    - Messaging (queues, topics, event buses)
+    - Monitoring (dashboards, alerts, log pipelines)
+    - CDN and edge (distributions, edge functions)
+
+    STEP 2: FOR EACH COMPONENT, CHECK IAC MAPPING
+    a) Is the component managed by IaC?
+       - Terraform, Pulumi, CloudFormation, Ansible, CDK
+    b) Where is the IaC source? (repo, directory, module)
+    c) Is the IaC source version-controlled?
+    d) Are there components managed manually (ClickOps)?
+
+    STEP 3: FOR EACH COMPONENT, CHECK PROMOTION PATH
+    a) How do infrastructure changes move through environments?
+       - dev → staging → production?
+       - Feature branch → PR review → merge → apply?
+    b) Is there a review/approval step before production changes?
+    c) Are there automated checks (plan output review, policy checks)?
+
+    STEP 4: FOR EACH COMPONENT, CHECK DRIFT DETECTION
+    a) How is drift detected?
+       - Scheduled terraform plan / pulumi preview?
+       - Cloud provider config auditing (AWS Config, GCP Asset Inventory)?
+       - Manual periodic review?
+    b) What happens when drift is detected?
+       - Alert? Auto-remediate? Manual investigation?
+    c) How frequently is drift checked?
+
+    STEP 5: FLAG GAPS
+    Any infrastructure component without IaC mapping, promotion path,
+    or drift detection is a gap.
+
+  checklist:
+    - id: "component-inventory"
+      question: "Are all production infrastructure components identified?"
+    - id: "iac-mapping"
+      question: "Is each component mapped to its IaC source (repo, module, file)?"
+    - id: "promotion-path"
+      question: "Is the promotion path from dev to production documented for infra changes?"
+    - id: "drift-detection"
+      question: "Is there a documented drift detection mechanism for each component?"
+
+  evidence_required:
+    - field: "component_name"
+      type: "string"
+      description: "Name of the infrastructure component (e.g., 'Production VPC', 'OrderService RDS instance', 'CloudFront distribution')"
+      required: true
+
+    - field: "iac_source_documented"
+      type: "boolean"
+      description: "Whether the component is mapped to an IaC source"
+      required: true
+
+    - field: "promotion_path_documented"
+      type: "boolean"
+      description: "Whether the promotion path for changes is documented"
+      required: true
+
+    - field: "drift_detection_documented"
+      type: "boolean"
+      description: "Whether drift detection is documented for this component"
+      required: true
+
+    - field: "source_location"
+      type: "string"
+      description: "Where this component is documented (e.g., 'ADD Section 7 - Infrastructure')"
+      required: true
+
+    - field: "confidence"
+      type: "enum"
+      values: ["high", "medium", "low"]
+      description: "Your confidence that this assessment is accurate"
+      required: true
+
+  failure_condition: |
+    Report as ERROR when ANY of the following are true:
+
+    1. iac_source_documented is FALSE for a security-sensitive component
+       (IAM roles, security groups, encryption keys) - these components
+       must be auditable and reproducible
+
+    Report as WARNING when:
+
+    1. iac_source_documented is FALSE - the component may be manually
+       managed and not reproducible
+
+    2. promotion_path_documented is FALSE - infrastructure changes may
+       bypass review and go directly to production
+
+    3. drift_detection_documented is FALSE - divergence between IaC
+       definitions and actual state goes unnoticed
+
+    4. Component is documented as "manually managed" or "ClickOps"
+       without a migration plan to IaC
+
+  recommendation_template: |
+    ## Gap: {component_name} - Missing Infrastructure Change Control
+
+    **Location:** {source_location}
+
+    ### Required Documentation
+
+    1. **IaC Source**
+       - What tool manages this component? (Terraform, Pulumi, CDK, etc.)
+       - Where is the source? (repo, directory, module)
+       - Example: "Managed by Terraform in infra/modules/vpc/main.tf.
+         State stored in S3 backend: s3://infra-state/prod/vpc.tfstate"
+
+    2. **Promotion Path**
+       - How do changes move to production?
+       - Example: "Branch → PR with plan output → Team review → Merge →
+         Atlantis auto-applies to staging → Manual approve for prod apply"
+
+    3. **Drift Detection**
+       - How is divergence detected?
+       - Example: "Scheduled terraform plan runs nightly via CI.
+         Drift alerts sent to #infra-alerts Slack channel.
+         AWS Config rules detect security group changes."
+
+# -----------------------------------------------------------------------------
+# EXAMPLES
+# -----------------------------------------------------------------------------
+examples:
+  well_documented:
+    - source: "ADD Section 7 - Infrastructure Management"
+      text: |
+        "All production infrastructure is managed via Terraform in the
+        infra/ repository. Changes follow: feature branch → PR with
+        terraform plan output → team review → merge → auto-apply to
+        staging → manual approval for production. Nightly terraform plan
+        detects drift; alerts posted to #infra-drift. AWS Config monitors
+        security group and IAM changes in real-time."
+      assessment: |
+        component_name: "Production infrastructure (all)"
+        iac_source_documented: true
+        promotion_path_documented: true
+        drift_detection_documented: true
+        confidence: "high"
+
+  poorly_documented:
+    - source: "ADD Section 5.3"
+      text: |
+        "The production database runs on RDS with Multi-AZ enabled.
+        Security groups restrict access to the application subnet."
+      assessment: |
+        component_name: "Production RDS instance + security groups"
+        iac_source_documented: false
+        promotion_path_documented: false
+        drift_detection_documented: false
+        confidence: "high"
+        gap: "No IaC source, promotion path, or drift detection documented.
+              Security groups may have been manually configured and could
+              drift without detection. RDS configuration changes cannot
+              be reviewed or rolled back."
+
+# -----------------------------------------------------------------------------
+# METADATA
+# -----------------------------------------------------------------------------
+metadata:
+  created: "2026-02"
+  last_updated: "2026-02"
+  tier: 3
+  author: "Multi-Expert Consensus (Claude, Gemini, Codex)"
+  related_concerns:
+    - "rollback-documentation"
+    - "dependency-runbook"
+  references:
+    - "Terraform: Drift Detection: https://developer.hashicorp.com/terraform/tutorials/state/resource-drift"
+    - "AWS Config: https://aws.amazon.com/config/"

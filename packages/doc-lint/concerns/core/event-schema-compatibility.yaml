@@ -1,0 +1,243 @@
+# =============================================================================
+# CONCERN: Event Schema Compatibility
+# =============================================================================
+# This concern validates that every versioned event or message contract defines
+# its compatibility rule, rollout order, and rollback-safe handling. Without
+# explicit schema evolution contracts, producers and consumers cannot evolve
+# independently, and deployments become tightly coupled across services.
+#
+# WHY THIS MATTERS:
+# In event-driven and message-based systems, the event schema IS the API
+# contract between services. When a producer changes an event schema without
+# a documented compatibility rule, consumers may break silently - deserializing
+# malformed data, ignoring new fields, or crashing on removed fields. Without
+# rollout order documentation, a consumer deployed before the producer may
+# receive events in the new format before it can handle them.
+# =============================================================================
+
+concern:
+  id: "event-schema-compatibility"
+  version: "1.0"
+  name: "Event Schema Compatibility"
+  category: "core"
+  severity: "error"
+
+  description: |
+    Every versioned event or message contract must document:
+    1. Compatibility rule (backward, forward, full, or none)
+    2. Rollout order (producer-first or consumer-first deployment)
+    3. Rollback-safe handling (can consumers handle both old and new schemas?)
+    4. Schema registry integration (if applicable)
+
+# -----------------------------------------------------------------------------
+# TRIGGERS: When to load this concern
+# -----------------------------------------------------------------------------
+triggers:
+  any_of:
+    - schema-evolution
+    - async-api
+    - event-driven
+    - message-queue
+
+# -----------------------------------------------------------------------------
+# EVALUATION: The reasoning task
+# -----------------------------------------------------------------------------
+evaluation:
+  question: |
+    Systematically identify every versioned event or message contract in
+    the documented system, then evaluate whether each defines compatibility
+    rules, rollout order, and rollback-safe handling.
+
+    STEP 1: IDENTIFY EVENT/MESSAGE CONTRACTS
+    Scan all documents for events, messages, and async contracts:
+    - Domain events (OrderCreated, PaymentProcessed, UserRegistered)
+    - Command messages (ProcessPayment, SendNotification)
+    - Integration events (between microservices)
+    - Queue messages (SQS, RabbitMQ, Kafka topics)
+    - AsyncAPI definitions
+    - Protobuf/Avro/JSON Schema definitions
+    - Look for: event, message, schema, contract, topic, queue, publish, subscribe
+
+    STEP 2: FOR EACH CONTRACT, CHECK COMPATIBILITY RULE
+    a) What compatibility mode is documented?
+       - Backward compatible (new schema can read old data)
+       - Forward compatible (old schema can read new data)
+       - Full compatible (both directions)
+       - None (breaking change)
+    b) What specific changes are being made?
+       - Adding fields (usually backward compatible)
+       - Removing fields (usually breaking)
+       - Renaming fields (usually breaking)
+       - Changing field types (depends on direction)
+    c) Is there a schema registry enforcing compatibility?
+
+    STEP 3: FOR EACH CONTRACT, CHECK ROLLOUT ORDER
+    a) Is the deployment order documented?
+       - Consumer-first (deploy consumers that handle both schemas, then producer)
+       - Producer-first (with backward-compatible change)
+       - Simultaneous (risky without compatibility guarantees)
+    b) What happens during the rollout window when both schemas exist?
+    c) Is there a documented cutover plan?
+
+    STEP 4: FOR EACH CONTRACT, CHECK ROLLBACK SAFETY
+    a) Can the change be rolled back without data loss?
+    b) Can consumers handle both old and new schemas simultaneously?
+    c) What happens to messages published in new format if producer rolls back?
+    d) Is there a dead-letter strategy for incompatible messages?
+
+    STEP 5: FLAG GAPS
+    Any event contract without a documented compatibility rule, rollout order,
+    or rollback strategy is a gap.
+
+  checklist:
+    - id: "contract-inventory"
+      question: "Are all versioned event/message contracts identified?"
+    - id: "compatibility-rule"
+      question: "Does each contract define its compatibility mode (backward, forward, full, none)?"
+    - id: "rollout-order"
+      question: "Is the deployment order (producer-first or consumer-first) documented?"
+    - id: "rollback-safety"
+      question: "Can the schema change be rolled back without data loss or consumer breakage?"
+    - id: "dead-letter-handling"
+      question: "Is there a strategy for messages that fail deserialization after schema changes?"
+
+  evidence_required:
+    - field: "contract_name"
+      type: "string"
+      description: "Name of the event/message contract (e.g., 'OrderCreated v2 event', 'PaymentProcessed Kafka message', 'UserRegistered Protobuf schema')"
+      required: true
+
+    - field: "compatibility_rule_documented"
+      type: "boolean"
+      description: "Whether the compatibility mode is explicitly documented"
+      required: true
+
+    - field: "compatibility_mode"
+      type: "string | null"
+      description: "The documented compatibility mode (e.g., 'backward compatible - new optional field added', 'breaking - field renamed')"
+      required: true
+
+    - field: "rollout_order_documented"
+      type: "boolean"
+      description: "Whether the deployment order is documented"
+      required: true
+
+    - field: "rollback_safe"
+      type: "boolean | null"
+      description: "Whether the change can be safely rolled back"
+      required: true
+
+    - field: "source_location"
+      type: "string"
+      description: "Where this contract is documented (e.g., 'AsyncAPI spec Section 3.2', 'ADD Section 5.1 - Event Architecture')"
+      required: true
+
+    - field: "confidence"
+      type: "enum"
+      values: ["high", "medium", "low"]
+      description: "Your confidence that this assessment is accurate"
+      required: true
+
+  failure_condition: |
+    Report as ERROR when ANY of the following are true:
+
+    1. compatibility_rule_documented is FALSE for any event contract that
+       has multiple consumers - consumers cannot safely evolve
+
+    2. rollout_order_documented is FALSE for a breaking schema change -
+       deployments may cause consumer failures
+
+    3. rollback_safe is FALSE with no documented mitigation strategy -
+       a failed deployment cannot be safely reversed
+
+    4. A schema change removes or renames fields without documenting
+       consumer impact
+
+    Report as WARNING when:
+
+    1. compatibility_rule_documented is FALSE for any event contract
+
+    2. rollout_order_documented is FALSE for any schema change
+
+    3. rollback_safe is TRUE but the mechanism is not documented
+
+    4. No schema registry is used and compatibility is enforced only
+       by convention or code review
+
+  recommendation_template: |
+    ## Gap: {contract_name} - Missing Schema Compatibility Documentation
+
+    **Location:** {source_location}
+
+    ### Required Documentation
+
+    1. **Compatibility Rule**
+       - What compatibility mode does this change follow?
+       - Example: "Backward compatible: adds optional 'priority' field
+         with default value 'normal'. Existing consumers ignore the
+         new field. Schema registry enforces backward compatibility."
+
+    2. **Rollout Order**
+       - In what order should services be deployed?
+       - Example: "Consumer-first: deploy OrderProcessor v2 (handles
+         both v1 and v2 events), then deploy OrderService v2 (produces
+         v2 events). Rollout window: max 1 hour between deployments."
+
+    3. **Rollback Safety**
+       - Can this change be safely rolled back?
+       - Example: "Yes - rolling back producer to v1 causes v2 events
+         to stop. Consumer v2 still handles v1 events correctly.
+         Any v2 events already published are processed by consumer v2."
+
+# -----------------------------------------------------------------------------
+# EXAMPLES
+# -----------------------------------------------------------------------------
+examples:
+  well_documented:
+    - source: "ADD Section 5.1 - Event Architecture"
+      text: |
+        "OrderCreated v2 adds optional 'priority' field (default: 'normal').
+        Compatibility: backward compatible (v1 consumers ignore new field).
+        Schema registry enforces backward compatibility on the orders topic.
+        Rollout: consumer-first - deploy handlers that accept both v1 and v2,
+        then deploy producer. Rollback: safe - reverting producer to v1 stops
+        v2 events; consumer v2 handles both formats."
+      assessment: |
+        contract_name: "OrderCreated v2 event"
+        compatibility_rule_documented: true
+        compatibility_mode: "backward compatible - optional field added with default"
+        rollout_order_documented: true
+        rollback_safe: true
+        confidence: "high"
+
+  poorly_documented:
+    - source: "ADD Section 4.3"
+      text: |
+        "The user service publishes UserUpdated events to Kafka. We're
+        changing the event format to include the new address fields."
+      assessment: |
+        contract_name: "UserUpdated event (schema change)"
+        compatibility_rule_documented: false
+        compatibility_mode: null
+        rollout_order_documented: false
+        rollback_safe: null
+        confidence: "high"
+        gap: "Schema change documented but no compatibility rule, rollout
+              order, or rollback strategy. Consumers may break if they
+              receive the new format before being updated."
+
+# -----------------------------------------------------------------------------
+# METADATA
+# -----------------------------------------------------------------------------
+metadata:
+  created: "2026-02"
+  last_updated: "2026-02"
+  tier: 2
+  author: "Multi-Expert Consensus (Claude, Gemini, Codex)"
+  related_concerns:
+    - "api-contract-consistency"
+    - "idempotency-boundaries"
+  references:
+    - "Confluent Schema Registry: https://docs.confluent.io/platform/current/schema-registry/"
+    - "AsyncAPI Specification: https://www.asyncapi.com/docs/reference/specification/latest"
+    - "Protobuf Language Guide - Updating A Message Type"

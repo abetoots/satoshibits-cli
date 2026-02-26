@@ -147,6 +147,8 @@ evaluation:
       question: "Do feature flags have documented kill switch procedures?"
     - id: "rollback-time-estimate"
       question: "Is there a time estimate for each rollback procedure?"
+    - id: "data-integrity-validation"
+      question: "For data/schema migrations, is there a documented post-migration data integrity validation step?"
 
   evidence_required:
     - field: "component_name"

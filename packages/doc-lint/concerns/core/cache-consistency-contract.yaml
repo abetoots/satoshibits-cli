@@ -1,0 +1,231 @@
+# =============================================================================
+# CONCERN: Cache Consistency Contract
+# =============================================================================
+# This concern validates that every caching layer documents its invalidation
+# mechanism, freshness SLO, and stale-read behavior. Caching without explicit
+# contracts leads to mysterious staleness bugs, inconsistent reads across
+# services, and incidents that are nearly impossible to reproduce.
+#
+# WHY THIS MATTERS:
+# Caching is one of the most powerful performance tools and one of the most
+# common sources of subtle production bugs. When a cache layer doesn't document
+# how it invalidates entries, how fresh data is guaranteed to be, or what
+# happens when stale data is served, every consumer of that cache operates on
+# assumptions. Those assumptions diverge across teams and break under load,
+# during deployments, or after infrastructure changes.
+# =============================================================================
+
+concern:
+  id: "cache-consistency-contract"
+  version: "1.0"
+  name: "Cache Consistency Contract"
+  category: "core"
+  severity: "error"
+
+  description: |
+    Every caching layer in the system must document:
+    1. The invalidation mechanism (TTL, event-driven, manual purge)
+    2. A freshness SLO (maximum acceptable staleness)
+    3. Stale-read behavior (what happens when stale data is served)
+    4. Cache key strategy (how cache entries are keyed and partitioned)
+
+# -----------------------------------------------------------------------------
+# TRIGGERS: When to load this concern
+# -----------------------------------------------------------------------------
+triggers:
+  any_of:
+    - caching
+
+# -----------------------------------------------------------------------------
+# EVALUATION: The reasoning task
+# -----------------------------------------------------------------------------
+evaluation:
+  question: |
+    Systematically identify every caching layer in the documented system,
+    then evaluate whether each layer has a documented consistency contract.
+
+    STEP 1: IDENTIFY CACHING LAYERS
+    Scan all documents for caching infrastructure and patterns:
+    - Application-level caches (in-memory, local cache)
+    - Distributed caches (Redis, Memcached, Hazelcast)
+    - CDN caching (CloudFront, Fastly, Cloudflare)
+    - Database query caches (MySQL query cache, materialized views)
+    - API response caches (HTTP cache headers, gateway caching)
+    - Browser/client-side caches (service worker, local storage)
+    - DNS caching
+
+    STEP 2: FOR EACH CACHE LAYER, CHECK DOCUMENTATION
+    a) Invalidation mechanism:
+       - TTL-based (time-to-live expiration)
+       - Event-driven (cache busted on write/update events)
+       - Manual purge (API call or deployment step)
+       - Write-through (cache updated on every write)
+       - Cache-aside (application manages cache population)
+       - Undefined/not documented
+    b) Freshness SLO:
+       - Maximum acceptable staleness (e.g., "data may be up to 60s stale")
+       - Consistency guarantee (e.g., "read-after-write within same session")
+       - No freshness guarantee documented
+    c) Stale-read behavior:
+       - Serve stale and refresh in background (stale-while-revalidate)
+       - Return error if stale beyond threshold
+       - Always serve stale as fallback
+       - Undefined behavior on stale reads
+
+    STEP 3: CHECK CACHE BOUNDARIES
+    - Are cache boundaries clear? (what data is cached vs. always fresh)
+    - Are there documented cache warming strategies for cold starts?
+    - How do deployments affect caches? (cache flush on deploy?)
+
+    STEP 4: FLAG GAPS
+    Any caching layer without a documented invalidation mechanism, freshness
+    SLO, or stale-read behavior is a gap that must be reported.
+
+  checklist:
+    - id: "cache-inventory"
+      question: "Are all caching layers identified with their scope and purpose?"
+    - id: "invalidation-mechanism"
+      question: "Does each cache layer document how entries are invalidated?"
+    - id: "freshness-slo"
+      question: "Is there a documented maximum acceptable staleness for each cache?"
+    - id: "stale-read-behavior"
+      question: "Is the behavior when stale data is encountered documented?"
+
+  evidence_required:
+    - field: "cache_layer_name"
+      type: "string"
+      description: "Name of the caching layer (e.g., 'Redis product catalog cache', 'CloudFront static assets CDN', 'In-memory session cache')"
+      required: true
+
+    - field: "invalidation_documented"
+      type: "boolean"
+      description: "Whether the cache invalidation mechanism is explicitly documented"
+      required: true
+
+    - field: "invalidation_mechanism"
+      type: "string | null"
+      description: "The documented invalidation strategy (e.g., 'TTL of 300s + event-driven purge on product update', 'Write-through on every database write')"
+      required: true
+
+    - field: "freshness_slo"
+      type: "string | null"
+      description: "The documented maximum acceptable staleness (e.g., '60 seconds', 'read-after-write consistent', 'best effort, no SLO')"
+      required: true
+
+    - field: "stale_read_behavior"
+      type: "string | null"
+      description: "What happens when stale data is served (e.g., 'Serve stale, refresh async', 'Return 504 if stale > 5min', 'Always serve stale as fallback')"
+      required: true
+
+    - field: "source_location"
+      type: "string"
+      description: "Where this cache is documented (e.g., 'ADD Section 4.3 - Caching Strategy')"
+      required: true
+
+    - field: "confidence"
+      type: "enum"
+      values: ["high", "medium", "low"]
+      description: "Your confidence that this assessment is accurate"
+      required: true
+
+  failure_condition: |
+    Report as ERROR when ANY of the following are true:
+
+    1. invalidation_documented is FALSE - a cache without a documented
+       invalidation mechanism will serve stale data indefinitely
+
+    2. freshness_slo is NULL and the cached data is used for business-critical
+       decisions (pricing, availability, permissions) - consumers cannot reason
+       about data correctness
+
+    3. stale_read_behavior is NULL for caches serving user-facing data -
+       users may see inconsistent or outdated information without knowing it
+
+    Report as WARNING when:
+
+    1. invalidation_documented is TRUE but freshness_slo is NULL - the cache
+       is invalidated but no guarantee is made about maximum staleness
+
+    2. stale_read_behavior is "serve stale" without a staleness threshold -
+       stale data could be served indefinitely
+
+    3. Cache invalidation relies solely on TTL without event-driven purge
+       for frequently-updated data
+
+  recommendation_template: |
+    ## Gap: {cache_layer_name} - Missing Cache Consistency Contract
+
+    **Location:** {source_location}
+
+    ### Required Documentation
+
+    Add a cache consistency contract covering:
+
+    1. **Invalidation Mechanism**
+       - How are cache entries invalidated?
+       - Example: "Product cache entries expire after 5 minutes (TTL).
+         On product update, a cache purge event is published to invalidate
+         the specific entry immediately."
+
+    2. **Freshness SLO**
+       - What is the maximum acceptable staleness?
+       - Example: "Product data may be up to 5 minutes stale under normal
+         conditions. During cache purge failures, data may be up to 15
+         minutes stale before the circuit breaker bypasses cache."
+
+    3. **Stale-Read Behavior**
+       - What happens when stale data is detected?
+       - Example: "Stale reads serve cached data and trigger async refresh.
+         If cache is unreachable, requests fall through to database with
+         a 500ms timeout."
+
+# -----------------------------------------------------------------------------
+# EXAMPLES
+# -----------------------------------------------------------------------------
+examples:
+  well_documented:
+    - source: "ADD Section 4.3 - Caching Strategy"
+      text: |
+        "Product catalog data is cached in Redis with a 5-minute TTL.
+        On product update events from the catalog service, the specific
+        cache key is invalidated immediately. Freshness SLO: data is at
+        most 5 minutes stale. If Redis is unreachable, requests fall
+        through to the database with a 500ms timeout. Stale reads during
+        Redis recovery serve the last known value."
+      assessment: |
+        cache_layer_name: "Redis product catalog cache"
+        invalidation_documented: true
+        invalidation_mechanism: "5-minute TTL + event-driven purge on product update"
+        freshness_slo: "5 minutes maximum staleness"
+        stale_read_behavior: "Serve last known value during Redis recovery, fall through to DB"
+        confidence: "high"
+
+  poorly_documented:
+    - source: "ADD Section 3.1"
+      text: |
+        "We use Redis to cache frequently accessed data for performance."
+      assessment: |
+        cache_layer_name: "Redis cache (unspecified scope)"
+        invalidation_documented: false
+        invalidation_mechanism: null
+        freshness_slo: null
+        stale_read_behavior: null
+        confidence: "high"
+        gap: "No invalidation mechanism, freshness SLO, or stale-read behavior
+              documented. Consumers of this cache cannot reason about data
+              correctness or plan for cache failures."
+
+# -----------------------------------------------------------------------------
+# METADATA
+# -----------------------------------------------------------------------------
+metadata:
+  created: "2026-02"
+  last_updated: "2026-02"
+  tier: 2
+  author: "Multi-Expert Consensus (Claude, Gemini, Codex)"
+  related_concerns:
+    - "state-ownership-clarity"
+    - "resilience-triad"
+  references:
+    - "HTTP Caching (RFC 9111): https://httpwg.org/specs/rfc9111.html"
+    - "Cache-Aside Pattern: https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside"
