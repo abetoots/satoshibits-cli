@@ -190,16 +190,16 @@ describe("tier filtering", () => {
     matched: LoadedConcern[],
     skipped: LoadedConcern[],
     tierFilter: number | "all" | undefined,
+    cumulative = false,
   ): { matched: LoadedConcern[]; skipped: LoadedConcern[] } {
     if (tierFilter === undefined || tierFilter === "all") {
       return { matched, skipped };
     }
-    const maxTier = tierFilter;
     const tierSkipped = matched.filter(
-      (c) => c.tier == null || c.tier > maxTier,
+      (c) => c.tier == null || (cumulative ? c.tier > tierFilter : c.tier !== tierFilter),
     );
     const tierMatched = matched.filter(
-      (c) => c.tier != null && c.tier <= maxTier,
+      (c) => c.tier != null && (cumulative ? c.tier <= tierFilter : c.tier === tierFilter),
     );
     return { matched: tierMatched, skipped: [...skipped, ...tierSkipped] };
   }
@@ -246,24 +246,20 @@ describe("tier filtering", () => {
     expect(result.skipped).toHaveLength(3);
   });
 
-  it("--tier 2 keeps tier 1 + 2 (cumulative)", () => {
+  it("--tier 2 keeps only tier 2 (exact match)", () => {
     const result = applyTierFilter(concerns, [], 2);
     expect(result.matched.map((c) => c.id)).toEqual([
-      "feasibility-check",
       "idempotency-boundaries",
     ]);
-    expect(result.skipped).toHaveLength(2);
+    expect(result.skipped).toHaveLength(3);
   });
 
-  it("--tier 3 keeps tier 1 + 2 + 3, excludes interactions", () => {
+  it("--tier 3 keeps only tier 3 (exact match)", () => {
     const result = applyTierFilter(concerns, [], 3);
     expect(result.matched.map((c) => c.id)).toEqual([
-      "feasibility-check",
-      "idempotency-boundaries",
       "horizontal-traceability",
     ]);
-    expect(result.skipped).toHaveLength(1);
-    expect(result.skipped[0]!.id).toBe("cache-ix");
+    expect(result.skipped).toHaveLength(3);
   });
 
   it("--tier all keeps everything including interactions", () => {
@@ -279,7 +275,6 @@ describe("tier filtering", () => {
     ];
     const result = applyTierFilter(withUntiered, [], 2);
     expect(result.matched.map((c) => c.id)).toEqual([
-      "feasibility-check",
       "idempotency-boundaries",
     ]);
     expect(result.skipped.map((c) => c.id)).toContain("untiered-concern");
@@ -299,6 +294,33 @@ describe("tier filtering", () => {
     const result = applyTierFilter(concerns, alreadySkipped, 1);
     expect(result.skipped).toHaveLength(4); // 3 tier-filtered + 1 already skipped
     expect(result.skipped.map((c) => c.id)).toContain("already-skipped");
+  });
+
+  it("cumulative --tier 2 keeps tier 1 + 2", () => {
+    const result = applyTierFilter(concerns, [], 2, true);
+    expect(result.matched.map((c) => c.id)).toEqual([
+      "feasibility-check",
+      "idempotency-boundaries",
+    ]);
+    expect(result.skipped).toHaveLength(2);
+  });
+
+  it("cumulative --tier 3 keeps tier 1 + 2 + 3, excludes interactions", () => {
+    const result = applyTierFilter(concerns, [], 3, true);
+    expect(result.matched.map((c) => c.id)).toEqual([
+      "feasibility-check",
+      "idempotency-boundaries",
+      "horizontal-traceability",
+    ]);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]!.id).toBe("cache-ix");
+  });
+
+  it("tier 1 exact === tier 1 cumulative (same result for lowest tier)", () => {
+    const exact = applyTierFilter(concerns, [], 1, false);
+    const cumulative = applyTierFilter(concerns, [], 1, true);
+    expect(exact.matched.map((c) => c.id)).toEqual(cumulative.matched.map((c) => c.id));
+    expect(exact.skipped.map((c) => c.id)).toEqual(cumulative.skipped.map((c) => c.id));
   });
 });
 

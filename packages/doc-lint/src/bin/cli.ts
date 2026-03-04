@@ -21,7 +21,8 @@ program
 program
   .command("assemble [path]")
   .description("Assemble evaluation prompts (no LLM call)")
-  .requiredOption("--tier <level>", "Tier scope: 1 (foundational), 2 (+ behavioral), 3 (+ structural), all (+ interactions)")
+  .requiredOption("--tier <level>", "Tier: 1 (foundational), 2 (behavioral), 3 (structural), all (everything)")
+  .option("--tier-cumulative", "Include all tiers up to the specified tier")
   .option("-c, --config <file>", "Path to doc-lint.yaml")
   .option("-f, --format <format>", "Output format (human|json)")
   .option("--no-contradiction", "Skip contradiction scanner")
@@ -41,7 +42,8 @@ program
 program
   .command("lint [path]")
   .description("Assemble + evaluate (requires engine)")
-  .requiredOption("--tier <level>", "Tier scope: 1 (foundational), 2 (+ behavioral), 3 (+ structural), all (+ interactions)")
+  .requiredOption("--tier <level>", "Tier: 1 (foundational), 2 (behavioral), 3 (structural), all (everything)")
+  .option("--tier-cumulative", "Include all tiers up to the specified tier")
   .option("--engine <engine>", "Evaluation engine (default: sdk)", "sdk")
   .option("-c, --config <file>", "Path to doc-lint.yaml")
   .option("-f, --format <format>", "Output format (human|json)", "human")

@@ -5,6 +5,7 @@ interface BaseCommandOptions {
 
 export interface AssembleOptions extends BaseCommandOptions {
   tier: string;
+  tierCumulative?: boolean;
   contradiction?: boolean;
   concerns?: string;
   autoDetect?: boolean;
@@ -25,6 +26,7 @@ export interface InitOptions {
 
 export interface LintOptions extends BaseCommandOptions {
   tier: string;
+  tierCumulative?: boolean;
   engine?: "sdk";
   contradiction?: boolean;
   concerns?: string;

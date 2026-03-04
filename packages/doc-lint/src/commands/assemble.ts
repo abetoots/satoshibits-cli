@@ -43,6 +43,7 @@ export async function assembleCommand(
     contradiction: options.contradiction,
     filterConcernIds,
     tierFilter,
+    tierCumulative: options.tierCumulative,
     autoDetect: options.autoDetect,
     warnOnMismatch: options.warnOnMismatch,
     inline: options.inline,

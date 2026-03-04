@@ -9,6 +9,31 @@ import type { AssembledPrompt, DocumentReference, LoadedConcern } from "../types
 
 const TEMPLATE_VERSION = "1.0";
 
+const TIER_CONTEXT: Record<number, { label: string; guidance: string }> = {
+  1: {
+    label: "Tier 1 — Foundational",
+    guidance:
+      "This is a foundational concern. Evaluate it in isolation — do not assume any higher-tier concerns (behavioral or structural) are established.",
+  },
+  2: {
+    label: "Tier 2 — Behavioral",
+    guidance:
+      "This is a behavioral concern. You may assume tier 1 (foundational) concerns are established. Do not assume structural (tier 3) concerns are in place.",
+  },
+  3: {
+    label: "Tier 3 — Structural",
+    guidance:
+      "This is a structural concern. You may assume tier 1 (foundational) and tier 2 (behavioral) concerns are established. Evaluate structural coherence across the documentation.",
+  },
+};
+
+function buildTierContext(tier: number | undefined): string {
+  if (tier == null) return "";
+  const ctx = TIER_CONTEXT[tier];
+  if (!ctx) return "";
+  return `[${ctx.label}] ${ctx.guidance} `;
+}
+
 function loadTemplate(name: string): string {
   const templatePath = path.join(getConcernsDir(), "templates", name);
   if (!fs.existsSync(templatePath)) {
@@ -160,9 +185,11 @@ function buildSystemMessage(concern: LoadedConcern): string {
   const schema = concern.schema;
 
   if (isConcernSchema(schema)) {
+    const tierContext = buildTierContext(concern.tier);
     return (
       `You are a documentation validator evaluating the concern: "${schema.concern.name}" ` +
       `(${schema.concern.id} v${schema.concern.version}). ` +
+      `${tierContext}` +
       `Severity level: ${schema.concern.severity}. ` +
       `${schema.concern.description.trim()} ` +
       "Produce structured JSON output following the evidence_required fields in the schema."

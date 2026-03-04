@@ -34,6 +34,7 @@ export async function lintCommand(
       contradiction: options.contradiction,
       filterConcernIds,
       tierFilter,
+      tierCumulative: options.tierCumulative,
       autoDetect: options.autoDetect,
       warnOnMismatch: options.warnOnMismatch,
     });
@@ -77,6 +78,7 @@ export async function lintCommand(
     contradiction: options.contradiction,
     filterConcernIds,
     tierFilter,
+    tierCumulative: options.tierCumulative,
     engine,
     verbose: options.verbose,
     onProgress,

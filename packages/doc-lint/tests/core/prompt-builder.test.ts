@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import { buildEvaluationPrompt, buildContradictionPrompt } from "../../src/core/prompt-builder.js";
 
 import type { LoadedDocument } from "../../src/core/documents.js";
+import type { LoadedConcern } from "../../src/types/index.js";
 import { loadAllConcerns } from "../../src/core/concerns.js";
 
 function makeDocs(): LoadedDocument[] {
@@ -156,6 +157,60 @@ describe("prompt-builder", () => {
 
       expect(inlinePrompt.metadata.documentsIncluded).toEqual(["docs/brd.md", "docs/frd.md", "docs/add.md"]);
       expect(refPrompt.metadata.documentsIncluded).toEqual(["docs/brd.md", "docs/frd.md", "docs/add.md"]);
+    });
+  });
+
+  describe("tier-aware system messages", () => {
+    const docs = makeDocs();
+
+    function findConcernByTier(tier: number): LoadedConcern {
+      const concerns = loadAllConcerns();
+      const match = concerns.find((c) => c.tier === tier && c.type === "concern");
+      if (!match) throw new Error(`No concern found with tier ${tier}`);
+      return match;
+    }
+
+    it("tier 1 concern includes tier 1 context in system message", () => {
+      const concern = findConcernByTier(1);
+      const prompt = buildEvaluationPrompt(concern, docs);
+      expect(prompt.system).toContain("Tier 1");
+      expect(prompt.system).toContain("Foundational");
+    });
+
+    it("tier 2 concern includes tier 2 context in system message", () => {
+      const concern = findConcernByTier(2);
+      const prompt = buildEvaluationPrompt(concern, docs);
+      expect(prompt.system).toContain("Tier 2");
+      expect(prompt.system).toContain("Behavioral");
+    });
+
+    it("tier 3 concern includes tier 3 context in system message", () => {
+      const concern = findConcernByTier(3);
+      const prompt = buildEvaluationPrompt(concern, docs);
+      expect(prompt.system).toContain("Tier 3");
+      expect(prompt.system).toContain("Structural");
+    });
+
+    it("interaction does NOT include tier context", () => {
+      const concerns = loadAllConcerns();
+      const interaction = concerns.find((c) => c.type === "interaction")!;
+      const prompt = buildEvaluationPrompt(interaction, docs);
+      expect(prompt.system).not.toContain("Tier 1");
+      expect(prompt.system).not.toContain("Tier 2");
+      expect(prompt.system).not.toContain("Tier 3");
+      expect(prompt.system).not.toContain("Foundational");
+      expect(prompt.system).not.toContain("Behavioral");
+      expect(prompt.system).not.toContain("Structural");
+    });
+
+    it("untiered concern does NOT include tier context", () => {
+      const concerns = loadAllConcerns();
+      const untiered = concerns.find((c) => c.type === "concern" && c.tier == null);
+      if (!untiered) return; // skip if all concerns have tiers
+      const prompt = buildEvaluationPrompt(untiered, docs);
+      expect(prompt.system).not.toContain("Tier 1");
+      expect(prompt.system).not.toContain("Tier 2");
+      expect(prompt.system).not.toContain("Tier 3");
     });
   });
 });

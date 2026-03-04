@@ -33,6 +33,7 @@ export interface AssembleInput {
   contradiction?: boolean;
   filterConcernIds?: string[];
   tierFilter?: number | "all";
+  tierCumulative?: boolean; // default: false (exact match). true = include all tiers up to tierFilter.
   autoDetect?: boolean; // CLI override for manifest.signals.auto_detect
   warnOnMismatch?: boolean; // CLI override for manifest.signals.warn_on_mismatch
   inline?: boolean; // default: true. Set to false for path references.
@@ -176,15 +177,15 @@ export function assemble(input: AssembleInput): AssembleResult {
     filterIds,
   );
 
-  // apply tier filter: cumulative (--tier 2 = tier <= 2), interactions only with "all"
+  // apply tier filter: exact by default (--tier 2 = tier === 2), cumulative with --tier-cumulative
   const tierFilter = input.tierFilter;
   if (tierFilter !== undefined && tierFilter !== "all") {
-    const maxTier = tierFilter;
+    const cumulative = input.tierCumulative === true;
     const tierSkipped = matched.filter(
-      (c) => c.tier == null || c.tier > maxTier,
+      (c) => c.tier == null || (cumulative ? c.tier > tierFilter : c.tier !== tierFilter),
     );
     matched = matched.filter(
-      (c) => c.tier != null && c.tier <= maxTier,
+      (c) => c.tier != null && (cumulative ? c.tier <= tierFilter : c.tier === tierFilter),
     );
     skipped = [...skipped, ...tierSkipped];
   }
