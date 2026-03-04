@@ -1,5 +1,11 @@
 # @satoshibits/doc-lint
 
+## 1.1.1
+
+### Patch Changes
+
+- 5c54529: adds cumulative tier filtering and tier-aware prompts
+
 ## 1.1.0
 
 ### Minor Changes
