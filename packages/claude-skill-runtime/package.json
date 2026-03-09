@@ -34,20 +34,20 @@
   "description": "Runtime library for Claude Code auto-loading skills - shared matching algorithms, config loading, and session state management",
   "dependencies": {
     "js-yaml": "^4.1.1",
-    "minimatch": "^10.2.2",
+    "minimatch": "^10.2.4",
     "proper-lockfile": "^4.1.2"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "@types/proper-lockfile": "^4.1.4",
-    "@eslint/compat": "^2.0.2",
+    "@eslint/compat": "^2.0.3",
     "@repo/typescript-config": "workspace:^",
     "@satoshibits/eslint-config": "workspace:^",
-    "@types/node": "^25.3.0",
-    "@typescript-eslint/utils": "^8.56.0",
+    "@types/node": "^25.3.5",
+    "@typescript-eslint/utils": "^8.56.1",
     "eslint": "^9.22.0",
     "jiti": "^2.4.2",
-    "lint-staged": "^16.2.7",
+    "lint-staged": "^16.3.2",
     "typescript": "^5.7.3",
     "vitest": "^4.0.18"
   },
