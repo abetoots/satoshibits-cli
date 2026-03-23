@@ -39,17 +39,17 @@
     "glob": "^13.0.6",
     "gray-matter": "^4.0.3",
     "handlebars": "^4.7.8",
-    "inquirer": "^13.3.0"
+    "inquirer": "^13.3.2"
   },
   "devDependencies": {
-    "@eslint/compat": "^2.0.2",
+    "@eslint/compat": "^2.0.3",
     "@repo/typescript-config": "workspace:^",
     "@satoshibits/eslint-config": "workspace:^",
-    "@types/node": "^25.3.0",
-    "@typescript-eslint/utils": "^8.56.0",
+    "@types/node": "^25.5.0",
+    "@typescript-eslint/utils": "^8.57.1",
     "eslint": "^9.39.2",
     "jiti": "^2.3.3",
-    "lint-staged": "^16.2.7",
+    "lint-staged": "^16.4.0",
     "typescript": "^5.3.3",
     "vitest": "^4.0.18"
   },
