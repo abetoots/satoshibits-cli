@@ -1,0 +1,87 @@
+# =============================================================================
+# CONCERN: Endpoint Parity (Documentation ↔ Code)
+# =============================================================================
+# Validates that the HTTP endpoints described in the documentation match the
+# routes actually implemented in the code map, in both directions.
+#
+# WHY THIS MATTERS:
+# Undocumented endpoints are an unreviewed attack surface and an integration
+# hazard for consumers. Documented-but-missing endpoints mislead clients into
+# calling routes that 404. Drift here is silent and accumulates fast once
+# implementation velocity outpaces the docs.
+#
+# CODE-AWARE: This concern is evaluated with a code map appended to the
+# documents (reconcile / code-first mode). The code map is a SAMPLED static
+# view — only statically declared routes are visible.
+# =============================================================================
+
+concern:
+  id: "endpoint-parity"
+  version: "1.0"
+  name: "Endpoint Parity (Docs ↔ Code)"
+  category: "core"
+  severity: "warn"
+
+  description: |
+    Every HTTP route implemented in the code should be described in the
+    documentation, and every endpoint described in the docs should exist in the
+    code. Compare only the routes that are STATICALLY DETECTABLE in the code map;
+    dynamically registered routes may not appear and must not be reported as
+    "missing from code".
+
+triggers:
+  any_of:
+    - rest-api
+    - public-api
+    - external-api
+    - webhooks
+
+evaluation:
+  question: |
+    Reconcile documented endpoints against the routes in the code map.
+
+    STEP 1: From the documents, list every endpoint the docs describe
+    (method + path).
+
+    STEP 2: From the "Routes" section of the code map, list every statically
+    detected route (method + path + file:line).
+
+    STEP 3: Compare the two sets:
+    - implemented-not-documented: a route in the code map with no matching doc.
+    - documented-not-implemented: a documented endpoint absent from the code map.
+    - value-mismatch: same endpoint, different method/path casing or shape.
+
+    IMPORTANT — scope and uncertainty:
+    - Only reason about STATICALLY DETECTED routes. If the code map's coverage
+      section indicates files were dropped or languages unsupported, a
+      "documented-not-implemented" gap may simply be unscanned code: lower its
+      confidence and set requires_human_review.
+    - Do not invent endpoints. Quote the doc text and the code map file:line.
+
+  evidence_required:
+    - field: "related_item"
+      type: "string"
+      description: "The endpoint in question (e.g., 'POST /payments/charge')."
+      required: true
+    - field: "direction"
+      type: "enum"
+      values: ["implemented-not-documented", "documented-not-implemented", "value-mismatch"]
+      required: true
+    - field: "doc_location"
+      type: "string | null"
+      description: "Where the docs mention it, if at all."
+      required: true
+    - field: "code_location"
+      type: "string | null"
+      description: "file:line from the code map, if present."
+      required: true
+    - field: "confidence"
+      type: "enum"
+      values: ["high", "medium", "low"]
+      required: true
+
+  failure_condition: |
+    Report as WARNING when a statically detected route has no corresponding
+    documentation, or a documented endpoint with high confidence is absent from
+    the scanned code. Report as NOTE (requires_human_review) when the relevant
+    code could not be fully scanned. Do not report when docs and code agree.

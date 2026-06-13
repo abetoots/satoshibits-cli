@@ -80,12 +80,14 @@ describe("human formatter", () => {
         },
       ],
       contradictions: [],
+      drifts: [],
       summary: {
         totalFindings: 2,
         errors: 1,
         warnings: 1,
         notes: 0,
         contradictions: 0,
+        drifts: 0,
         humanReviewRequired: 0,
       },
     };
@@ -140,12 +142,14 @@ describe("human formatter", () => {
       },
       findings: [],
       contradictions: [],
+      drifts: [],
       summary: {
         totalFindings: 0,
         errors: 0,
         warnings: 0,
         notes: 0,
         contradictions: 0,
+        drifts: 0,
         humanReviewRequired: 0,
       },
     };
@@ -163,12 +167,14 @@ describe("human formatter", () => {
       concerns: { matched: [], skipped: [], matchedDetails: [] },
       findings: [],
       contradictions: [],
+      drifts: [],
       summary: {
         totalFindings: 0,
         errors: 0,
         warnings: 0,
         notes: 0,
         contradictions: 0,
+        drifts: 0,
         humanReviewRequired: 0,
       },
     };
@@ -250,12 +256,14 @@ describe("human formatter", () => {
         },
       ],
       contradictions: [],
+      drifts: [],
       summary: {
         totalFindings: 2,
         errors: 1,
         warnings: 1,
         notes: 0,
         contradictions: 0,
+        drifts: 0,
         humanReviewRequired: 0,
       },
     };
@@ -308,12 +316,14 @@ describe("human formatter", () => {
         },
       ],
       contradictions: [],
+      drifts: [],
       summary: {
         totalFindings: 2,
         errors: 1,
         warnings: 1,
         notes: 0,
         contradictions: 0,
+        drifts: 0,
         humanReviewRequired: 0,
       },
     };

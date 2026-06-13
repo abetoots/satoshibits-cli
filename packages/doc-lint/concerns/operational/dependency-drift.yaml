@@ -1,0 +1,81 @@
+# =============================================================================
+# CONCERN: Dependency Drift (Documentation ↔ Code)
+# =============================================================================
+# Validates that the external dependencies and third-party services described
+# in the documentation match the dependencies actually present in the code map
+# (package manifests + imported SDK/client constructors).
+#
+# WHY THIS MATTERS:
+# An ADD that omits a vendor the code actually calls hides a real operational
+# and security dependency (data egress, vendor lock-in, an unmonitored failure
+# mode). Conversely, documenting a dependency the code no longer uses misleads
+# operators. These are hard facts (package.json), so confidence is high.
+#
+# CODE-AWARE: Evaluated with a code map appended to the documents.
+# =============================================================================
+
+concern:
+  id: "dependency-drift"
+  version: "1.0"
+  name: "Dependency Drift (Docs ↔ Code)"
+  category: "operational"
+  severity: "warn"
+
+  description: |
+    External/third-party dependencies present in the code map (declared
+    dependencies and instantiated SDK clients / external calls) should be
+    reflected in the documentation, and documented dependencies should still be
+    present in the code. Dependency facts come from package manifests and import
+    sites, so they are high-signal.
+
+triggers:
+  any_of:
+    - external-dependency
+    - third-party
+    - external-api
+    - payments
+    - message-queue
+
+evaluation:
+  question: |
+    Reconcile documented dependencies against the code map.
+
+    STEP 1: From the documents, list the external systems / vendors / libraries
+    the architecture says it depends on.
+
+    STEP 2: From the code map "Dependencies" and "External calls" sections, list
+    the dependencies and SDK clients actually present.
+
+    STEP 3: Report:
+    - implemented-not-documented: a dependency/vendor in the code map (especially
+      payment, auth, data, or messaging vendors) that the docs never mention.
+    - documented-not-implemented: a dependency the docs describe that is absent
+      from the code map dependencies.
+
+    Treat package-manifest dependencies as high confidence. Generic transitive
+    libraries (lint, build tooling) are not architectural dependencies — ignore
+    them. If coverage indicates unscanned areas, lower confidence accordingly.
+
+  evidence_required:
+    - field: "related_item"
+      type: "string"
+      description: "The dependency/vendor in question (e.g., 'stripe')."
+      required: true
+    - field: "direction"
+      type: "enum"
+      values: ["implemented-not-documented", "documented-not-implemented"]
+      required: true
+    - field: "code_location"
+      type: "string | null"
+      description: "Where it appears in the code map (package.json or file:line)."
+      required: true
+    - field: "confidence"
+      type: "enum"
+      values: ["high", "medium", "low"]
+      required: true
+
+  failure_condition: |
+    Report as WARNING when a code-present architectural dependency (payment,
+    auth, data store, messaging, or other external API vendor) is undocumented,
+    or a documented dependency is absent from the code. Do not flag build/test
+    tooling or transitive libraries.

@@ -1,32 +1,53 @@
+import { describe, expect, it, vi } from "vitest";
 import * as path from "node:path";
-import { describe, it, expect, vi } from "vitest";
-
-import { assemble, lint } from "../../src/core/evaluator.js";
 
 import type { EvaluationEngine } from "../../src/core/engine/types.js";
 
-const FIXTURE_DIR = path.resolve(__dirname, "../fixtures/signal-detect-project");
-const NO_SIGNALS_FIXTURE_DIR = path.resolve(__dirname, "../fixtures/no-signals-project");
-const MANIFEST_AUTODETECT_DIR = path.resolve(__dirname, "../fixtures/manifest-autodetect-project");
+import { assemble, lint } from "../../src/core/evaluator.js";
+
+const FIXTURE_DIR = path.resolve(
+  __dirname,
+  "../fixtures/signal-detect-project",
+);
+const NO_SIGNALS_FIXTURE_DIR = path.resolve(
+  __dirname,
+  "../fixtures/no-signals-project",
+);
+const MANIFEST_AUTODETECT_DIR = path.resolve(
+  __dirname,
+  "../fixtures/manifest-autodetect-project",
+);
 
 describe("signal analysis (auto_detect / warn_on_mismatch)", () => {
   describe("behavior matrix", () => {
-    it("default (both false): detection does not run, effective equals declared", () => {
-      const result = assemble({ projectPath: FIXTURE_DIR });
+    it("default (both false): detection does not run, effective equals declared", async () => {
+      const result = await assemble({ projectPath: FIXTURE_DIR });
 
-      expect(result.signals.declared).toEqual(["external-api", "payments", "webhooks"]);
+      expect(result.signals.declared).toEqual([
+        "external-api",
+        "payments",
+        "webhooks",
+      ]);
       expect(result.signals.detected).toEqual([]);
-      expect(result.signals.effective).toEqual(["external-api", "payments", "webhooks"]);
+      expect(result.signals.effective).toEqual([
+        "external-api",
+        "payments",
+        "webhooks",
+      ]);
       expect(result.signals.mismatch).toBeUndefined();
     });
 
-    it("auto_detect only: detection runs, effective is union of declared+detected, no mismatch", () => {
-      const result = assemble({
+    it("auto_detect only: detection runs, effective is union of declared+detected, no mismatch", async () => {
+      const result = await assemble({
         projectPath: FIXTURE_DIR,
         autoDetect: true,
       });
 
-      expect(result.signals.declared).toEqual(["external-api", "payments", "webhooks"]);
+      expect(result.signals.declared).toEqual([
+        "external-api",
+        "payments",
+        "webhooks",
+      ]);
       expect(result.signals.detected.length).toBeGreaterThan(0);
       // effective should contain all declared plus newly detected
       for (const s of result.signals.declared) {
@@ -36,13 +57,15 @@ describe("signal analysis (auto_detect / warn_on_mismatch)", () => {
         expect(result.signals.effective).toContain(s);
       }
       // no duplicates
-      expect(result.signals.effective.length).toBe(new Set(result.signals.effective).size);
+      expect(result.signals.effective.length).toBe(
+        new Set(result.signals.effective).size,
+      );
       // no mismatch reported when warnOnMismatch is false
       expect(result.signals.mismatch).toBeUndefined();
     });
 
-    it("warn_on_mismatch only: detection runs for comparison, effective equals declared, mismatch reported", () => {
-      const result = assemble({
+    it("warn_on_mismatch only: detection runs for comparison, effective equals declared, mismatch reported", async () => {
+      const result = await assemble({
         projectPath: FIXTURE_DIR,
         warnOnMismatch: true,
       });
@@ -60,8 +83,8 @@ describe("signal analysis (auto_detect / warn_on_mismatch)", () => {
       }
     });
 
-    it("both true: detection runs, effective is union, mismatch reported", () => {
-      const result = assemble({
+    it("both true: detection runs, effective is union, mismatch reported", async () => {
+      const result = await assemble({
         projectPath: FIXTURE_DIR,
         autoDetect: true,
         warnOnMismatch: true,
@@ -82,21 +105,23 @@ describe("signal analysis (auto_detect / warn_on_mismatch)", () => {
   });
 
   describe("CLI override", () => {
-    it("autoDetect input overrides manifest auto_detect=false (default)", () => {
+    it("autoDetect input overrides manifest auto_detect=false (default)", async () => {
       // manifest doesn't set auto_detect, CLI sets it true
-      const result = assemble({
+      const result = await assemble({
         projectPath: FIXTURE_DIR,
         autoDetect: true,
       });
 
       expect(result.signals.detected.length).toBeGreaterThan(0);
-      expect(result.signals.effective.length).toBeGreaterThan(result.signals.declared.length);
+      expect(result.signals.effective.length).toBeGreaterThan(
+        result.signals.declared.length,
+      );
     });
   });
 
   describe("empty detection", () => {
-    it("when docs have no signal keywords, detected is empty, effective equals declared", () => {
-      const result = assemble({
+    it("when docs have no signal keywords, detected is empty, effective equals declared", async () => {
+      const result = await assemble({
         projectPath: NO_SIGNALS_FIXTURE_DIR,
         autoDetect: true,
         warnOnMismatch: true,
@@ -113,8 +138,8 @@ describe("signal analysis (auto_detect / warn_on_mismatch)", () => {
   });
 
   describe("confidence threshold", () => {
-    it("only high+medium confidence signals appear in detected", () => {
-      const result = assemble({
+    it("only high+medium confidence signals appear in detected", async () => {
+      const result = await assemble({
         projectPath: FIXTURE_DIR,
         autoDetect: true,
       });
@@ -129,23 +154,25 @@ describe("signal analysis (auto_detect / warn_on_mismatch)", () => {
   });
 
   describe("manifest-driven defaults", () => {
-    it("auto_detect and warn_on_mismatch are read from manifest when CLI flags are absent", () => {
+    it("auto_detect and warn_on_mismatch are read from manifest when CLI flags are absent", async () => {
       // manifest-autodetect-project has auto_detect: true and warn_on_mismatch: true
       // No CLI overrides passed — manifest settings should drive behavior
-      const result = assemble({ projectPath: MANIFEST_AUTODETECT_DIR });
+      const result = await assemble({ projectPath: MANIFEST_AUTODETECT_DIR });
 
       // detection should have run (manifest auto_detect: true)
       expect(result.signals.detected.length).toBeGreaterThan(0);
       // effective should be union (auto_detect merges)
-      expect(result.signals.effective.length).toBeGreaterThan(result.signals.declared.length);
+      expect(result.signals.effective.length).toBeGreaterThan(
+        result.signals.declared.length,
+      );
       // mismatch should be reported (manifest warn_on_mismatch: true)
       expect(result.signals.mismatch).toBeDefined();
       expect(result.signals.mismatch!.undeclared.length).toBeGreaterThan(0);
     });
 
-    it("CLI false overrides manifest true", () => {
+    it("CLI false overrides manifest true", async () => {
       // manifest has auto_detect: true, but CLI says false
-      const result = assemble({
+      const result = await assemble({
         projectPath: MANIFEST_AUTODETECT_DIR,
         autoDetect: false,
         warnOnMismatch: false,
@@ -159,8 +186,8 @@ describe("signal analysis (auto_detect / warn_on_mismatch)", () => {
   });
 
   describe("mismatch details", () => {
-    it("correctly identifies undeclared and stale signals", () => {
-      const result = assemble({
+    it("correctly identifies undeclared and stale signals", async () => {
+      const result = await assemble({
         projectPath: FIXTURE_DIR,
         warnOnMismatch: true,
       });
@@ -187,7 +214,9 @@ describe("signal analysis (auto_detect / warn_on_mismatch)", () => {
     it("emits undeclared and stale warnings via onProgress when mismatch exists", async () => {
       const messages: string[] = [];
       const mockEngine: EvaluationEngine = {
-        evaluate: vi.fn().mockResolvedValue({ ok: true, content: '{"findings":[]}' }),
+        evaluate: vi
+          .fn()
+          .mockResolvedValue({ ok: true, content: '{"findings":[]}' }),
       };
 
       await lint({
@@ -197,8 +226,12 @@ describe("signal analysis (auto_detect / warn_on_mismatch)", () => {
         onProgress: (msg) => messages.push(msg),
       });
 
-      const undeclaredWarning = messages.find((m) => m.includes("Signals detected in docs but not declared"));
-      const staleWarning = messages.find((m) => m.includes("Declared signals not found in docs"));
+      const undeclaredWarning = messages.find((m) =>
+        m.includes("Signals detected in docs but not declared"),
+      );
+      const staleWarning = messages.find((m) =>
+        m.includes("Declared signals not found in docs"),
+      );
 
       expect(undeclaredWarning).toBeDefined();
       expect(undeclaredWarning).toContain("rate-limiting");
@@ -209,7 +242,9 @@ describe("signal analysis (auto_detect / warn_on_mismatch)", () => {
     it("does not emit mismatch warnings when warnOnMismatch is false", async () => {
       const messages: string[] = [];
       const mockEngine: EvaluationEngine = {
-        evaluate: vi.fn().mockResolvedValue({ ok: true, content: '{"findings":[]}' }),
+        evaluate: vi
+          .fn()
+          .mockResolvedValue({ ok: true, content: '{"findings":[]}' }),
       };
 
       await lint({
@@ -224,8 +259,8 @@ describe("signal analysis (auto_detect / warn_on_mismatch)", () => {
   });
 
   describe("version bump", () => {
-    it("assemble returns version 2.0", () => {
-      const result = assemble({ projectPath: FIXTURE_DIR });
+    it("assemble returns version 2.0", async () => {
+      const result = await assemble({ projectPath: FIXTURE_DIR });
       expect(result.version).toBe("2.0");
     });
   });

@@ -45,7 +45,7 @@ describe("manifest", () => {
       const manifest = loadManifest(FIXTURES, "valid-manifest.yaml");
       expect(manifest.version).toBe("1.0");
       expect(manifest.project.name).toBe("Test Project");
-      expect(manifest.documents.required).toHaveLength(3);
+      expect(manifest.documents!.required!).toHaveLength(3);
       expect(manifest.signals.declared).toContain("external-api");
     });
 
@@ -57,7 +57,7 @@ describe("manifest", () => {
 
     it("validates required roles (brd, frd, add)", () => {
       const manifest = loadManifest(FIXTURES, "valid-manifest.yaml");
-      const roles = manifest.documents.required.map((d) => d.role);
+      const roles = manifest.documents!.required!.map((d) => d.role);
       expect(roles).toContain("brd");
       expect(roles).toContain("frd");
       expect(roles).toContain("add");
@@ -115,12 +115,12 @@ signals:
 
     it("loads manifest with contracts/operational/reference documents", () => {
       const manifest = loadManifest(FIXTURES, "expanded-manifest.yaml");
-      expect(manifest.documents.contracts).toHaveLength(2);
-      expect(manifest.documents.contracts![0]!.role).toBe("api_spec");
-      expect(manifest.documents.operational).toHaveLength(1);
-      expect(manifest.documents.operational![0]!.role).toBe("runbook");
-      expect(manifest.documents.reference).toHaveLength(1);
-      expect(manifest.documents.reference![0]!.role).toBe("security_standards");
+      expect(manifest.documents!.contracts).toHaveLength(2);
+      expect(manifest.documents!.contracts![0]!.role).toBe("api_spec");
+      expect(manifest.documents!.operational).toHaveLength(1);
+      expect(manifest.documents!.operational![0]!.role).toBe("runbook");
+      expect(manifest.documents!.reference).toHaveLength(1);
+      expect(manifest.documents!.reference![0]!.role).toBe("security_standards");
     });
 
     it("rejects invalid documents.contracts entries", () => {
@@ -345,6 +345,95 @@ signals:
 exclusions: "not-an-array"
 `),
       ).toThrow("exclusions");
+    });
+  });
+
+  describe("mode & code-first manifests", () => {
+    it("defaults to doc-first behavior when mode is absent", () => {
+      expect(() =>
+        loadFromYaml(`
+version: "1.0"
+project:
+  name: "Test"
+documents:
+  required:
+    - role: brd
+      path: x.md
+signals:
+  declared: [test]
+`),
+      ).toThrow("documents.required must include role 'frd'");
+    });
+
+    it("rejects an invalid mode value", () => {
+      expect(() =>
+        loadFromYaml(`
+version: "1.0"
+mode: "hybrid"
+project:
+  name: "Test"
+documents:
+  required:
+    - role: brd
+      path: x.md
+    - role: frd
+      path: x.md
+    - role: add
+      path: x.md
+signals:
+  declared: [test]
+`),
+      ).toThrow("'mode' must be one of");
+    });
+
+    it("allows code-first manifest with no documents", () => {
+      const manifest = loadFromYaml(`
+version: "1.0"
+mode: "code-first"
+project:
+  name: "Test"
+code:
+  paths: ["src"]
+signals:
+  declared: [payments]
+`);
+      expect(manifest.mode).toBe("code-first");
+      expect(manifest.code?.paths).toEqual(["src"]);
+      expect(manifest.documents).toBeUndefined();
+    });
+
+    it("does not require brd/frd/add in reconcile mode", () => {
+      const manifest = loadFromYaml(`
+version: "1.0"
+mode: "reconcile"
+project:
+  name: "Test"
+documents:
+  required:
+    - role: add
+      path: architecture.md
+code:
+  paths: ["."]
+signals:
+  declared: [rest-api]
+`);
+      expect(manifest.mode).toBe("reconcile");
+      expect(manifest.documents!.required!).toHaveLength(1);
+    });
+
+    it("rejects malformed code.paths", () => {
+      expect(() =>
+        loadFromYaml(`
+version: "1.0"
+mode: "code-first"
+project:
+  name: "Test"
+code:
+  paths: "src"
+signals:
+  declared: [test]
+`),
+      ).toThrow("'code.paths' must be an array of strings");
     });
   });
 });

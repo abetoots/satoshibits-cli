@@ -8,7 +8,7 @@ export interface AssembledPrompt {
   concernId: string;
   concernVersion: string;
   concernName: string;
-  type: "concern" | "interaction" | "contradiction";
+  type: "concern" | "interaction" | "contradiction" | "drift";
   system: string;
   user: string;
   responseSchema: object;
@@ -51,6 +51,25 @@ export interface ContradictionFinding {
   explanation: string;
 }
 
+export type DriftType =
+  | "documented-not-implemented"
+  | "implemented-not-documented"
+  | "value-mismatch";
+
+export interface DriftFinding {
+  id: string;
+  driftType: DriftType;
+  docClaim: { text: string; location: string };
+  codeReality: { text: string; location: string }; // file:line, or "(not found in scanned code)"
+  severity: Severity;
+  confidence: Confidence;
+  explanation: string;
+  recommendation: string;
+  // true when the evidence needed to confirm this could not be fully scanned
+  // (completeness gate) — such findings should be treated as advisory, not failures
+  requiresHumanReview?: boolean;
+}
+
 export interface CoverageInfo {
   concernsEvaluated: string[];
   concernsSkipped: string[];
@@ -87,12 +106,14 @@ export interface LintResult {
   };
   findings: Finding[];
   contradictions: ContradictionFinding[];
+  drifts: DriftFinding[];
   summary: {
     totalFindings: number;
     errors: number;
     warnings: number;
     notes: number;
     contradictions: number;
+    drifts: number;
     humanReviewRequired: number;
   };
   toleranceApplied?: import("./manifest.js").ToleranceConfig;

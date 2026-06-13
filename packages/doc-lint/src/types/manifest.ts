@@ -15,20 +15,33 @@ export interface ExclusionEntry {
   approved_by?: string;
 }
 
+export type DocLintMode = "doc-first" | "code-first" | "reconcile";
+
+export interface CodeConfig {
+  paths?: string[]; // source roots to scan; defaults to ["."]
+  ignore?: string[]; // extra ignore globs
+  entrypoints?: string[]; // entrypoint hints
+  maxInputTokens?: number; // soft cap for tier-2 summarization
+}
+
 export interface DocLintManifest {
   version: string;
+  // operating mode; defaults to "doc-first" when absent (back-compat)
+  mode?: DocLintMode;
   project: {
     name: string;
     description?: string;
     classification?: ProjectClassification;
   };
-  documents: {
-    required: DocumentRef[];
+  // documents are optional in code-first mode (scaffold them with `doc-lint bootstrap`)
+  documents?: {
+    required?: DocumentRef[];
     optional?: DocumentRef[];
     contracts?: DocumentRef[];
     operational?: DocumentRef[];
     reference?: DocumentRef[];
   };
+  code?: CodeConfig;
   signals: {
     declared: string[];
     auto_detect?: boolean;

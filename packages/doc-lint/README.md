@@ -86,6 +86,28 @@ Tiers are **cumulative**: `--tier 2` includes all concerns with tier <= 2. Inter
 
 Start with `--tier 1` for foundational gaps, then expand scope as your documentation matures.
 
+## Operating Modes
+
+doc-lint started as a doc-vs-doc linter but also serves code-first repos. The `mode`
+field in the manifest (default `doc-first`) selects behavior:
+
+| Mode | Inputs | What it does |
+|------|--------|--------------|
+| `doc-first` (default) | Authored docs | Evaluate concerns over your BRD/FRD/ADD (original behavior, unchanged). |
+| `reconcile` | Authored docs **+** source code | Run concerns over the docs **plus** a documentation↔code **drift scanner** that flags where the docs and the implementation disagree. The fit for the common "docs drifted from code" case. |
+| `code-first` | Source code (no docs) | An **onboarding mode**, not a lint mode. `doc-lint bootstrap` scaffolds as-built docs + a documentation gap inventory from a static scan so you can start. You fill in the intent, then move to doc-first/reconcile. |
+
+`reconcile` and `bootstrap` build a lightweight, language-agnostic **code map** (file
+tree, dependencies, routes, models, external calls, env vars) via a cheap static scan
+(`doc-lint scan`) — no LLM. The code map is a *sampled, best-effort* view: anything it
+doesn't surface is treated as "not scanned", never "not implemented".
+
+> **Why no "lint my code against concerns with no docs"?** Linting docs *synthesized
+> from your code* is circular — "is X documented?" collapses into "is X implemented?",
+> and an LLM asked to write as-built prose will sometimes invent intent the code doesn't
+> have. So code-first is a deterministic **scaffolder** (`bootstrap`), and the only sound
+> code-aware *evaluation* is `reconcile` (authored intent vs. real code).
+
 ## When to Use
 
 doc-lint is designed for **architecture documentation suites** (BRD, FRD, ADD) in systems involving distributed services, payment processing, async workflows, or external API integrations. It is most valuable when:
@@ -93,6 +115,8 @@ doc-lint is designed for **architecture documentation suites** (BRD, FRD, ADD) i
 - Your project has 3+ architecture documents that must stay consistent
 - Your system touches domains where cross-cutting concerns cause subtle gaps
 - You want repeatable, versioned evaluation criteria rather than ad-hoc LLM prompts
+- **Your docs have drifted from the code** and you want to find the gaps (`reconcile`)
+- **You have no architecture docs** and want a scaffold to start from (`bootstrap`)
 
 It works with existing documentation suites too — map your architecture docs to the required roles regardless of what you call them.
 
@@ -228,6 +252,21 @@ doc-lint lint . --tier all --dry-run
 doc-lint lint . --tier 2 --severity-threshold warn
 ```
 
+### Code-first or stale-docs repos
+
+```bash
+# inspect the code map (no LLM, no API key)
+doc-lint scan . --ignore "**/.claude/worktrees/**"
+
+# no docs? scaffold as-built docs + a gap inventory from the code (deterministic, no LLM)
+doc-lint bootstrap .               # writes .doc-lint/bootstrap/*.md
+# → fill in the TODOs (intent the code can't supply), then:
+doc-lint lint .                    # lint your now-authored docs
+
+# docs exist but drifted from code? reconcile them
+doc-lint reconcile .               # = lint --mode reconcile (docs + drift scanner)
+```
+
 ## CLI Reference
 
 ### `doc-lint init [path]`
@@ -289,6 +328,9 @@ Assembles prompts and evaluates them via the Anthropic SDK. `[path]` is the proj
 | `-c, --config <file>` | Path to manifest file | Auto-detect `doc-lint.yaml` or `doc-lint.yml` |
 | `-f, --format <format>` | Output format: `human` or `json` | `human` |
 | `--no-contradiction` | Skip the contradiction scanner | enabled |
+| `--no-drift` | Skip the documentation↔code drift scanner (reconcile mode) | enabled |
+| `--mode <mode>` | Override mode: `doc-first` \| `reconcile` | manifest `mode` |
+| `--code <paths>` | Source roots to scan (comma-separated) | manifest `code.paths` |
 | `--concerns <ids>` | Only specific concerns (comma-separated) | all matched |
 | `--dry-run` | Show matched concerns without evaluating | - |
 | `--verbose` | Show detailed progress | - |
@@ -301,6 +343,59 @@ Assembles prompts and evaluates them via the Anthropic SDK. `[path]` is the proj
 **Exit codes:** `0` = pass, `1` = errors found, `2` = tool error
 
 **Tolerance flags:** `--severity-threshold` actively filters findings from output. `--allow-implicit` and `--allow-external-refs` are recorded in the result's `toleranceApplied` field for audit purposes but do not currently filter findings.
+
+Running `lint` on a **code-first** project (no authored docs) exits `2` and directs you
+to `doc-lint bootstrap` — linting docs synthesized from code is circular, so it's not
+offered.
+
+### `doc-lint reconcile [path]`
+
+Sugar for `lint --mode reconcile`. Evaluates concerns over your authored docs **and**
+runs the drift scanner against the code map. Same options as `lint` (minus `--mode`).
+
+### `doc-lint bootstrap [path]`
+
+The **code-first on-ramp**. Deterministically (no LLM, no API key) scaffolds evidence-named
+as-built docs + a documentation gap inventory from a static code scan, so a repo with no
+docs has somewhere to start. Facts (routes, deps, models, env) are filled from the code;
+**intent is left as explicit TODOs** — code can't tell you the *why*. Fill those in, then
+lint in doc-first or reconcile mode.
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-c, --config <file>` | Path to manifest file | Auto-detect (optional) |
+| `-o, --out <dir>` | Output directory for scaffolds | `.doc-lint/bootstrap` |
+| `--code <paths>` | Source roots to scan (comma-separated) | `.` |
+| `--ignore <globs>` | Extra ignore globs (comma-separated) | built-in ignores |
+
+Writes `architecture-as-built.md`, `functional-surface.md`, `operations-surface.md`, and
+`doc-todos.md` (the gap inventory — every concern your code's signals trigger, with what
+you must document to satisfy it). Works with or without a manifest; without one it detects
+signals from the code.
+
+### `doc-lint scan [path]`
+
+Builds and prints the **code map** for a repo — file tree, parsed `package.json`
+dependencies, statically-detected routes/models/external calls, env vars, and config
+signals. No LLM, no API key. The code analog of `assemble`: inspect what the drift and
+bootstrap layers consume.
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-f, --format <format>` | Output format: `human` or `json` | `human` |
+| `--code <paths>` | Source roots to scan (comma-separated) | `.` |
+| `--ignore <globs>` | Extra ignore globs (comma-separated) | built-in ignores |
+
+> Note: heavy directories (e.g. git worktrees under `.claude/worktrees`) are not
+> ignored by default — pass `--ignore "**/.claude/worktrees/**"` (or set `code.ignore`
+> in the manifest) to keep scans fast.
+
+### `doc-lint init [path]`
+
+Generates a `doc-lint.yaml` by discovering documents and detecting signals. If no
+architecture docs are found, it falls back to **code-first**: it scans the source,
+detects signals from dependencies/code, and writes a `mode: code-first` manifest — then
+run `doc-lint bootstrap` to scaffold docs. Use `-y, --yes` for non-interactive mode.
 
 **Understanding findings:** Each finding has a `severity` (error, warn, note) and a `confidence` (high, medium, low). High-confidence errors are hard blockers. Low-confidence errors are flagged with `requiresHumanReview: true` — they indicate a potential gap that the evaluator could not confirm with certainty.
 
@@ -315,12 +410,20 @@ The `doc-lint.yaml` (or `doc-lint.yml`) manifest declares your project's documen
 ```yaml
 version: "1.0"            # manifest schema version
 
+mode: doc-first           # optional: doc-first (default) | reconcile | code-first
+
 project:
   name: "Project Name"     # required
   description: "Optional"  # optional
   classification: financial # optional: standard | financial | healthcare | infrastructure
 
-documents:
+code:                       # used in reconcile / code-first modes
+  paths: ["apps", "packages"]   # source roots to scan (default: ["."])
+  ignore: ["**/.claude/worktrees/**"]  # extra ignore globs
+  entrypoints: ["apps/server/src/server.ts"]  # optional hints
+  maxInputTokens: 60000     # optional soft cap for code summarization
+
+documents:                  # optional in code-first mode (use `bootstrap` to scaffold)
   required:                 # must exist on disk; validated at load time
     - role: brd             # semantic tag — your file can have any name
       path: docs/brd.md
@@ -374,6 +477,11 @@ The `role` field is a semantic tag that maps your document to its function in th
 - **frd** — functional requirements (the "what it does")
 - **add** — architecture design (the "how it's built")
 
+`brd`/`frd`/`add` are required in `doc-first` mode. In `reconcile` mode any authored
+docs are accepted (no fixed roles), and in `code-first` mode documents are optional —
+run `doc-lint bootstrap` to scaffold evidence-named as-built docs you then author and
+commit.
+
 ### Signals
 
 Signals are tags that describe your system's characteristics. They determine which bundled concerns are activated:
@@ -409,9 +517,9 @@ The contradiction scanner is never excluded, even if listed in exclusions.
 
 ## Bundled Concerns
 
-doc-lint ships with 28 bundled concerns across 6 categories, plus 3 interaction matrices. Run `doc-lint list` for the full listing with trigger signals.
+doc-lint ships with 44 bundled concerns (including 3 interaction matrices) across 7 categories. Run `doc-lint list` for the full listing with trigger signals. Concerns marked **(code-aware)** reconcile docs against the code map in `reconcile` mode; the rest are doc-vs-doc.
 
-### Core (7)
+### Core (10)
 
 Each core concern activates when *any* of its trigger signals match your declared signals.
 
@@ -424,6 +532,9 @@ Each core concern activates when *any* of its trigger signals match your declare
 | `idempotency-boundaries` | Every trust-boundary operation (API call, webhook, DB write) documents its idempotency mechanism, duplicate behavior, and idempotency window | external-api, webhooks, payments, async-workflows, message-queue, event-driven, distributed |
 | `resilience-triad` | Every external dependency has documented timeout, retry policy, AND circuit breaker — and validates coherence: `total_timeout >= retry_count * per_attempt_timeout` | external-api, external-dependency, microservices, distributed |
 | `state-ownership-clarity` | Every cross-boundary state has a declared owner, write access model, and conflict resolution strategy | microservices, distributed, async-workflows, event-driven, message-queue |
+| `data-model-ownership` | Every persisted entity has a documented owning component and lifecycle (create/mutate/delete) | database, persistence, data-model, multi-component, microservices, state-management |
+| `endpoint-parity` **(code-aware)** | Implemented routes ↔ documented endpoints both directions (statically-detected routes only) | rest-api, public-api, external-api, webhooks |
+| `schema-doc-parity` **(code-aware)** | Documented data entities ↔ detected ORM models (recognized ORM patterns only) | database, persistence, data-model, state-management |
 
 ### Promise Validation (3)
 
@@ -444,7 +555,7 @@ Validates that architectural promises (SLAs, scalability claims, feasibility) ar
 | `secrets-management` | Secrets, credentials, and API keys have documented rotation, storage, and access policies | secrets, credentials, api-keys, encryption, certificates |
 | `threat-model-coverage` | Every documented attack surface has a corresponding threat model with mitigations | security, authentication, pii, payments, external-api |
 
-### Operational (4)
+### Operational (7)
 
 | ID | What It Checks | Triggers (any_of) |
 |----|---------------|--------------------|
@@ -452,8 +563,11 @@ Validates that architectural promises (SLAs, scalability claims, feasibility) ar
 | `dependency-runbook` | External dependencies have documented runbook procedures for failure scenarios | external-api, third-party, database, message-queue |
 | `failure-mode-coverage` | Documented failure modes have corresponding detection, alerting, and recovery procedures | distributed, microservices, external-api, async-workflows |
 | `rollback-documentation` | Deployments and migrations have documented rollback procedures | deployment, ci-cd, database-migration, feature-flags |
+| `dependency-drift` **(code-aware)** | External deps in `package.json`/imports ↔ documented dependency list | external-dependency, third-party, external-api, payments, message-queue |
+| `config-surface-documentation` | Every env var / config knob is documented (purpose, required-ness, default, secret) | external-dependency, deployment, configuration, secrets, infrastructure |
+| `background-job-observability` | Each background job documents schedule, idempotency, failure handling, and monitoring | async-workflows, background-jobs, scheduled-tasks, message-queue, long-running, event-driven |
 
-### Compliance (4)
+### Compliance (5)
 
 | ID | What It Checks | Triggers (any_of) |
 |----|---------------|--------------------|
@@ -461,6 +575,7 @@ Validates that architectural promises (SLAs, scalability claims, feasibility) ar
 | `auth-scheme-compliance` | Authentication schemes follow documented standards and are consistently applied | authentication, oauth, saml, sso, jwt |
 | `data-retention-compliance` | Data retention policies are documented with specific timeframes and deletion procedures | pii, gdpr, data-retention, user-data, privacy |
 | `logging-pii-compliance` | Logging practices do not leak PII and comply with documented privacy requirements | logging, pii, audit, observability, gdpr |
+| `public-contract-versioning` | Public contracts (REST/events/SDK) document versioning, stability, and deprecation policy | public-api, rest-api, api-versioning, webhooks, external-api |
 
 ### Test Coverage (3)
 
@@ -489,17 +604,32 @@ Always included by default (disable with `--no-contradiction`). Compares all doc
 - **Behavioral conflicts** — different descriptions of how something works
 - **Scope conflicts** — different boundaries for the same feature
 
+### Drift Scanner (reconcile mode)
+
+In `reconcile` mode, a documentation↔code drift scanner runs alongside the concerns
+(disable with `--no-drift`). It compares your authored docs against the code map and
+reports three kinds of drift, each with a `file:line` citation and confidence:
+
+- **documented-not-implemented** — docs describe an endpoint/model/dependency the code map doesn't contain
+- **implemented-not-documented** — the code map shows a route/model/dependency the docs never mention
+- **value-mismatch** — both describe the same thing with different values (retry counts, timeouts, endpoint paths, model fields)
+
+Because the code map is sampled, anything the scanner can't confirm is marked
+`requiresHumanReview` rather than asserted as drift. Drift errors count toward the exit code.
+
 ## Programmatic API
 
 ```typescript
 import { assemble, lint, SdkEngine } from "@satoshibits/doc-lint";
 import type { AssembleResult, LintResult } from "@satoshibits/doc-lint";
 
-// assemble prompts (free, no API calls)
-const assembled: AssembleResult = assemble({
+// assemble prompts (free, no LLM calls — but async: it may build a code map)
+const assembled: AssembleResult = await assemble({
   projectPath: "./my-project",
   configPath: "doc-lint.yaml",       // optional
   contradiction: true,                // default: true
+  drift: true,                        // default: true (reconcile mode)
+  mode: "reconcile",                  // optional override
   filterConcernIds: ["idempotency-boundaries"],  // optional
   tierFilter: 2,                      // 1, 2, 3, or "all" (omit to include all tiers)
   autoDetect: true,                   // optional: merge detected signals with declared
@@ -535,7 +665,7 @@ const result: LintResult = await lint({
 });
 
 console.log(result.summary);
-// { totalFindings: 3, errors: 1, warnings: 2, notes: 0, contradictions: 0, humanReviewRequired: 1 }
+// { totalFindings: 3, errors: 1, warnings: 2, notes: 0, contradictions: 0, drifts: 0, humanReviewRequired: 1 }
 console.log(result.coverage);
 // { concernsEvaluated: [...], concernsSkipped: [...], concernsExcluded: [...], documentsLoaded: [...], documentsMissing: [...] }
 ```
@@ -555,6 +685,8 @@ import type {
   LintResult,
   Finding,
   ContradictionFinding,
+  DriftFinding,
+  DriftType,
   Severity,
   Confidence,
 } from "@satoshibits/doc-lint";
@@ -568,6 +700,9 @@ import type {
 // Schema and manifest types
 import type {
   DocLintManifest,
+  DocLintMode,
+  CodeConfig,
+  CodeMap,
   DocumentRef,
   DocumentReference,
   ConcernSchema,
@@ -577,6 +712,10 @@ import type {
   AssembledPrompt,
 } from "@satoshibits/doc-lint";
 ```
+
+> **Note:** `assemble()` is `async` — it may build a (no-LLM) code map in reconcile
+> mode. `await` it. `lint()` rejects `code-first` projects (no docs to lint) and points
+> to `bootstrap`; the `bootstrap` command is deterministic and exported separately.
 
 ### Custom Evaluation Engines
 
@@ -773,7 +912,7 @@ metadata:
 
 ## Custom Concerns
 
-Custom user-defined concern schemas are not yet supported. The current version ships with 28 bundled concerns across 6 categories plus 3 interaction matrices, covering distributed systems, security, operational readiness, compliance, and test coverage patterns. Custom concerns are planned for a future release.
+Custom user-defined concern schemas are not yet supported. The current version ships with 44 bundled concerns (including 3 interaction matrices) across 7 categories, covering distributed systems, security, operational readiness, compliance, test coverage, and documentation↔code parity patterns. Custom concerns are planned for a future release.
 
 To use a custom evaluation engine with your own prompt logic, implement the `EvaluationEngine` interface (see [Programmatic API](#custom-evaluation-engines) above).
 
@@ -781,7 +920,8 @@ To use a custom evaluation engine with your own prompt logic, implement the `Eva
 
 - **Bundled concerns only** — custom concern YAML schemas are not yet supported
 - **Anthropic SDK only** — the built-in CLI engine uses the Anthropic API; use the programmatic API with a custom `EvaluationEngine` for other providers
-- **Required document roles** — manifests must include `brd`, `frd`, and `add` roles in `documents.required`
+- **Required document roles** — in `doc-first` mode, manifests must include `brd`, `frd`, and `add` roles in `documents.required` (relaxed in `reconcile`/`code-first`)
+- **Code map is sampled, not exhaustive** — the code scan uses lightweight, language-agnostic regex/heuristics (no full parse). It may miss multi-line route declarations, dynamically-registered routes, or non-JS/TS languages; drift/parity findings it can't confirm are marked `requiresHumanReview` rather than asserted
 - **No `.env` loading** — `ANTHROPIC_API_KEY` must be set as a shell environment variable
 - **Tolerance filtering** — only `severity_threshold` actively filters findings; `allow_implicit` and `allow_external_refs` are recorded but not enforced
 

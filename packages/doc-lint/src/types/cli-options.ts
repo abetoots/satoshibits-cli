@@ -29,6 +29,7 @@ export interface LintOptions extends BaseCommandOptions {
   tierCumulative?: boolean;
   engine?: "sdk";
   contradiction?: boolean;
+  drift?: boolean;
   concerns?: string;
   dryRun?: boolean;
   verbose?: boolean;
@@ -37,4 +38,6 @@ export interface LintOptions extends BaseCommandOptions {
   allowExternalRefs?: boolean;
   autoDetect?: boolean;
   warnOnMismatch?: boolean;
+  mode?: string;
+  code?: string;
 }

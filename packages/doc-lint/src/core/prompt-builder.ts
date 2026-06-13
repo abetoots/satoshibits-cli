@@ -5,7 +5,7 @@ import { isConcernSchema, isInteractionSchema } from "../types/concerns.js";
 import { getConcernsDir } from "./paths.js";
 
 import type { LoadedDocument } from "./documents.js";
-import type { AssembledPrompt, DocumentReference, LoadedConcern } from "../types/index.js";
+import type { AssembledPrompt, CodeMap, DocumentReference, LoadedConcern } from "../types/index.js";
 
 const TEMPLATE_VERSION = "1.0";
 
@@ -72,6 +72,62 @@ function buildDocumentReferences(docs: LoadedDocument[]): DocumentReference[] {
   }));
 }
 
+// render the code map as compact, citable text for drift/reconcile prompts.
+// includes a coverage section so the model can distinguish "not scanned" from
+// "not present in code".
+export function formatCodeMapBlock(codeMap: CodeMap): string {
+  const sections: string[] = [];
+
+  const deps = [...new Set(codeMap.packages.flatMap((p) => p.dependencies))];
+  if (deps.length > 0) sections.push(`#### Dependencies\n${deps.join(", ")}`);
+
+  if (codeMap.routes.length > 0) {
+    sections.push(
+      `#### Routes\n${codeMap.routes
+        .map((r) => `- ${r.method} ${r.path} (${r.file}:${r.line})`)
+        .join("\n")}`,
+    );
+  }
+  if (codeMap.models.length > 0) {
+    sections.push(
+      `#### Data models\n${codeMap.models
+        .map((m) => `- ${m.name} [${m.orm}] (${m.file}:${m.line})`)
+        .join("\n")}`,
+    );
+  }
+  if (codeMap.externalCalls.length > 0) {
+    const calls = [...new Set(codeMap.externalCalls.map((c) => `- ${c.target} [${c.kind}] (${c.file}:${c.line})`))];
+    sections.push(`#### External calls\n${calls.join("\n")}`);
+  }
+  if (codeMap.apiSurface.length > 0) {
+    sections.push(
+      `#### Exported surface\n${codeMap.apiSurface
+        .slice(0, 200)
+        .map((a) => `- ${a.kind} ${a.name} (${a.file}:${a.line})`)
+        .join("\n")}`,
+    );
+  }
+  if (codeMap.envVars.length > 0) sections.push(`#### Env vars\n${codeMap.envVars.join(", ")}`);
+  if (codeMap.configSignals.length > 0) sections.push(`#### Config/infra\n${codeMap.configSignals.join(", ")}`);
+
+  const cov = codeMap.coverage;
+  sections.push(
+    `#### Coverage (READ THIS)\n` +
+      `- Files: ${codeMap.fileCount} total, ${codeMap.sampledFiles} scanned\n` +
+      (cov.unsupportedLanguages.length > 0
+        ? `- Unsupported (not analyzed): ${cov.unsupportedLanguages.join(", ")}\n`
+        : "") +
+      (cov.sampledOutPaths.length > 0
+        ? `- Dropped by token budget (NOT scanned): ${cov.sampledOutPaths.length} files — treat related claims as unverifiable\n`
+        : "") +
+      `- Anything not listed above was either not present OR not scanned; do not assume absence.`,
+  );
+
+  sections.push(`#### Directory tree\n\`\`\`\n${codeMap.tree}\n\`\`\``);
+
+  return sections.join("\n\n");
+}
+
 function getResponseSchema(concern: LoadedConcern): object {
   const schema = concern.schema;
 
@@ -107,10 +163,17 @@ export function buildEvaluationPrompt(
   concern: LoadedConcern,
   docs: LoadedDocument[],
   inline = true,
+  codeMap?: CodeMap,
 ): AssembledPrompt {
   const template = loadTemplate("evaluation.md");
   const concernYaml = fs.readFileSync(concern.filePath, "utf8");
-  const documentsBlock = formatDocumentsBlock(docs, inline);
+  let documentsBlock = formatDocumentsBlock(docs, inline);
+
+  // in reconcile mode, append code facts so code-aware concerns can reason about
+  // the actual implementation alongside the docs.
+  if (codeMap) {
+    documentsBlock += `\n\n### Code Map (extracted from source)\n\n${formatCodeMapBlock(codeMap)}`;
+  }
 
   const userPrompt = template
     .replace("{{CONCERN_YAML}}", concernYaml)
@@ -179,6 +242,49 @@ export function buildContradictionPrompt(docs: LoadedDocument[], inline = true):
   }
 
   return prompt;
+}
+
+export function buildDriftPrompt(docs: LoadedDocument[], codeMap: CodeMap): AssembledPrompt {
+  const template = loadTemplate("drift.md");
+  const documentsBlock = formatDocumentsBlock(docs, true);
+  const codeMapBlock = formatCodeMapBlock(codeMap);
+
+  const userPrompt = template
+    .replace("{{DOCUMENTS}}", documentsBlock)
+    .replace("{{CODE_MAP}}", codeMapBlock);
+
+  const system =
+    "You are a documentation-vs-code reconciliation validator. You compare authored " +
+    "documentation against a sampled, best-effort map of the actual codebase to find drift. " +
+    "Absence from the code map means 'not scanned', never 'not implemented'. " +
+    "Prefer fewer, high-confidence findings; mark anything unverifiable for human review.";
+
+  return {
+    concernId: "drift-scanner",
+    concernVersion: "1.0",
+    concernName: "Documentation–Code Drift Scanner",
+    type: "drift",
+    system,
+    user: userPrompt,
+    responseSchema: {
+      type: "drift",
+      fields: [
+        { field: "id", type: "string" },
+        { field: "drift_type", type: "string" },
+        { field: "doc_claim", type: "object" },
+        { field: "code_reality", type: "object" },
+        { field: "severity", type: "string" },
+        { field: "confidence", type: "string" },
+        { field: "explanation", type: "string" },
+        { field: "recommendation", type: "string" },
+        { field: "requires_human_review", type: "boolean" },
+      ],
+    },
+    metadata: {
+      documentsIncluded: docs.map((d) => d.path),
+      templateVersion: TEMPLATE_VERSION,
+    },
+  };
 }
 
 function buildSystemMessage(concern: LoadedConcern): string {

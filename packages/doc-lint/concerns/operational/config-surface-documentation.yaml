@@ -1,0 +1,77 @@
+# =============================================================================
+# CONCERN: Config Surface Documentation
+# =============================================================================
+# Validates that every configuration knob and environment variable the system
+# depends on is documented with its default, whether it is required, and whether
+# it is a secret.
+#
+# WHY THIS MATTERS:
+# Undocumented config is the #1 cause of failed deployments and "works on my
+# machine" incidents. An env var that is required but undocumented turns a new
+# environment bring-up into archaeology; a secret config knob documented as
+# plain config invites credential leaks.
+# =============================================================================
+
+concern:
+  id: "config-surface-documentation"
+  version: "1.0"
+  name: "Config Surface Documentation"
+  category: "operational"
+  severity: "warn"
+
+  description: |
+    Every configuration value the system depends on (environment variables,
+    config files, feature toggles) must be documented with: its purpose, whether
+    it is required or optional, its default value, and whether it holds a secret.
+
+triggers:
+  any_of:
+    - external-dependency
+    - deployment
+    - configuration
+    - secrets
+    - infrastructure
+
+evaluation:
+  question: |
+    Identify the documented configuration surface and assess completeness.
+
+    STEP 1: From the documents (and the code map's "Env vars" / "Config/infra"
+    sections when present), enumerate every configuration value the system reads.
+
+    STEP 2: For each config value, determine whether the docs state:
+    - its purpose
+    - required vs optional
+    - default value (for optional)
+    - secret vs non-secret
+
+    STEP 3: Flag any config value that is referenced but not documented, any
+    required value lacking a documented default/source, and any secret-bearing
+    value not marked as a secret.
+
+  evidence_required:
+    - field: "config_name"
+      type: "string"
+      description: "The configuration key or environment variable (e.g., 'DATABASE_URL')."
+      required: true
+    - field: "documented"
+      type: "boolean"
+      description: "Is this config value documented at all?"
+      required: true
+    - field: "required_stated"
+      type: "boolean"
+      description: "Do the docs state whether it is required or optional?"
+      required: true
+    - field: "secret"
+      type: "boolean | null"
+      description: "Does it hold a secret/credential, and is that called out?"
+      required: true
+    - field: "source_location"
+      type: "string"
+      description: "Where this is documented or referenced."
+      required: true
+
+  failure_condition: |
+    Report as WARNING when a referenced config value is undocumented, a required
+    value lacks a documented source/default, or a secret-bearing value is not
+    identified as a secret.

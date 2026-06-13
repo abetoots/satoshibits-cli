@@ -1,0 +1,79 @@
+# =============================================================================
+# CONCERN: Background Job Observability
+# =============================================================================
+# Validates that every background job / scheduled task / async worker documents
+# its schedule, idempotency, failure handling, and monitoring.
+#
+# WHY THIS MATTERS:
+# Background work fails silently by default — there is no user staring at a 500.
+# An undocumented job with no monitoring and no idempotency can double-process,
+# stall, or quietly stop for days before anyone notices.
+# =============================================================================
+
+concern:
+  id: "background-job-observability"
+  version: "1.0"
+  name: "Background Job Observability"
+  category: "operational"
+  severity: "warn"
+
+  description: |
+    Every background job, scheduled task, or async worker must document its
+    trigger/schedule, whether it is idempotent (safe to re-run), how failures are
+    handled (retry, dead-letter, alerting), and how it is monitored.
+
+triggers:
+  any_of:
+    - async-workflows
+    - background-jobs
+    - scheduled-tasks
+    - message-queue
+    - long-running
+    - event-driven
+
+evaluation:
+  question: |
+    For each background job, assess observability and operational documentation.
+
+    STEP 1: From the documents (and the code map when present), identify every
+    background job / scheduled task / async worker.
+
+    STEP 2: For each, find the documented:
+    - schedule or trigger
+    - idempotency / re-run safety
+    - failure handling (retry, dead-letter, backoff)
+    - monitoring & alerting (how an operator knows it stalled or failed)
+
+    STEP 3: Flag jobs missing any of: schedule, idempotency statement, failure
+    handling, or monitoring.
+
+  evidence_required:
+    - field: "job_name"
+      type: "string"
+      description: "The background job / task (e.g., 'nightly-reconciliation')."
+      required: true
+    - field: "schedule_documented"
+      type: "boolean"
+      description: "Is the trigger/schedule documented?"
+      required: true
+    - field: "idempotency_documented"
+      type: "boolean"
+      description: "Is re-run safety / idempotency documented?"
+      required: true
+    - field: "failure_handling_documented"
+      type: "boolean"
+      description: "Is failure handling (retry/dead-letter) documented?"
+      required: true
+    - field: "monitoring_documented"
+      type: "boolean"
+      description: "Is monitoring/alerting for this job documented?"
+      required: true
+    - field: "source_location"
+      type: "string"
+      description: "Where this is documented."
+      required: true
+
+  failure_condition: |
+    Report as WARNING when a background job lacks documented monitoring, failure
+    handling, idempotency, or schedule. Escalate to ERROR when a job that mutates
+    payment or financial state has no documented idempotency.

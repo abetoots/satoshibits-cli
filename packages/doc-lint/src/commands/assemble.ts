@@ -1,6 +1,7 @@
 import * as path from "node:path";
 
 import { assemble } from "../core/evaluator.js";
+import { loadManifest } from "../core/manifest.js";
 import { formatAssembleJson } from "../formatters/json.js";
 import { formatAssembleHuman } from "../formatters/human.js";
 import { writePromptFiles } from "../formatters/files.js";
@@ -13,6 +14,19 @@ export async function assembleCommand(
   options: AssembleOptions,
 ): Promise<number> {
   const resolved = path.resolve(projectPath ?? ".");
+
+  // code-first has no authored docs to assemble — redirect to bootstrap.
+  try {
+    if (loadManifest(resolved, options.config).mode === "code-first") {
+      console.error(
+        "This is a code-first project (no authored docs). Run `doc-lint bootstrap` to " +
+          "scaffold as-built docs + a documentation gap inventory.",
+      );
+      return 2;
+    }
+  } catch {
+    // no manifest yet; let assemble surface the error
+  }
 
   const tierFilter = parseTierFlag(options.tier);
   if (tierFilter === null) {
@@ -37,7 +51,7 @@ export async function assembleCommand(
     return 2;
   }
 
-  const result = assemble({
+  const result = await assemble({
     projectPath: resolved,
     configPath: options.config,
     contradiction: options.contradiction,

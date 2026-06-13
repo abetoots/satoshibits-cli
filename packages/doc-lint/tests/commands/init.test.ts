@@ -74,7 +74,7 @@ describe("initCommand --yes mode", () => {
     expect(manifest.project.classification).toBe("standard");
 
     // required docs
-    const requiredRoles = manifest.documents.required.map((d) => d.role);
+    const requiredRoles = manifest.documents!.required!.map((d) => d.role);
     expect(requiredRoles).toContain("brd");
     expect(requiredRoles).toContain("frd");
     expect(requiredRoles).toContain("add");
@@ -139,7 +139,7 @@ describe("initCommand --yes mode", () => {
 
     expect(exitCode).toBe(0);
     const manifest = readGeneratedManifest();
-    const brd = manifest.documents.required.find((d) => d.role === "brd");
+    const brd = manifest.documents!.required!.find((d) => d.role === "brd");
     // should use first match (brd.md comes before requirements.md in pattern order)
     expect(brd).toBeDefined();
   });
@@ -152,8 +152,8 @@ describe("initCommand --yes mode", () => {
 
     expect(exitCode).toBe(0);
     const manifest = readGeneratedManifest();
-    expect(manifest.documents.optional).toBeDefined();
-    const optionalRoles = manifest.documents.optional!.map((d) => d.role);
+    expect(manifest.documents!.optional).toBeDefined();
+    const optionalRoles = manifest.documents!.optional!.map((d) => d.role);
     expect(optionalRoles).toContain("api_spec");
   });
 
@@ -178,7 +178,7 @@ describe("initCommand --yes mode", () => {
 
     expect(exitCode).toBe(0);
     const manifest = readGeneratedManifest();
-    const brd = manifest.documents.required.find((d) => d.role === "brd");
+    const brd = manifest.documents!.required!.find((d) => d.role === "brd");
     expect(brd).toBeDefined();
     expect(brd!.path).not.toContain("archived");
   });
@@ -191,6 +191,8 @@ describe("initCommand --yes mode", () => {
 
     const exitCode = await initCommand(tmpDir, { yes: true, ignore: ["**/docs/**"] });
 
+    // docs exist but were explicitly excluded via --ignore: that is a filter, not an
+    // absence, so init must NOT silently fall back to code-first — it fails clearly.
     expect(exitCode).toBe(2);
     expect(vi.mocked(console.error)).toHaveBeenCalledWith(
       expect.stringContaining("Missing required documents"),
@@ -222,11 +224,48 @@ describe("initCommand --yes mode", () => {
   });
 });
 
+describe("initCommand --yes code-first fallback", () => {
+  it("falls back to code-first when no architecture docs are found", async () => {
+    // no brd/frd/add — only source code with recognizable frameworks
+    writeDoc(
+      "package.json",
+      JSON.stringify({ name: "code-app", dependencies: { express: "^4", stripe: "^14" } }),
+    );
+    writeDoc("src/server.ts", "const app = express();\napp.post('/charge', h);");
+
+    const exitCode = await initCommand(tmpDir, { yes: true });
+    expect(exitCode).toBe(0);
+
+    const manifest = readGeneratedManifest();
+    expect(manifest.mode).toBe("code-first");
+    expect(manifest.code?.paths).toEqual(["."]);
+    // signals derived from deps
+    expect(manifest.signals.declared).toContain("payments");
+    expect(manifest.signals.declared).toContain("rest-api");
+    // code-first manifests need no documents
+    expect(manifest.documents?.required ?? []).toHaveLength(0);
+  });
+
+  it("still validates as a loadable manifest in code-first mode", async () => {
+    writeDoc("package.json", JSON.stringify({ name: "code-app", dependencies: { prisma: "^5" } }));
+    writeDoc("src/db.ts", "export const client = 1;");
+
+    await initCommand(tmpDir, { yes: true });
+
+    // loadManifest must accept the generated code-first manifest
+    const { loadManifest } = await import("../../src/core/manifest.js");
+    const manifest = loadManifest(tmpDir);
+    expect(manifest.mode).toBe("code-first");
+    expect(manifest.signals.declared).toContain("database");
+  });
+});
+
 describe("formatInitOutput", () => {
   it("formats init result for display", () => {
     const result: InitResult = {
       projectName: "my-project",
       classification: "standard",
+      mode: "doc-first",
       documents: {
         required: [
           { role: "brd", path: "docs/brd.md" },
@@ -258,6 +297,7 @@ describe("formatInitOutput", () => {
     const result: InitResult = {
       projectName: "test",
       classification: "financial",
+      mode: "doc-first",
       documents: {
         required: [
           { role: "brd", path: "brd.md" },
@@ -290,19 +330,19 @@ describe("generated manifest validity", () => {
     // check structure matches what loadManifest expects
     expect(parsed.version).toBe("1.0");
     expect(parsed.project.name).toBeTruthy();
-    expect(Array.isArray(parsed.documents.required)).toBe(true);
-    expect(parsed.documents.required.length).toBeGreaterThanOrEqual(3);
+    expect(Array.isArray(parsed.documents!.required)).toBe(true);
+    expect(parsed.documents!.required!.length).toBeGreaterThanOrEqual(3);
     expect(Array.isArray(parsed.signals.declared)).toBe(true);
     expect(parsed.signals.declared.length).toBeGreaterThan(0);
 
     // verify required roles
-    const roles = parsed.documents.required.map((d) => d.role);
+    const roles = parsed.documents!.required!.map((d) => d.role);
     expect(roles).toContain("brd");
     expect(roles).toContain("frd");
     expect(roles).toContain("add");
 
     // verify each doc ref has role + path
-    for (const doc of parsed.documents.required) {
+    for (const doc of parsed.documents!.required!) {
       expect(typeof doc.role).toBe("string");
       expect(typeof doc.path).toBe("string");
     }

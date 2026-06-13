@@ -7,6 +7,7 @@ import type { DocLintManifest, DocumentRef } from "../types/index.js";
 const MANIFEST_FILENAMES = ["doc-lint.yaml", "doc-lint.yml"];
 const VALID_CLASSIFICATIONS = ["standard", "financial", "healthcare", "infrastructure"];
 const VALID_SEVERITY_THRESHOLDS = ["error", "warn", "note"];
+const VALID_MODES = ["doc-first", "code-first", "reconcile"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -53,6 +54,32 @@ function validateManifest(data: unknown, filePath: string): DocLintManifest {
     throw new Error(`Invalid manifest at ${filePath}: missing or invalid 'version'`);
   }
 
+  // mode (optional; defaults to doc-first)
+  if (obj.mode != null && (typeof obj.mode !== "string" || !VALID_MODES.includes(obj.mode))) {
+    throw new Error(
+      `Invalid manifest at ${filePath}: 'mode' must be one of: ${VALID_MODES.join(", ")}`,
+    );
+  }
+  const mode = (obj.mode as string | undefined) ?? "doc-first";
+
+  // code (optional; validate shape if present)
+  if (obj.code != null) {
+    if (!isRecord(obj.code)) {
+      throw new Error(`Invalid manifest at ${filePath}: 'code' must be an object`);
+    }
+    for (const arrayField of ["paths", "ignore", "entrypoints"] as const) {
+      const value = obj.code[arrayField];
+      if (value != null && (!Array.isArray(value) || value.some((v) => typeof v !== "string"))) {
+        throw new Error(
+          `Invalid manifest at ${filePath}: 'code.${arrayField}' must be an array of strings`,
+        );
+      }
+    }
+    if (obj.code.maxInputTokens != null && typeof obj.code.maxInputTokens !== "number") {
+      throw new Error(`Invalid manifest at ${filePath}: 'code.maxInputTokens' must be a number`);
+    }
+  }
+
   // project
   if (!isRecord(obj.project)) {
     throw new Error(`Invalid manifest at ${filePath}: missing 'project'`);
@@ -73,50 +100,18 @@ function validateManifest(data: unknown, filePath: string): DocLintManifest {
     }
   }
 
-  // documents
-  if (!isRecord(obj.documents)) {
-    throw new Error(`Invalid manifest at ${filePath}: missing 'documents'`);
-  }
-  if (!Array.isArray(obj.documents.required) || obj.documents.required.length === 0) {
-    throw new Error(`Invalid manifest at ${filePath}: 'documents.required' must be a non-empty array`);
-  }
-  for (const doc of obj.documents.required) {
-    validateDocumentRef(doc, filePath);
-  }
-  if (obj.documents.optional != null) {
-    if (!Array.isArray(obj.documents.optional)) {
-      throw new Error(`Invalid manifest at ${filePath}: 'documents.optional' must be an array`);
+  // documents — required in doc-first/reconcile (we need docs to evaluate/compare);
+  // optional in code-first (scaffold them with `doc-lint bootstrap`).
+  const docsRequiredByMode = mode !== "code-first";
+  if (obj.documents == null) {
+    if (docsRequiredByMode) {
+      throw new Error(`Invalid manifest at ${filePath}: missing 'documents'`);
     }
-    for (const doc of obj.documents.optional) {
-      validateDocumentRef(doc, filePath);
+  } else {
+    if (!isRecord(obj.documents)) {
+      throw new Error(`Invalid manifest at ${filePath}: 'documents' must be an object`);
     }
-  }
-
-  // documents.contracts / operational / reference (optional arrays of DocumentRef)
-  for (const category of ["contracts", "operational", "reference"] as const) {
-    const value = obj.documents[category];
-    if (value != null) {
-      if (!Array.isArray(value)) {
-        throw new Error(
-          `Invalid manifest at ${filePath}: 'documents.${category}' must be an array`,
-        );
-      }
-      for (const doc of value) {
-        validateDocumentRef(doc, filePath);
-      }
-    }
-  }
-
-  // validate required roles — safe to access .role after validateDocumentRef passed
-  const requiredDocs = obj.documents.required as DocumentRef[];
-  const requiredRoles = requiredDocs.map((d) => d.role);
-  const neededRoles = ["brd", "frd", "add"];
-  for (const role of neededRoles) {
-    if (!requiredRoles.includes(role)) {
-      throw new Error(
-        `Invalid manifest at ${filePath}: documents.required must include role '${role}'`,
-      );
-    }
+    validateDocumentsBlock(obj.documents, filePath, mode);
   }
 
   // signals
@@ -185,6 +180,47 @@ function validateManifest(data: unknown, filePath: string): DocLintManifest {
 
   // fields validated above; final cast needed because TS can't track field-by-field validation
   return data as DocLintManifest;
+}
+
+function validateDocumentsBlock(
+  documents: Record<string, unknown>,
+  filePath: string,
+  mode: string,
+): void {
+  // doc-first keeps the strict contract: required brd/frd/add. other modes only
+  // require that any provided document refs are well-formed.
+  const strict = mode === "doc-first";
+
+  if (strict) {
+    if (!Array.isArray(documents.required) || documents.required.length === 0) {
+      throw new Error(`Invalid manifest at ${filePath}: 'documents.required' must be a non-empty array`);
+    }
+  } else if (documents.required != null && !Array.isArray(documents.required)) {
+    throw new Error(`Invalid manifest at ${filePath}: 'documents.required' must be an array`);
+  }
+
+  for (const category of ["required", "optional", "contracts", "operational", "reference"] as const) {
+    const value = documents[category];
+    if (value == null) continue;
+    if (!Array.isArray(value)) {
+      throw new Error(`Invalid manifest at ${filePath}: 'documents.${category}' must be an array`);
+    }
+    for (const doc of value) {
+      validateDocumentRef(doc, filePath);
+    }
+  }
+
+  if (strict) {
+    const requiredDocs = documents.required as DocumentRef[];
+    const requiredRoles = requiredDocs.map((d) => d.role);
+    for (const role of ["brd", "frd", "add"]) {
+      if (!requiredRoles.includes(role)) {
+        throw new Error(
+          `Invalid manifest at ${filePath}: documents.required must include role '${role}'`,
+        );
+      }
+    }
+  }
 }
 
 function validateDocumentRef(doc: unknown, filePath: string): asserts doc is DocumentRef {

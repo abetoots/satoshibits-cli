@@ -6,6 +6,7 @@ import {
   extractJson,
   parseEvaluationResponse,
   parseContradictionResponse,
+  parseDriftResponse,
 } from "../../src/core/response-parser.js";
 
 const FIXTURES = path.join(import.meta.dirname, "../fixtures");
@@ -117,6 +118,77 @@ describe("response-parser", () => {
       const text = '```json\n{"contradictions": []}\n```';
       const { contradictions } = parseContradictionResponse(text);
       expect(contradictions).toHaveLength(0);
+    });
+  });
+
+  describe("parseDriftResponse", () => {
+    it("parses the three drift types", () => {
+      const text = `\`\`\`json
+{
+  "drifts": [
+    {
+      "id": "drift-1",
+      "drift_type": "value-mismatch",
+      "doc_claim": { "text": "3 retries", "location": "ADD Section 4" },
+      "code_reality": { "text": "maxRetries: 5", "location": "src/http.ts:12" },
+      "severity": "error",
+      "confidence": "high",
+      "explanation": "docs say 3, code uses 5",
+      "recommendation": "update ADD to 5"
+    },
+    {
+      "id": "drift-2",
+      "drift_type": "implemented-not-documented",
+      "doc_claim": { "text": "", "location": "" },
+      "code_reality": { "text": "POST /refund", "location": "src/routes.ts:9" },
+      "severity": "warn",
+      "confidence": "medium",
+      "explanation": "route not in docs",
+      "recommendation": "document it"
+    },
+    {
+      "id": "drift-3",
+      "drift_type": "documented-not-implemented",
+      "doc_claim": { "text": "GET /legacy", "location": "FRD Section 2" },
+      "code_reality": { "text": "(not found in scanned code)", "location": "(not found in scanned code)" },
+      "severity": "note",
+      "confidence": "low",
+      "explanation": "endpoint not found",
+      "recommendation": "remove from docs or implement",
+      "requires_human_review": true
+    }
+  ]
+}
+\`\`\``;
+      const { drifts, parseError } = parseDriftResponse(text);
+      expect(parseError).toBeUndefined();
+      expect(drifts).toHaveLength(3);
+      expect(drifts.map((d) => d.driftType)).toEqual([
+        "value-mismatch",
+        "implemented-not-documented",
+        "documented-not-implemented",
+      ]);
+      expect(drifts[0]!.severity).toBe("error");
+      expect(drifts[0]!.codeReality.location).toBe("src/http.ts:12");
+      expect(drifts[2]!.requiresHumanReview).toBe(true);
+    });
+
+    it("normalizes an unknown drift_type to value-mismatch", () => {
+      const text = '```json\n{"drifts": [{"id": "d", "drift_type": "weird", "severity": "warn"}]}\n```';
+      const { drifts } = parseDriftResponse(text);
+      expect(drifts[0]!.driftType).toBe("value-mismatch");
+      expect(drifts[0]!.severity).toBe("warn");
+    });
+
+    it("returns a parseError on malformed JSON", () => {
+      const { drifts, parseError } = parseDriftResponse("not json at all");
+      expect(drifts).toHaveLength(0);
+      expect(parseError).toBeDefined();
+    });
+
+    it("handles an empty drifts array", () => {
+      const { drifts } = parseDriftResponse('```json\n{"drifts": []}\n```');
+      expect(drifts).toHaveLength(0);
     });
   });
 });

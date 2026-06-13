@@ -1,0 +1,91 @@
+# =============================================================================
+# CONCERN: Schema/Doc Parity (Documentation ↔ Code)
+# =============================================================================
+# Validates that the persisted data entities and fields described in the
+# documentation match the data models detected in the code map (ORM schemas:
+# Prisma, Mongoose, Drizzle, TypeORM).
+#
+# WHY THIS MATTERS:
+# When the documented data model drifts from the implemented schema, every
+# downstream consumer (migrations, analytics, integrations, privacy reviews)
+# reasons about a model that no longer exists. Added or removed entities are
+# the highest-signal form of this drift.
+#
+# CODE-AWARE & NARROW: Only recognized ORM model declarations are visible in the
+# code map. This concern explicitly EXCLUDES migrations, runtime validation/DTO
+# transforms, and dynamically generated schemas.
+# =============================================================================
+
+concern:
+  id: "schema-doc-parity"
+  version: "1.0"
+  name: "Schema/Doc Parity (Docs ↔ Code)"
+  category: "core"
+  severity: "warn"
+
+  description: |
+    Persisted data entities described in the documentation should correspond to
+    the data models detected in the code map, and vice versa. Scope is limited to
+    ORM model declarations present in the code map's "Data models" section.
+    Migrations, runtime transforms, and generated schemas are out of scope.
+
+triggers:
+  any_of:
+    - database
+    - persistence
+    - data-model
+    - state-management
+
+evaluation:
+  question: |
+    Reconcile documented data entities against the code map's detected models.
+
+    STEP 1: From the documents, list the persisted entities the architecture
+    describes (tables/collections/aggregates and their key fields).
+
+    STEP 2: From the code map "Data models" section, list the detected ORM
+    models (name + orm + file:line).
+
+    STEP 3: Report:
+    - implemented-not-documented: a detected model with no documentation.
+    - documented-not-implemented: a documented entity with no detected model.
+
+    SCOPE & UNCERTAINTY:
+    - Only entity-level parity is reliable from a static map; do NOT assert
+      field-level mismatches unless the docs and a detected model clearly
+      disagree on a named field.
+    - If only some ORM patterns are recognized (see coverage), absence of a model
+      may mean "not detected", not "not implemented" — lower confidence and set
+      requires_human_review.
+
+  evidence_required:
+    - field: "related_item"
+      type: "string"
+      description: "The entity/model in question (e.g., 'Order')."
+      required: true
+    - field: "direction"
+      type: "enum"
+      values: ["implemented-not-documented", "documented-not-implemented", "value-mismatch"]
+      required: true
+    - field: "doc_location"
+      type: "string | null"
+      description: "Where the docs describe this entity, if at all (both sides are needed to reconcile)."
+      required: true
+    - field: "code_location"
+      type: "string | null"
+      description: "file:line of the detected model, if present."
+      required: true
+    - field: "confidence"
+      type: "enum"
+      values: ["high", "medium", "low"]
+      required: true
+    - field: "requires_human_review"
+      type: "boolean"
+      description: "True when ORM detection coverage is incomplete and absence cannot be trusted."
+      required: true
+
+  failure_condition: |
+    Report as WARNING when a detected ORM model is undocumented, or a documented
+    persisted entity has no detected model in scanned code. Report as NOTE
+    (requires_human_review) when ORM detection coverage is incomplete. Do not
+    assert field-level drift without explicit conflicting evidence.
