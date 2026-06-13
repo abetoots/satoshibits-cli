@@ -65,7 +65,7 @@ export const ROLE_PATTERNS: Record<string, string[]> = {
 
 export const REQUIRED_ROLES = ["brd", "frd", "add"] as const;
 
-const IGNORE_PATTERNS = [
+export const IGNORE_PATTERNS = [
   "**/node_modules/**",
   "**/.git/**",
   "**/dist/**",
@@ -74,10 +74,10 @@ const IGNORE_PATTERNS = [
   "**/.next/**",
 ];
 
-const MAX_FILE_SIZE = 1024 * 1024; // 1MB
+export const MAX_FILE_SIZE = 1024 * 1024; // 1MB
 
 // binary file extensions to skip
-const BINARY_EXTENSIONS = new Set([
+export const BINARY_EXTENSIONS = new Set([
   ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp",
   ".pdf", ".zip", ".gz", ".tar", ".rar", ".7z",
   ".exe", ".dll", ".so", ".dylib", ".bin",
@@ -91,7 +91,7 @@ function isBinaryFile(filePath: string): boolean {
   return BINARY_EXTENSIONS.has(ext);
 }
 
-function isValidFile(filePath: string): boolean {
+export function isValidFile(filePath: string): boolean {
   try {
     if (isBinaryFile(filePath)) return false;
     const stat = fs.statSync(filePath);

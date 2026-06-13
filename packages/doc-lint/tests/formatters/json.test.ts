@@ -42,12 +42,14 @@ describe("json formatter", () => {
       },
       findings: [],
       contradictions: [],
+      drifts: [],
       summary: {
         totalFindings: 0,
         errors: 0,
         warnings: 0,
         notes: 0,
         contradictions: 0,
+        drifts: 0,
         humanReviewRequired: 0,
       },
     };

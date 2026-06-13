@@ -3,8 +3,11 @@ import * as path from "node:path";
 import type {
   AssembledPrompt,
   AssembleResult,
+  CodeMap,
   ContradictionFinding,
   CoverageInfo,
+  DocLintMode,
+  DriftFinding,
   ExclusionEntry,
   Finding,
   LintResult,
@@ -18,25 +21,50 @@ import { loadDocuments } from "./documents.js";
 import { loadManifest } from "./manifest.js";
 import {
   buildContradictionPrompt,
+  buildDriftPrompt,
   buildEvaluationPrompt,
 } from "./prompt-builder.js";
 import {
   parseContradictionResponse,
+  parseDriftResponse,
   parseEvaluationResponse,
 } from "./response-parser.js";
 import { detectSignals, resolveDocumentPaths } from "./signal-keywords.js";
 import { matchConcerns } from "./signals.js";
+import { buildCodeMap } from "./code-scan.js";
+
+// concerns that reconcile docs against the code map — ONLY these receive the code map
+// in their prompt. They either compare docs↔code (parity) or use code facts as the
+// ground-truth inventory of what MUST be documented (routes, models, env vars, jobs).
+// Both are safe: code facts here surface MORE gaps, they don't let an implementation
+// fact mask a doc-gap concern (the false-pass risk we avoid for ordinary doc concerns).
+const CODE_AWARE_CONCERNS = new Set([
+  "endpoint-parity",
+  "dependency-drift",
+  "schema-doc-parity",
+  "config-surface-documentation",
+  "data-model-ownership",
+  "background-job-observability",
+  "public-contract-versioning",
+  // reserved for planned code-vs-doc concerns (no-ops until those concern ids exist)
+  "resilience-value-drift",
+  "auth-enforcement-parity",
+]);
 
 export interface AssembleInput {
   projectPath: string;
   configPath?: string;
   contradiction?: boolean;
+  drift?: boolean;
   filterConcernIds?: string[];
   tierFilter?: number | "all";
   tierCumulative?: boolean; // default: false (exact match). true = include all tiers up to tierFilter.
   autoDetect?: boolean; // CLI override for manifest.signals.auto_detect
   warnOnMismatch?: boolean; // CLI override for manifest.signals.warn_on_mismatch
   inline?: boolean; // default: true. Set to false for path references.
+  // overrides for manifest fields (CLI flags); fall back to manifest when unset
+  mode?: DocLintMode;
+  codePaths?: string[];
 }
 
 export interface LintInput extends AssembleInput {
@@ -57,6 +85,43 @@ export function applyToleranceFilter(
   if (!tolerance?.severity_threshold) return findings;
   const minRank = SEVERITY_RANK[tolerance.severity_threshold] ?? 1;
   return findings.filter((f) => (SEVERITY_RANK[f.severity] ?? 0) >= minRank);
+}
+
+// drift findings have a different shape than concern findings, so they get their
+// own suppression: severity-threshold tolerance plus location-based exclusions
+// keyed on the code-reality location (file path) rather than relatedItem.
+export function applyDriftFilters(
+  drifts: DriftFinding[],
+  tolerance: ToleranceConfig | undefined,
+  exclusions: ExclusionEntry[] | undefined,
+): DriftFinding[] {
+  let kept = drifts;
+
+  if (tolerance?.severity_threshold) {
+    const minRank = SEVERITY_RANK[tolerance.severity_threshold] ?? 1;
+    kept = kept.filter((d) => (SEVERITY_RANK[d.severity] ?? 0) >= minRank);
+  }
+
+  // exclusions are matched against the CODE side only (component == a path/dir);
+  // doc-claim locations are doc labels (e.g. "ADD:4"), not components. match on a
+  // path boundary so excluding "src/auth" does not also suppress "src/auth-utils.ts".
+  const excludedComponents = (exclusions ?? []).flatMap((e) => (e.component ? [e.component] : []));
+  if (excludedComponents.length > 0) {
+    kept = kept.filter(
+      (d) => !excludedComponents.some((comp) => locationMatchesComponent(d.codeReality.location, comp)),
+    );
+  }
+
+  return kept;
+}
+
+// true when a code-reality location (e.g. "src/http.ts:12") is within an excluded
+// component path. requires a boundary ("/" or ":") so prefixes don't over-match.
+function locationMatchesComponent(location: string, component: string): boolean {
+  if (location === component) return true;
+  if (!location.startsWith(component)) return false;
+  const next = location.charAt(component.length);
+  return next === "/" || next === ":";
 }
 
 export function applyExclusionFilter(
@@ -108,8 +173,12 @@ export function filterExcludedConcernPrompts(
   const actuallyExcluded: string[] = [];
 
   for (const prompt of prompts) {
-    // never filter contradiction prompts
-    if (prompt.type === "contradiction" || !excludedIds.has(prompt.concernId)) {
+    // never filter the cross-cutting scanners
+    if (
+      prompt.type === "contradiction" ||
+      prompt.type === "drift" ||
+      !excludedIds.has(prompt.concernId)
+    ) {
       kept.push(prompt);
     } else {
       actuallyExcluded.push(prompt.concernId);
@@ -139,10 +208,36 @@ export function buildCoverageInfo(input: {
   };
 }
 
-export function assemble(input: AssembleInput): AssembleResult {
+// assemble stays free/no-LLM. it may build a CodeMap (cheap static scan) for
+// reconcile mode — that is a static scan, not an LLM call, so purity is preserved.
+export async function assemble(input: AssembleInput): Promise<AssembleResult> {
   const manifest = loadManifest(input.projectPath, input.configPath);
+
+  const mode: DocLintMode = input.mode ?? manifest.mode ?? "doc-first";
+
+  // code-first has no authored docs to assemble prompts against — building concern
+  // prompts over an empty doc set is the misleading path the reframe removed. redirect.
+  if (mode === "code-first") {
+    throw new Error(
+      "Code-first projects have no authored docs to assemble. Run `doc-lint bootstrap` " +
+        "to scaffold as-built docs + a gap inventory, then assemble/lint in doc-first or reconcile mode.",
+    );
+  }
+
   const docs = loadDocuments(manifest, input.projectPath);
   const allConcerns = loadAllConcerns();
+
+  // build the code map when the mode reconciles docs against source (reconcile).
+  // this is a static scan, not an LLM call, so assemble stays free/no-LLM.
+  let codeMap: CodeMap | undefined;
+  if (mode === "reconcile") {
+    codeMap = await buildCodeMap(input.projectPath, {
+      paths: input.codePaths ?? manifest.code?.paths,
+      ignore: manifest.code?.ignore,
+      entrypoints: manifest.code?.entrypoints,
+      maxInputTokens: manifest.code?.maxInputTokens,
+    });
+  }
 
   // resolve auto_detect and warn_on_mismatch: CLI flag > manifest > default false
   const autoDetect = input.autoDetect ?? manifest.signals.auto_detect ?? false;
@@ -194,7 +289,11 @@ export function assemble(input: AssembleInput): AssembleResult {
   const prompts: AssembledPrompt[] = [];
 
   for (const concern of matched) {
-    const prompt = buildEvaluationPrompt(concern, docs.all, inline);
+    // only code-aware concerns (parity + code-as-checklist) receive the code map;
+    // injecting code facts into every concern would let implementation stand in for
+    // documentation and falsely pass an ordinary doc-gap concern.
+    const concernCodeMap = CODE_AWARE_CONCERNS.has(concern.id) ? codeMap : undefined;
+    const prompt = buildEvaluationPrompt(concern, docs.all, inline, concernCodeMap);
     prompts.push(prompt);
   }
 
@@ -203,6 +302,12 @@ export function assemble(input: AssembleInput): AssembleResult {
   if (enableContradiction) {
     const contradictionPrompt = buildContradictionPrompt(docs.all, inline);
     prompts.push(contradictionPrompt);
+  }
+
+  // drift scanner runs in reconcile mode (authored docs + code present) unless disabled
+  const enableDrift = input.drift !== false;
+  if (mode === "reconcile" && enableDrift && codeMap) {
+    prompts.push(buildDriftPrompt(docs.all, codeMap));
   }
 
   const signalAnalysis: SignalAnalysis = {
@@ -250,12 +355,26 @@ export function assemble(input: AssembleInput): AssembleResult {
 // lint composes assemble — the two-layer architecture is enforced structurally
 export async function lint(input: LintInput): Promise<LintResult> {
   const manifest = loadManifest(input.projectPath, input.configPath);
-  const docs = loadDocuments(manifest, input.projectPath);
-  // lint always needs inlined content for the evaluation engine
-  const assembled = assemble({ ...input, inline: true });
   // noop when no progress callback provided
   // eslint-disable-next-line @typescript-eslint/no-empty-function -- intentional no-op fallback
   const progress = input.onProgress ?? ((_msg: string) => {});
+
+  const mode: DocLintMode = input.mode ?? manifest.mode ?? "doc-first";
+
+  // code-first is an ONBOARDING mode, not a lint-equivalent: it has no authored docs
+  // to lint. (Linting docs derived from code would be circular — "is X documented?"
+  // collapses into "is X implemented?".) Direct the user to `bootstrap`.
+  if (mode === "code-first") {
+    throw new Error(
+      "Code-first projects have no authored docs to lint. Run `doc-lint bootstrap` to " +
+        "scaffold as-built docs and a documentation gap inventory, fill in the intent " +
+        "(TODOs), then lint in doc-first or reconcile mode.",
+    );
+  }
+
+  const docs = loadDocuments(manifest, input.projectPath);
+  // lint always needs inlined content for the evaluation engine
+  const assembled = await assemble({ ...input, inline: true });
 
   if (assembled.signals.mismatch) {
     const { undeclared, stale } = assembled.signals.mismatch;
@@ -287,6 +406,7 @@ export async function lint(input: LintInput): Promise<LintResult> {
 
   let findings: Finding[] = [];
   const contradictions: ContradictionFinding[] = [];
+  let drifts: DriftFinding[] = [];
 
   for (const prompt of activePrompts) {
     if (prompt.type === "contradiction") {
@@ -299,6 +419,19 @@ export async function lint(input: LintInput): Promise<LintResult> {
           progress(`  Warning: ${parsed.parseError}`);
         }
         contradictions.push(...parsed.contradictions);
+      } else {
+        progress(`  Error: ${result.error}`);
+      }
+    } else if (prompt.type === "drift") {
+      progress("Running documentation–code drift scanner...");
+      const result = await input.engine.evaluate(prompt);
+
+      if (result.ok) {
+        const parsed = parseDriftResponse(result.content);
+        if (parsed.parseError) {
+          progress(`  Warning: ${parsed.parseError}`);
+        }
+        drifts.push(...parsed.drifts);
       } else {
         progress(`  Error: ${result.error}`);
       }
@@ -333,13 +466,16 @@ export async function lint(input: LintInput): Promise<LintResult> {
   // apply tolerance filtering
   findings = applyToleranceFilter(findings, tolerance);
 
+  // apply drift-specific suppression (own keys, not relatedItem)
+  drifts = applyDriftFilters(drifts, tolerance, exclusions);
+
   // build coverage info
   const documentsLoaded = docs.all.map((d) => d.role);
   const allDeclaredOptional = [
-    ...(manifest.documents.optional ?? []),
-    ...(manifest.documents.contracts ?? []),
-    ...(manifest.documents.operational ?? []),
-    ...(manifest.documents.reference ?? []),
+    ...(manifest.documents?.optional ?? []),
+    ...(manifest.documents?.contracts ?? []),
+    ...(manifest.documents?.operational ?? []),
+    ...(manifest.documents?.reference ?? []),
   ];
   const documentsMissing = allDeclaredOptional
     .filter((ref) => !docs.byRole[ref.role])
@@ -357,10 +493,13 @@ export async function lint(input: LintInput): Promise<LintResult> {
   const contradictionErrors = contradictions.filter(
     (c) => c.severity === "error",
   ).length;
-  const errors = findingErrors + contradictionErrors;
+  const driftErrors = drifts.filter((d) => d.severity === "error").length;
+  const errors = findingErrors + contradictionErrors + driftErrors;
   const warnings = findings.filter((f) => f.severity === "warn").length;
   const notes = findings.filter((f) => f.severity === "note").length;
-  const humanReview = findings.filter((f) => f.requiresHumanReview).length;
+  const humanReview =
+    findings.filter((f) => f.requiresHumanReview).length +
+    drifts.filter((d) => d.requiresHumanReview).length;
 
   return {
     version: "2.0",
@@ -370,12 +509,14 @@ export async function lint(input: LintInput): Promise<LintResult> {
     concerns: assembled.concerns,
     findings,
     contradictions,
+    drifts,
     summary: {
       totalFindings: findings.length,
       errors,
       warnings,
       notes,
       contradictions: contradictions.length,
+      drifts: drifts.length,
       humanReviewRequired: humanReview,
     },
     toleranceApplied: tolerance,

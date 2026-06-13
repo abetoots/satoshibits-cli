@@ -1,0 +1,77 @@
+# =============================================================================
+# CONCERN: Data Model Ownership
+# =============================================================================
+# Validates that every persisted entity has a documented owning component and a
+# documented lifecycle (who creates, mutates, and deletes it). Complements
+# state-ownership-clarity, which focuses on cross-boundary mutable state.
+#
+# WHY THIS MATTERS:
+# When no single component owns an entity, writes happen from everywhere and
+# nobody owns its invariants, migrations, or retention. Ambiguous ownership is
+# the root of data-corruption incidents and stalled schema changes.
+# =============================================================================
+
+concern:
+  id: "data-model-ownership"
+  version: "1.0"
+  name: "Data Model Ownership"
+  category: "core"
+  severity: "error"
+
+  description: |
+    Every persisted entity must have a documented owning component (the single
+    writer/authority) and a documented lifecycle: who creates it, who may mutate
+    it, who deletes it, and how its invariants are enforced.
+
+triggers:
+  any_of:
+    - database
+    - persistence
+    - data-model
+    - multi-component
+    - microservices
+    - state-management
+
+evaluation:
+  question: |
+    For every persisted entity, determine whether ownership and lifecycle are
+    documented.
+
+    STEP 1: From the documents (and the code map's "Data models" section when
+    present), list every persisted entity.
+
+    STEP 2: For each entity, find the documented:
+    - owning component (the authoritative writer)
+    - write-access model (who may mutate, and how conflicts are resolved)
+    - lifecycle (creation, mutation, deletion/retention)
+
+    STEP 3: Flag entities with no documented owner, multiple ambiguous writers
+    with no conflict-resolution rule, or no documented deletion/retention.
+
+  evidence_required:
+    - field: "entity_name"
+      type: "string"
+      description: "The persisted entity (e.g., 'Order', 'UserProfile')."
+      required: true
+    - field: "owner_documented"
+      type: "boolean"
+      description: "Is a single owning component documented?"
+      required: true
+    - field: "write_access_model"
+      type: "string | null"
+      description: "Documented write-access / conflict-resolution model."
+      required: true
+    - field: "lifecycle_documented"
+      type: "boolean"
+      description: "Are creation, mutation, and deletion/retention documented?"
+      required: true
+    - field: "source_location"
+      type: "string"
+      description: "Where this is documented."
+      required: true
+
+  failure_condition: |
+    Report as ERROR when a persisted entity has no documented owner, or has
+    multiple writers with no documented conflict-resolution strategy. Report as
+    WARNING when ownership is documented but lifecycle (deletion/retention) is
+    not.

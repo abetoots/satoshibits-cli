@@ -1,4 +1,4 @@
-import type { ContradictionFinding, Finding, Severity, Confidence } from "../types/index.js";
+import type { ContradictionFinding, DriftFinding, DriftType, Finding, Severity, Confidence } from "../types/index.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -126,6 +126,58 @@ export function parseContradictionResponse(
   }
 
   return { contradictions };
+}
+
+export function parseDriftResponse(
+  text: string,
+): { drifts: DriftFinding[]; parseError?: string } {
+  const json = extractJson(text);
+  if (!isRecord(json)) {
+    return { drifts: [], parseError: "Failed to extract JSON from drift response" };
+  }
+
+  const drifts: DriftFinding[] = [];
+
+  if (isUnknownArray(json.drifts)) {
+    for (let i = 0; i < json.drifts.length; i++) {
+      const d = json.drifts[i];
+      if (!isRecord(d)) continue;
+
+      const docClaim = isRecord(d.doc_claim) ? d.doc_claim : {};
+      const codeReality = isRecord(d.code_reality) ? d.code_reality : {};
+
+      drifts.push({
+        id: typeof d.id === "string" ? d.id : `drift-${i + 1}`,
+        driftType: normalizeDriftType(typeof d.drift_type === "string" ? d.drift_type : undefined),
+        docClaim: {
+          text: typeof docClaim.text === "string" ? docClaim.text : "Not specified",
+          location: typeof docClaim.location === "string" ? docClaim.location : "Not specified",
+        },
+        codeReality: {
+          text: typeof codeReality.text === "string" ? codeReality.text : "Not specified",
+          location: typeof codeReality.location === "string" ? codeReality.location : "Not specified",
+        },
+        severity: normalizeSeverity(typeof d.severity === "string" ? d.severity : undefined),
+        confidence: normalizeConfidence(typeof d.confidence === "string" ? d.confidence : undefined),
+        explanation: typeof d.explanation === "string" ? d.explanation : "No explanation provided",
+        recommendation: typeof d.recommendation === "string" ? d.recommendation : "Not specified",
+        requiresHumanReview: typeof d.requires_human_review === "boolean" ? d.requires_human_review : false,
+      });
+    }
+  }
+
+  return { drifts };
+}
+
+function normalizeDriftType(value?: string): DriftType {
+  if (
+    value === "documented-not-implemented" ||
+    value === "implemented-not-documented" ||
+    value === "value-mismatch"
+  ) {
+    return value;
+  }
+  return "value-mismatch";
 }
 
 function normalizeSeverity(value?: string): Severity {

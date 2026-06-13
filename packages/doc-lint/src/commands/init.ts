@@ -3,14 +3,23 @@ import * as path from "node:path";
 import * as yaml from "js-yaml";
 
 import { discoverDocuments, getMissingRequiredRoles, REQUIRED_ROLES } from "../core/discovery.js";
+import { buildCodeMap } from "../core/code-scan.js";
 import {
   detectSignals,
+  detectSignalsFromCode,
   resolveDocumentPaths,
   getAllSignalNames,
 } from "../core/signal-keywords.js";
 
 import type { SignalConfidence } from "../core/signal-keywords.js";
-import type { InitOptions, DocLintManifest, DocumentRef, ProjectClassification } from "../types/index.js";
+import type {
+  CodeConfig,
+  DocLintManifest,
+  DocLintMode,
+  DocumentRef,
+  InitOptions,
+  ProjectClassification,
+} from "../types/index.js";
 
 const CLASSIFICATION_OPTIONS: ProjectClassification[] = [
   "standard",
@@ -22,10 +31,12 @@ const CLASSIFICATION_OPTIONS: ProjectClassification[] = [
 export interface InitResult {
   projectName: string;
   classification: ProjectClassification;
+  mode: DocLintMode;
   documents: {
     required: DocumentRef[];
     optional: DocumentRef[];
   };
+  code?: CodeConfig;
   signals: string[];
   manifestPath: string;
 }
@@ -43,16 +54,28 @@ function buildManifest(result: InitResult): DocLintManifest {
       name: result.projectName,
       classification: result.classification,
     },
-    documents: {
-      required: result.documents.required,
-    },
     signals: {
       declared: result.signals,
     },
   };
 
-  if (result.documents.optional.length > 0) {
-    manifest.documents.optional = result.documents.optional;
+  // mode is omitted for the default (doc-first) to keep manifests back-compatible
+  if (result.mode !== "doc-first") {
+    manifest.mode = result.mode;
+  }
+
+  if (result.documents.required.length > 0 || result.documents.optional.length > 0) {
+    manifest.documents = {};
+    if (result.documents.required.length > 0) {
+      manifest.documents.required = result.documents.required;
+    }
+    if (result.documents.optional.length > 0) {
+      manifest.documents.optional = result.documents.optional;
+    }
+  }
+
+  if (result.code) {
+    manifest.code = result.code;
   }
 
   return manifest;
@@ -63,23 +86,61 @@ export function formatInitOutput(result: InitResult): string {
   const lines: string[] = [];
 
   lines.push("Initializing doc-lint manifest...\n");
-  lines.push("Scanning for architecture documents...");
 
-  for (const doc of result.documents.required) {
-    lines.push(`  Found: ${doc.path} (${doc.role})`);
-  }
-  for (const doc of result.documents.optional) {
-    lines.push(`  Optional: ${doc.path} (${roleLabel(doc.role)})`);
+  if (result.mode === "code-first") {
+    lines.push("Code-first mode: signals detected from source code.");
+    lines.push(`  Source roots: ${(result.code?.paths ?? ["."]).join(", ")}`);
+  } else {
+    lines.push("Scanning for architecture documents...");
+    for (const doc of result.documents.required) {
+      lines.push(`  Found: ${doc.path} (${doc.role})`);
+    }
+    for (const doc of result.documents.optional) {
+      lines.push(`  Optional: ${doc.path} (${roleLabel(doc.role)})`);
+    }
   }
 
   lines.push("");
   lines.push(`Project: ${result.projectName}`);
+  lines.push(`Mode: ${result.mode}`);
   lines.push(`Classification: ${result.classification}`);
   lines.push(`Signals: ${result.signals.length} declared`);
   lines.push("");
   lines.push(`Created ${path.basename(result.manifestPath)}`);
 
+  if (result.mode === "code-first") {
+    lines.push("");
+    lines.push("No authored docs — this project is in code-first onboarding.");
+    lines.push("Next: run `doc-lint bootstrap` to scaffold as-built docs + a gap inventory.");
+    lines.push("(`doc-lint lint` requires authored docs and a doc-first/reconcile manifest.)");
+  }
+
   return lines.join("\n");
+}
+
+// code-first fallback: no architecture docs found, so detect signals from the
+// codebase and produce a code-first manifest.
+async function initCodeFirst(projectPath: string): Promise<InitResult> {
+  const codeMap = await buildCodeMap(projectPath);
+  const detected = detectSignalsFromCode(codeMap);
+  const selected = detected.filter((s) => s.confidence === "high" || s.confidence === "medium");
+
+  if (selected.length === 0) {
+    throw new Error(
+      "No architecture documents found and no signals could be detected from the codebase. " +
+        "Add docs (brd/frd/add) or ensure the source uses recognizable frameworks/dependencies.",
+    );
+  }
+
+  return {
+    projectName: path.basename(projectPath),
+    classification: "standard",
+    mode: "code-first",
+    documents: { required: [], optional: [] },
+    code: { paths: ["."] },
+    signals: selected.map((s) => s.signal),
+    manifestPath: path.resolve(projectPath, "doc-lint.yaml"),
+  };
 }
 
 // run the init command in non-interactive (--yes) mode
@@ -89,6 +150,13 @@ async function initNonInteractive(
 ): Promise<InitResult> {
   const discovery = await discoverDocuments(projectPath, ignorePatterns);
   const missingRequired = getMissingRequiredRoles(discovery);
+
+  // no architecture docs at all → fall back to code-first. but if the user explicitly
+  // excluded docs via --ignore, that is a filter, not an absence — surface the
+  // missing-docs error rather than silently switching the project to code-first.
+  if (missingRequired.length === REQUIRED_ROLES.length && !ignorePatterns?.length) {
+    return initCodeFirst(projectPath);
+  }
 
   if (missingRequired.length > 0) {
     throw new Error(
@@ -140,6 +208,7 @@ async function initNonInteractive(
   return {
     projectName,
     classification: "standard",
+    mode: "doc-first",
     documents: { required: requiredDocs, optional: optionalDocs },
     signals: selected.map((s) => s.signal),
     manifestPath: path.resolve(projectPath, "doc-lint.yaml"),
@@ -151,12 +220,28 @@ async function initInteractive(
   projectPath: string,
   ignorePatterns?: string[],
 ): Promise<InitResult> {
-  const { input, checkbox, select } = await import("@inquirer/prompts");
+  const { input, confirm, checkbox, select } = await import("@inquirer/prompts");
 
   console.log("\nInitializing doc-lint manifest...\n");
   console.log("Scanning for architecture documents...");
 
   const discovery = await discoverDocuments(projectPath, ignorePatterns);
+
+  // no architecture docs at all → offer code-first (but not when the user explicitly
+  // excluded docs via --ignore; that is a filter, not an absence)
+  if (getMissingRequiredRoles(discovery).length === REQUIRED_ROLES.length && !ignorePatterns?.length) {
+    const useCodeFirst = await confirm({
+      message: "No architecture documents (brd/frd/add) found. Initialize in code-first mode (detect signals from source)?",
+      default: true,
+    });
+    if (useCodeFirst) {
+      console.log("\nScanning source code for signals...");
+      const result = await initCodeFirst(projectPath);
+      console.log(`  Detected signals: ${result.signals.join(", ")}`);
+      const projectName = await input({ message: "Project name:", default: result.projectName });
+      return { ...result, projectName };
+    }
+  }
 
   // handle required roles
   const requiredDocs: DocumentRef[] = [];
@@ -271,6 +356,7 @@ async function initInteractive(
   return {
     projectName,
     classification,
+    mode: "doc-first",
     documents: { required: requiredDocs, optional: optionalDocs },
     signals: selectedSignals,
     manifestPath: path.resolve(projectPath, "doc-lint.yaml"),

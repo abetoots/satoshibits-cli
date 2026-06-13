@@ -1,5 +1,7 @@
 export type {
   DocLintManifest,
+  DocLintMode,
+  CodeConfig,
   DocumentRef,
   ProjectClassification,
   ToleranceConfig,
@@ -30,6 +32,8 @@ export type {
   Confidence,
   Finding,
   ContradictionFinding,
+  DriftFinding,
+  DriftType,
   CoverageInfo,
   SignalAnalysis,
   MatchedConcernInfo,
@@ -43,3 +47,14 @@ export type {
   InitOptions,
   LintOptions,
 } from "./cli-options.js";
+
+export type {
+  CodeMap,
+  CodeCoverage,
+  CodeScanOptions,
+  PackageInfo,
+  RouteInfo,
+  ModelInfo,
+  ExternalCallInfo,
+  ApiSurfaceItem,
+} from "./code-map.js";

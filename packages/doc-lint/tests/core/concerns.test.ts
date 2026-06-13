@@ -12,17 +12,37 @@ describe("concerns", () => {
   it("loads all bundled concerns", () => {
     const concerns = loadAllConcerns();
 
-    // 10 core + 3 interactions + 3 promise-validation + 5 security
-    // + 9 operational + 4 compliance + 3 test-coverage = 37 total
-    expect(concerns.length).toBe(37);
+    // merged union of both branches' concerns:
+    // 13 core + 3 interactions + 3 promise-validation + 5 security
+    // + 12 operational + 5 compliance + 3 test-coverage = 44 total
+    expect(concerns.length).toBe(44);
 
     const coreCount = concerns.filter((c) => c.type === "concern").length;
     const interactionCount = concerns.filter((c) => c.type === "interaction").length;
 
-    // core(10) + promise-validation(3) + security(5) + operational(9)
-    // + compliance(4) + test-coverage(3) = 34 concerns
-    expect(coreCount).toBe(34);
+    // all non-interaction concerns (type "concern") = 44 - 3 interactions = 41
+    expect(coreCount).toBe(41);
     expect(interactionCount).toBe(3);
+  });
+
+  it("loads the new code-vs-doc (drift) concerns", () => {
+    const concerns = loadAllConcerns();
+    const endpoint = concerns.find((c) => c.id === "endpoint-parity");
+    const dep = concerns.find((c) => c.id === "dependency-drift");
+    const schema = concerns.find((c) => c.id === "schema-doc-parity");
+
+    expect(endpoint?.type).toBe("concern");
+    expect(endpoint?.triggerSignals).toContain("rest-api");
+    expect(dep?.triggerSignals).toContain("external-dependency");
+    expect(schema?.triggerSignals).toContain("database");
+  });
+
+  it("loads the new doc-vs-doc concerns", () => {
+    const ids = loadAllConcerns().map((c) => c.id);
+    expect(ids).toContain("config-surface-documentation");
+    expect(ids).toContain("data-model-ownership");
+    expect(ids).toContain("public-contract-versioning");
+    expect(ids).toContain("background-job-observability");
   });
 
   it("loads concern metadata correctly", () => {

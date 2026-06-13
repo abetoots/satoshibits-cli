@@ -48,6 +48,9 @@ program
   .option("-c, --config <file>", "Path to doc-lint.yaml")
   .option("-f, --format <format>", "Output format (human|json)", "human")
   .option("--no-contradiction", "Skip contradiction scanner")
+  .option("--no-drift", "Skip documentation–code drift scanner (reconcile mode)")
+  .option("--mode <mode>", "Override mode (doc-first|code-first|reconcile)")
+  .option("--code <paths>", "Source roots for code scanning (comma-separated)")
   .option("--concerns <ids>", "Only specific concerns (comma-separated)")
   .option("--dry-run", "Show matched concerns, don't evaluate")
   .option("--verbose", "Detailed progress")
@@ -78,6 +81,27 @@ program
   });
 
 program
+  .command("reconcile [path]")
+  .description("Detect documentation–code drift (sugar for: lint --mode reconcile)")
+  .requiredOption("--tier <level>", "Tier: 1 (foundational), 2 (behavioral), 3 (structural), all (everything)")
+  .option("--tier-cumulative", "Include all tiers up to the specified tier")
+  .option("--engine <engine>", "Evaluation engine (default: sdk)", "sdk")
+  .option("-c, --config <file>", "Path to doc-lint.yaml")
+  .option("-f, --format <format>", "Output format (human|json)", "human")
+  .option("--no-contradiction", "Skip contradiction scanner")
+  .option("--no-drift", "Skip documentation–code drift scanner")
+  .option("--code <paths>", "Source roots for code scanning (comma-separated)")
+  .option("--concerns <ids>", "Only specific concerns (comma-separated)")
+  .option("--dry-run", "Show assembled prompts, don't evaluate")
+  .option("--verbose", "Detailed progress")
+  .option("--severity-threshold <level>", "Minimum severity to display (error|warn|note)")
+  .action(async (projectPath: string | undefined, options: LintOptions) => {
+    const { lintCommand } = await import("../commands/lint.js");
+    const exitCode = await lintCommand(projectPath, { ...options, mode: "reconcile" });
+    process.exit(exitCode);
+  });
+
+program
   .command("init [path]")
   .description("Initialize doc-lint.yaml by discovering documents and detecting signals")
   .option("-y, --yes", "Non-interactive mode (skip prompts)")
@@ -85,6 +109,31 @@ program
   .action(async (projectPath: string | undefined, options: InitOptions) => {
     const { initCommand } = await import("../commands/init.js");
     const exitCode = await initCommand(projectPath, options);
+    process.exit(exitCode);
+  });
+
+program
+  .command("bootstrap [path]")
+  .description("Code-first on-ramp: scaffold as-built docs + a doc gap inventory from code (no LLM)")
+  .option("-c, --config <file>", "Path to doc-lint.yaml")
+  .option("-o, --out <dir>", "Output directory for scaffolds", ".doc-lint/bootstrap")
+  .option("--code <paths>", "Source roots to scan (comma-separated)")
+  .option("--ignore <globs>", "Extra ignore globs (comma-separated)")
+  .action(async (projectPath: string | undefined, options: { config?: string; out?: string; code?: string; ignore?: string }) => {
+    const { bootstrapCommand } = await import("../commands/bootstrap.js");
+    const exitCode = await bootstrapCommand(projectPath, options);
+    process.exit(exitCode);
+  });
+
+program
+  .command("scan [path]")
+  .description("Scan source code and print the code map (no LLM call)")
+  .option("-f, --format <format>", "Output format (human|json)", "human")
+  .option("--code <paths>", "Source roots to scan (comma-separated)")
+  .option("--ignore <globs>", "Extra ignore globs (comma-separated)")
+  .action(async (projectPath: string | undefined, options: { format?: "human" | "json"; code?: string; ignore?: string }) => {
+    const { scanCommand } = await import("../commands/scan.js");
+    const exitCode = await scanCommand(projectPath, options);
     process.exit(exitCode);
   });
 

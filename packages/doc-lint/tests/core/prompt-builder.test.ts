@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 
-import { buildEvaluationPrompt, buildContradictionPrompt } from "../../src/core/prompt-builder.js";
+import { buildEvaluationPrompt, buildContradictionPrompt, buildDriftPrompt, formatCodeMapBlock } from "../../src/core/prompt-builder.js";
 
 import type { LoadedDocument } from "../../src/core/documents.js";
-import type { LoadedConcern } from "../../src/types/index.js";
+import type { CodeMap, LoadedConcern } from "../../src/types/index.js";
 import { loadAllConcerns } from "../../src/core/concerns.js";
 
 function makeDocs(): LoadedDocument[] {
@@ -12,6 +12,25 @@ function makeDocs(): LoadedDocument[] {
     { role: "frd", label: "FRD", path: "docs/frd.md", content: "# FRD\nSample functional requirements." },
     { role: "add", label: "ADD", path: "docs/add.md", content: "# ADD\nSample architecture design." },
   ];
+}
+
+function makeCodeMap(over: Partial<CodeMap> = {}): CodeMap {
+  return {
+    root: "/project",
+    tree: "src/\n  server.ts",
+    packages: [{ name: "app", path: "package.json", dependencies: ["express", "stripe"], devDependencies: [], scripts: {}, engines: {} }],
+    entrypoints: [],
+    routes: [{ method: "POST", path: "/charge", file: "src/server.ts", line: 10, confidence: "high" }],
+    models: [],
+    externalCalls: [{ target: "stripe", kind: "sdk", file: "src/pay.ts", line: 3, confidence: "high" }],
+    apiSurface: [],
+    envVars: ["STRIPE_KEY"],
+    configSignals: ["docker"],
+    fileCount: 5,
+    sampledFiles: 5,
+    coverage: { scannedPaths: [], ignoredPaths: [], sampledOutPaths: [], unsupportedLanguages: [] },
+    ...over,
+  };
 }
 
 describe("prompt-builder", () => {
@@ -211,6 +230,49 @@ describe("prompt-builder", () => {
       expect(prompt.system).not.toContain("Tier 1");
       expect(prompt.system).not.toContain("Tier 2");
       expect(prompt.system).not.toContain("Tier 3");
+      expect(prompt.system).not.toContain("Foundational");
+      expect(prompt.system).not.toContain("Behavioral");
+      expect(prompt.system).not.toContain("Structural");
+    });
+  });
+
+  describe("formatCodeMapBlock", () => {
+    it("renders facts and an explicit coverage section", () => {
+      const block = formatCodeMapBlock(makeCodeMap());
+      expect(block).toContain("POST /charge (src/server.ts:10)");
+      expect(block).toContain("stripe");
+      expect(block).toContain("STRIPE_KEY");
+      expect(block).toContain("Coverage (READ THIS)");
+      expect(block).toContain("do not assume absence");
+    });
+
+    it("surfaces token-budget drops in the coverage section", () => {
+      const block = formatCodeMapBlock(
+        makeCodeMap({ coverage: { scannedPaths: [], ignoredPaths: [], sampledOutPaths: ["a.ts", "b.ts"], unsupportedLanguages: ["py"] } }),
+      );
+      expect(block).toContain("Dropped by token budget");
+      expect(block).toContain("Unsupported (not analyzed): py");
+    });
+  });
+
+  describe("buildDriftPrompt", () => {
+    it("builds a drift prompt with docs and code map", () => {
+      const prompt = buildDriftPrompt(makeDocs(), makeCodeMap());
+      expect(prompt.concernId).toBe("drift-scanner");
+      expect(prompt.type).toBe("drift");
+      expect(prompt.user).toContain("Sample business requirements"); // docs
+      expect(prompt.user).toContain("POST /charge"); // code facts
+      expect(prompt.user).toContain("not scanned"); // coverage guidance
+      expect(prompt.system).toContain("reconciliation validator");
+    });
+  });
+
+  describe("buildEvaluationPrompt with code map", () => {
+    it("appends code facts to a concern prompt in reconcile mode", () => {
+      const concern = loadAllConcerns()[0]!;
+      const prompt = buildEvaluationPrompt(concern, makeDocs(), true, makeCodeMap());
+      expect(prompt.user).toContain("Code Map (extracted from source)");
+      expect(prompt.user).toContain("POST /charge");
     });
   });
 });

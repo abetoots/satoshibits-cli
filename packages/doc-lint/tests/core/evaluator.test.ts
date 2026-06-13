@@ -1,8 +1,44 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
 
-import { applyToleranceFilter, applyExclusionFilter, buildCoverageInfo, filterExcludedConcernPrompts } from "../../src/core/evaluator.js";
+import { applyToleranceFilter, applyExclusionFilter, applyDriftFilters, buildCoverageInfo, filterExcludedConcernPrompts, lint, assemble } from "../../src/core/evaluator.js";
 
-import type { Finding, Severity, Confidence, AssembledPrompt, ToleranceConfig, ExclusionEntry, LoadedConcern, ConcernSchema, InteractionSchema } from "../../src/types/index.js";
+import type { Finding, Severity, Confidence, AssembledPrompt, ToleranceConfig, ExclusionEntry, DriftFinding, LoadedConcern, ConcernSchema, InteractionSchema } from "../../src/types/index.js";
+import type { EvaluationEngine, EvaluationResult } from "../../src/core/engine/types.js";
+
+// stub engine: returns canned content based on prompt type, no network.
+// captures prompts so tests can assert real code facts reached the drift prompt.
+function makeStubEngine(driftJson: string): EvaluationEngine & { seen: AssembledPrompt[] } {
+  const seen: AssembledPrompt[] = [];
+  return {
+    seen,
+    evaluate(prompt: AssembledPrompt): Promise<EvaluationResult> {
+      seen.push(prompt);
+      if (prompt.type === "drift") {
+        return Promise.resolve({ ok: true, content: driftJson });
+      }
+      // concerns/contradiction: report nothing
+      const empty = prompt.type === "contradiction" ? '{"contradictions": []}' : '{"gaps": []}';
+      return Promise.resolve({ ok: true, content: empty });
+    },
+  };
+}
+
+function makeDrift(over: Partial<DriftFinding> = {}): DriftFinding {
+  return {
+    id: "d-1",
+    driftType: "value-mismatch",
+    docClaim: { text: "3 retries", location: "ADD:4" },
+    codeReality: { text: "maxRetries: 5", location: "src/http.ts:12" },
+    severity: "error",
+    confidence: "high",
+    explanation: "mismatch",
+    recommendation: "fix docs",
+    ...over,
+  };
+}
 
 function makeFinding(overrides: Partial<Finding> = {}): Finding {
   return {
@@ -354,5 +390,183 @@ describe("coverage tracking", () => {
       expect(coverage.concernsEvaluated).toEqual(["c1"]);
       expect(coverage.concernsExcluded).toEqual([]);
     });
+  });
+});
+
+describe("applyDriftFilters", () => {
+  const drifts: DriftFinding[] = [
+    makeDrift({ id: "e1", severity: "error" }),
+    makeDrift({ id: "w1", severity: "warn" }),
+    makeDrift({ id: "n1", severity: "note" }),
+  ];
+
+  it("filters by severity threshold", () => {
+    const kept = applyDriftFilters(drifts, { severity_threshold: "warn" }, undefined);
+    expect(kept.map((d) => d.id)).toEqual(["e1", "w1"]);
+  });
+
+  it("excludes by code-reality location at a path boundary", () => {
+    const kept = applyDriftFilters(
+      drifts,
+      undefined,
+      [{ component: "src/http.ts", reason: "legacy" }],
+    );
+    expect(kept).toHaveLength(0);
+  });
+
+  it("does not over-match a prefix that is not a path boundary", () => {
+    // excluding "src/http" must NOT suppress findings located in "src/http.ts"
+    const d = [makeDrift({ id: "x", codeReality: { text: "t", location: "src/http2.ts:1" } })];
+    const kept = applyDriftFilters(d, undefined, [{ component: "src/http", reason: "x" }]);
+    expect(kept).toHaveLength(1);
+  });
+
+  it("does not exclude based on the doc-claim location (component is code-side only)", () => {
+    // a doc label like "src/http.ts" appearing in docClaim must not trigger exclusion
+    const d = [makeDrift({ id: "y", docClaim: { text: "t", location: "src/http.ts" }, codeReality: { text: "t", location: "ADD:4" } })];
+    const kept = applyDriftFilters(d, undefined, [{ component: "src/http.ts", reason: "x" }]);
+    expect(kept).toHaveLength(1);
+  });
+
+  it("keeps everything with no filters", () => {
+    expect(applyDriftFilters(drifts, undefined, undefined)).toHaveLength(3);
+  });
+});
+
+describe("lint in reconcile mode", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "doc-lint-reconcile-"));
+    // a reconcile project: an ADD doc + source code + manifest
+    fs.mkdirSync(path.join(tmpDir, "docs"), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, "src"), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, "docs/add.md"),
+      "# Architecture\nThe HTTP client retries 3 times against the payment API.",
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, "src/http.ts"),
+      "const maxRetries = 5;\napp.post('/charge', handler);",
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, "package.json"),
+      JSON.stringify({ name: "recon", dependencies: { express: "^4", stripe: "^14" } }),
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, "doc-lint.yaml"),
+      [
+        'version: "1.0"',
+        "mode: reconcile",
+        "project:",
+        "  name: recon",
+        "documents:",
+        "  required:",
+        "    - role: add",
+        "      path: docs/add.md",
+        "code:",
+        '  paths: ["."]',
+        "signals:",
+        "  declared: [resilience-triad, external-api, payments]",
+      ].join("\n"),
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  const driftJson = JSON.stringify({
+    drifts: [
+      {
+        id: "drift-1",
+        drift_type: "value-mismatch",
+        doc_claim: { text: "retries 3 times", location: "ADD" },
+        code_reality: { text: "maxRetries = 5", location: "src/http.ts:1" },
+        severity: "error",
+        confidence: "high",
+        explanation: "docs say 3, code uses 5",
+        recommendation: "reconcile the value",
+      },
+    ],
+  });
+
+  it("produces drift findings and folds drift errors into the error count", async () => {
+    const engine = makeStubEngine(driftJson);
+    const result = await lint({
+      projectPath: tmpDir,
+      engine,
+      contradiction: false,
+    });
+
+    expect(result.drifts).toHaveLength(1);
+    expect(result.drifts[0]!.driftType).toBe("value-mismatch");
+    expect(result.summary.drifts).toBe(1);
+    // drift error must drive the overall error count (→ exit code 1)
+    expect(result.summary.errors).toBeGreaterThanOrEqual(1);
+
+    // the drift prompt must carry REAL extracted code facts + the authored doc —
+    // guards against a broken buildCodeMap / prompt assembly (not tautological).
+    const drift = engine.seen.find((p) => p.type === "drift");
+    expect(drift).toBeDefined();
+    expect(drift!.user).toContain("/charge"); // route extracted from src/http.ts
+    expect(drift!.user).toContain("stripe"); // dependency from package.json
+    expect(drift!.user).toContain("retries 3 times"); // authored doc text from docs/add.md
+  });
+
+  it("injects the code map only into code-aware concerns, not every concern", async () => {
+    const engine = makeStubEngine(driftJson);
+    await lint({ projectPath: tmpDir, engine, contradiction: false });
+
+    const concernPrompts = engine.seen.filter((p) => p.type === "concern");
+    const withCode = concernPrompts.filter((p) => p.user.includes("Code Map (extracted from source)"));
+    // only the code-aware parity concerns (e.g. dependency-drift) should carry code
+    expect(withCode.length).toBeGreaterThan(0);
+    expect(withCode.length).toBeLessThan(concernPrompts.length);
+    // resilience-triad is a doc concern — must NOT receive code facts
+    const resilience = concernPrompts.find((p) => p.concernId === "resilience-triad");
+    expect(resilience?.user.includes("Code Map (extracted from source)")).toBe(false);
+  });
+
+  it("suppresses the drift scanner when drift is disabled", async () => {
+    const result = await lint({
+      projectPath: tmpDir,
+      engine: makeStubEngine(driftJson),
+      contradiction: false,
+      drift: false,
+    });
+
+    expect(result.drifts).toHaveLength(0);
+    expect(result.summary.drifts).toBe(0);
+  });
+});
+
+describe("lint rejects code-first (onboarding, not a lint mode)", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "doc-lint-cf-reject-"));
+    fs.mkdirSync(path.join(tmpDir, "src"), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, "src/app.ts"), "app.get('/x', h);");
+    fs.writeFileSync(path.join(tmpDir, "package.json"), JSON.stringify({ name: "cf", dependencies: { express: "^4" } }));
+    fs.writeFileSync(
+      path.join(tmpDir, "doc-lint.yaml"),
+      ['version: "1.0"', "mode: code-first", "project:", "  name: cf", "code:", '  paths: ["."]', "signals:", "  declared: [rest-api]"].join("\n"),
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("directs the user to bootstrap instead of linting synthesized docs", async () => {
+    const noopEngine = { evaluate: () => Promise.resolve({ ok: true as const, content: "{}" }) };
+    await expect(lint({ projectPath: tmpDir, engine: noopEngine, mode: "code-first" })).rejects.toThrow(
+      /bootstrap/i,
+    );
+  });
+
+  it("assemble() also rejects code-first (no empty-doc prompt set)", async () => {
+    await expect(assemble({ projectPath: tmpDir, mode: "code-first" })).rejects.toThrow(/bootstrap/i);
   });
 });

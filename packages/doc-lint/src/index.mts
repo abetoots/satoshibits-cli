@@ -19,6 +19,16 @@ export type {
   LintResult,
   Finding,
   ContradictionFinding,
+  DriftFinding,
+  DriftType,
   Severity,
   Confidence,
+} from "./types/index.js";
+
+// code-first & drift support
+export type {
+  DocLintMode,
+  CodeConfig,
+  CodeMap,
+  CodeScanOptions,
 } from "./types/index.js";

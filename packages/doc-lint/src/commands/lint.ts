@@ -4,8 +4,9 @@ import { assemble, lint } from "../core/evaluator.js";
 import { formatAssembleHuman, formatLintHuman } from "../formatters/human.js";
 import { formatAssembleJson, formatLintJson } from "../formatters/json.js";
 import { SdkEngine } from "../core/engine/sdk-engine.js";
+import { loadManifest } from "../core/manifest.js";
 
-import type { LintOptions, ToleranceConfig, Severity } from "../types/index.js";
+import type { LintOptions, ToleranceConfig, Severity, DocLintMode } from "../types/index.js";
 import { parseTierFlag } from "../core/tier.js";
 
 export async function lintCommand(
@@ -26,17 +27,43 @@ export async function lintCommand(
     ? options.concerns.split(",").map((s) => s.trim())
     : undefined;
 
+  const mode = options.mode as DocLintMode | undefined;
+  const codePaths = options.code
+    ? options.code.split(",").map((s) => s.trim()).filter(Boolean)
+    : undefined;
+
+  // code-first is an onboarding mode, not a lint mode — redirect to `bootstrap`.
+  let effectiveMode = mode;
+  if (!effectiveMode) {
+    try {
+      effectiveMode = loadManifest(resolved, options.config).mode;
+    } catch {
+      // no manifest yet; let downstream surface the error
+    }
+  }
+  if (effectiveMode === "code-first") {
+    console.error(
+      "This is a code-first project (no authored docs to lint).\n" +
+        "Run `doc-lint bootstrap` to scaffold as-built docs + a documentation gap inventory,\n" +
+        "fill in the intent (TODOs), then lint in doc-first or reconcile mode.",
+    );
+    return 2;
+  }
+
   // dry-run mode: show matched concerns without evaluating
   if (options.dryRun) {
-    const result = assemble({
+    const result = await assemble({
       projectPath: resolved,
       configPath: options.config,
       contradiction: options.contradiction,
+      drift: options.drift,
       filterConcernIds,
       tierFilter,
       tierCumulative: options.tierCumulative,
       autoDetect: options.autoDetect,
       warnOnMismatch: options.warnOnMismatch,
+      mode,
+      codePaths,
     });
 
     const dryRunFormat = options.format ?? "human";
@@ -76,9 +103,12 @@ export async function lintCommand(
     projectPath: resolved,
     configPath: options.config,
     contradiction: options.contradiction,
+    drift: options.drift,
     filterConcernIds,
     tierFilter,
     tierCumulative: options.tierCumulative,
+    mode,
+    codePaths,
     engine,
     verbose: options.verbose,
     onProgress,

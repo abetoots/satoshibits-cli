@@ -6,10 +6,14 @@ import * as os from "node:os";
 import {
   SIGNAL_KEYWORDS,
   detectSignals,
+  detectSignalsFromCode,
+  mergeDetectedSignals,
   getAllSignalNames,
   resolveDocumentPaths,
   preprocessContent,
 } from "../../src/core/signal-keywords.js";
+
+import type { DetectedSignal } from "../../src/core/signal-keywords.js";
 
 let tmpDir: string;
 
@@ -26,6 +30,18 @@ function writeDoc(name: string, content: string): string {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, "utf8");
   return filePath;
+}
+
+// minimal CodeMap-shaped stub for detectSignalsFromCode
+function codeMapStub(over: Partial<Parameters<typeof detectSignalsFromCode>[0]> = {}) {
+  return {
+    packages: [],
+    routes: [],
+    externalCalls: [],
+    apiSurface: [],
+    configSignals: [],
+    ...over,
+  };
 }
 
 describe("SIGNAL_KEYWORDS", () => {
@@ -622,5 +638,50 @@ describe("resolveDocumentPaths", () => {
   it("resolves relative paths to absolute paths", () => {
     const resolved = resolveDocumentPaths("/project", ["docs/brd.md", "docs/frd.md"]);
     expect(resolved).toEqual(["/project/docs/brd.md", "/project/docs/frd.md"]);
+  });
+});
+
+describe("detectSignalsFromCode", () => {
+  it("maps stripe dependency to payments at high confidence", () => {
+    const detected = detectSignalsFromCode(
+      codeMapStub({ packages: [{ dependencies: ["stripe", "express"], devDependencies: [] }] }),
+    );
+    const payments = detected.find((s) => s.signal === "payments");
+    expect(payments?.confidence).toBe("high");
+  });
+
+  it("maps express dependency to rest-api", () => {
+    const detected = detectSignalsFromCode(
+      codeMapStub({ packages: [{ dependencies: ["express"], devDependencies: [] }] }),
+    );
+    expect(detected.map((s) => s.signal)).toContain("rest-api");
+  });
+
+  it("detects a signal from code patterns without a matching dependency (medium)", () => {
+    const detected = detectSignalsFromCode(
+      codeMapStub({ routes: [{ method: "GET", path: "/users" }] }),
+    );
+    const rest = detected.find((s) => s.signal === "rest-api");
+    expect(rest?.confidence).toBe("medium");
+  });
+
+  it("returns empty when nothing matches", () => {
+    expect(detectSignalsFromCode(codeMapStub())).toHaveLength(0);
+  });
+});
+
+describe("mergeDetectedSignals", () => {
+  it("keeps the strongest confidence per signal and sorts high→low", () => {
+    const a: DetectedSignal[] = [
+      { signal: "payments", confidence: "medium", matchedKeywords: [], totalKeywords: 1 },
+      { signal: "database", confidence: "low", matchedKeywords: [], totalKeywords: 1 },
+    ];
+    const b: DetectedSignal[] = [
+      { signal: "payments", confidence: "high", matchedKeywords: [], totalKeywords: 1 },
+    ];
+    const merged = mergeDetectedSignals(a, b);
+    expect(merged.find((s) => s.signal === "payments")?.confidence).toBe("high");
+    // high-confidence payments sorts before low-confidence database
+    expect(merged[0]!.signal).toBe("payments");
   });
 });

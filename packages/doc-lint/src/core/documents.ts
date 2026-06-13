@@ -19,8 +19,10 @@ export function loadDocuments(manifest: DocLintManifest, projectPath: string): L
   const all: LoadedDocument[] = [];
   const byRole: Record<string, LoadedDocument> = {};
 
-  // load required documents
-  for (const ref of manifest.documents.required) {
+  const documents = manifest.documents;
+
+  // load required documents (may be absent in code-first mode)
+  for (const ref of documents?.required ?? []) {
     const doc = loadSingleDocument(ref, projectPath, true);
     all.push(doc);
     byRole[doc.role] = doc;
@@ -28,10 +30,10 @@ export function loadDocuments(manifest: DocLintManifest, projectPath: string): L
 
   // load optional documents
   const optionalCategories = [
-    manifest.documents.optional,
-    manifest.documents.contracts,
-    manifest.documents.operational,
-    manifest.documents.reference,
+    documents?.optional,
+    documents?.contracts,
+    documents?.operational,
+    documents?.reference,
   ];
 
   for (const refs of optionalCategories) {

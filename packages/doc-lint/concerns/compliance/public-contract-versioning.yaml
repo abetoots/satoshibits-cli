@@ -1,0 +1,72 @@
+# =============================================================================
+# CONCERN: Public Contract Versioning
+# =============================================================================
+# Validates that every public/exported interface (HTTP API, published events,
+# SDK surface) carries a documented stability and versioning statement.
+#
+# WHY THIS MATTERS:
+# Consumers build on public contracts. Without a stated versioning and
+# deprecation policy, any change risks silently breaking integrators, and there
+# is no agreed path for evolving the contract.
+# =============================================================================
+
+concern:
+  id: "public-contract-versioning"
+  version: "1.0"
+  name: "Public Contract Versioning"
+  category: "compliance"
+  severity: "warn"
+
+  description: |
+    Every publicly exposed contract (REST/HTTP API, published events/webhooks,
+    or a published SDK surface) must document its versioning scheme, stability
+    guarantees, and deprecation/backward-compatibility policy.
+
+triggers:
+  any_of:
+    - public-api
+    - rest-api
+    - api-versioning
+    - webhooks
+    - external-api
+
+evaluation:
+  question: |
+    Assess whether public contracts have documented versioning and stability.
+
+    STEP 1: From the documents (and the code map's "Routes" / "Exported surface"
+    sections when present), identify the public contracts the system exposes.
+
+    STEP 2: For each public contract, find the documented:
+    - versioning scheme (URI version, header, semver of the SDK, etc.)
+    - stability guarantee (stable / beta / experimental)
+    - deprecation & backward-compatibility policy
+
+    STEP 3: Flag public contracts with no stated versioning or stability, and
+    breaking-change-prone surfaces with no deprecation policy.
+
+  evidence_required:
+    - field: "contract_name"
+      type: "string"
+      description: "The public contract (e.g., 'Public REST API', 'order.created event')."
+      required: true
+    - field: "versioning_documented"
+      type: "boolean"
+      description: "Is a versioning scheme documented?"
+      required: true
+    - field: "stability_documented"
+      type: "boolean"
+      description: "Is a stability guarantee stated?"
+      required: true
+    - field: "deprecation_policy"
+      type: "string | null"
+      description: "Documented deprecation / backward-compatibility policy."
+      required: true
+    - field: "source_location"
+      type: "string"
+      description: "Where this is documented."
+      required: true
+
+  failure_condition: |
+    Report as WARNING when a public contract has no documented versioning scheme
+    or stability statement, or lacks a deprecation/backward-compatibility policy.

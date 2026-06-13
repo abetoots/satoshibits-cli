@@ -1,5 +1,5 @@
 import type { ChalkInstance } from "chalk";
-import type { AssembleResult, LintResult, Finding, ContradictionFinding } from "../types/index.js";
+import type { AssembleResult, LintResult, Finding, ContradictionFinding, DriftFinding } from "../types/index.js";
 
 type ChalkColor = "red" | "yellow" | "blue";
 
@@ -141,6 +141,16 @@ export async function formatLintHuman(result: LintResult): Promise<string> {
     lines.push("");
   }
 
+  // drift (doc ↔ code)
+  if (result.drifts.length > 0) {
+    lines.push(chalk.cyan.bold(`DRIFT (${result.drifts.length})`));
+    lines.push(chalk.cyan("─".repeat(60)));
+    for (const d of result.drifts) {
+      lines.push(formatDrift(chalk, d));
+    }
+    lines.push("");
+  }
+
   // exclusions
   if (result.exclusionsApplied && result.exclusionsApplied.length > 0) {
     lines.push(chalk.dim.bold(`EXCLUSIONS (${result.exclusionsApplied.length})`));
@@ -164,6 +174,7 @@ export async function formatLintHuman(result: LintResult): Promise<string> {
   if (s.warnings > 0) lines.push(chalk.yellow(`  Warnings: ${s.warnings}`));
   if (s.notes > 0) lines.push(chalk.blue(`  Notes: ${s.notes}`));
   if (s.contradictions > 0) lines.push(chalk.magenta(`  Contradictions: ${s.contradictions}`));
+  if (s.drifts > 0) lines.push(chalk.cyan(`  Drift findings: ${s.drifts}`));
   if (s.humanReviewRequired > 0) {
     lines.push(chalk.red(`  Human review required: ${s.humanReviewRequired}`));
   }
@@ -238,5 +249,20 @@ function formatContradiction(chalk: ChalkInstance, c: ContradictionFinding): str
   lines.push(`    A: "${c.statementA.text}" (${c.statementA.location})`);
   lines.push(`    B: "${c.statementB.text}" (${c.statementB.location})`);
   lines.push(`    ${c.explanation}`);
+  return lines.join("\n");
+}
+
+function formatDrift(chalk: ChalkInstance, d: DriftFinding): string {
+  const lines: string[] = [];
+  const severityColor: ChalkColor = d.severity === "error" ? "red" : d.severity === "warn" ? "yellow" : "blue";
+  const colorFn = chalk[severityColor];
+  lines.push(colorFn(`  [${d.id}] ${d.driftType} (confidence: ${d.confidence})`));
+  lines.push(`    Doc:  "${d.docClaim.text}" (${d.docClaim.location})`);
+  lines.push(`    Code: "${d.codeReality.text}" (${d.codeReality.location})`);
+  lines.push(`    ${d.explanation}`);
+  lines.push(`    Recommendation: ${d.recommendation}`);
+  if (d.requiresHumanReview) {
+    lines.push(chalk.dim("    ** Unverifiable from scanned code — human review **"));
+  }
   return lines.join("\n");
 }

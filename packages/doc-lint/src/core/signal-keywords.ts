@@ -921,6 +921,104 @@ export function getAllSignalNames(): string[] {
   return Object.keys(SIGNAL_KEYWORDS).sort();
 }
 
+// ─── code-derived signals ────────────────────────────────────────────────────
+// code expresses signals structurally (deps, imports, constructors), not in
+// prose. these map a signal to dependency-name fragments and code regexes.
+// a dependency match is strong evidence (high); a lone code regex is medium.
+
+export interface CodeSignalRule {
+  // package.json dependency name fragments (substring match, case-insensitive)
+  deps?: string[];
+  // code regexes matched against extracted snippets (routes/calls/api surface)
+  patterns?: RegExp[];
+}
+
+export const CODE_SIGNAL_PATTERNS: Record<string, CodeSignalRule> = {
+  payments: { deps: ["stripe", "paypal", "braintree", "square", "@paddle"], patterns: [/\bstripe\b/i, /\bcharge\b/i] },
+  database: { deps: ["prisma", "mongoose", "pg", "mysql2", "typeorm", "sequelize", "drizzle-orm", "knex"] },
+  "message-queue": { deps: ["kafkajs", "amqplib", "bullmq", "@aws-sdk/client-sqs", "rabbitmq", "ioredis"] },
+  authentication: { deps: ["passport", "jsonwebtoken", "next-auth", "@auth/", "bcrypt", "argon2", "lucia"] },
+  authorization: { deps: ["casl", "@casl/", "accesscontrol", "oso"] },
+  "rest-api": { deps: ["express", "fastify", "@nestjs/", "koa", "hapi"], patterns: [/\b(app|router|fastify)\.(get|post|put|delete|patch)\b/i] },
+  "external-api": { deps: ["axios", "got", "node-fetch", "ky"], patterns: [/\bfetch\s*\(/i] },
+  webhooks: { patterns: [/webhook/i] },
+  "rate-limiting": { deps: ["express-rate-limit", "bottleneck", "rate-limiter-flexible"] },
+  "async-workflows": { deps: ["bullmq", "bull", "agenda", "temporal", "@temporalio/"] },
+  caching: { deps: ["redis", "ioredis", "node-cache", "lru-cache", "memcached"] },
+  observability: { deps: ["@opentelemetry/", "prom-client", "winston", "pino", "@sentry/"] },
+  "feature-flags": { deps: ["launchdarkly", "@unleash/", "flagsmith", "@growthbook/"] },
+};
+
+// signals derived from a CodeMap (deps + extracted snippets). returns the same
+// DetectedSignal shape as detectSignals() so callers can merge/sort uniformly.
+export function detectSignalsFromCode(codeMap: {
+  packages: { dependencies: string[]; devDependencies: string[] }[];
+  routes: { method: string; path: string }[];
+  externalCalls: { target: string }[];
+  apiSurface: { name: string; snippet: string }[];
+  configSignals: string[];
+}): DetectedSignal[] {
+  const allDeps = new Set<string>();
+  for (const pkg of codeMap.packages) {
+    for (const d of [...pkg.dependencies, ...pkg.devDependencies]) allDeps.add(d.toLowerCase());
+  }
+  const depList = [...allDeps];
+
+  // a corpus of extracted snippets to run code regexes against (never whole files).
+  // routes are rendered as a synthetic `app.<method>(` token so framework-shaped
+  // regexes match the structured route facts.
+  const snippetCorpus = [
+    ...codeMap.routes.map((r) => `app.${r.method.toLowerCase()}( ${r.path}`),
+    ...codeMap.externalCalls.map((c) => c.target),
+    ...codeMap.apiSurface.map((a) => a.snippet),
+    ...codeMap.configSignals,
+  ].join("\n");
+
+  const detected: DetectedSignal[] = [];
+
+  for (const [signal, rule] of Object.entries(CODE_SIGNAL_PATTERNS)) {
+    const matchedDeps = (rule.deps ?? []).filter((frag) =>
+      depList.some((dep) => dep.includes(frag.toLowerCase())),
+    );
+    const patternHit = (rule.patterns ?? []).some((re) => re.test(snippetCorpus));
+
+    if (matchedDeps.length === 0 && !patternHit) continue;
+
+    // dependency evidence is strong; a lone regex hit is weaker
+    const confidence: SignalConfidence = matchedDeps.length > 0 ? "high" : "medium";
+    const matchedKeywords = matchedDeps.length > 0 ? matchedDeps : ["<code-pattern>"];
+
+    detected.push({
+      signal,
+      confidence,
+      matchedKeywords,
+      totalKeywords: (rule.deps?.length ?? 0) + (rule.patterns?.length ?? 0),
+    });
+  }
+
+  const order: Record<SignalConfidence, number> = { high: 0, medium: 1, low: 2 };
+  detected.sort((a, b) => order[a.confidence] - order[b.confidence]);
+  return detected;
+}
+
+// merge doc-derived and code-derived signals, keeping the strongest confidence
+// per signal and preserving a stable high→medium→low ordering.
+export function mergeDetectedSignals(
+  a: DetectedSignal[],
+  b: DetectedSignal[],
+): DetectedSignal[] {
+  const order: Record<SignalConfidence, number> = { high: 0, medium: 1, low: 2 };
+  const bySignal = new Map<string, DetectedSignal>();
+  for (const sig of [...a, ...b]) {
+    const existing = bySignal.get(sig.signal);
+    if (!existing || order[sig.confidence] < order[existing.confidence]) {
+      bySignal.set(sig.signal, sig);
+    }
+  }
+  return [...bySignal.values()].sort((x, y) => order[x.confidence] - order[y.confidence]);
+}
+
+
 // resolve absolute paths for document files relative to a project path
 export function resolveDocumentPaths(
   projectPath: string,
