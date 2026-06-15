@@ -46,5 +46,9 @@ jobs:
       - name: Build, lint, typecheck, and test
         run: pnpm exec turbo run build lint typecheck test test:e2e
 
+      # Skip on the changesets "Version Packages" PR (branch changeset-release/main):
+      # it intentionally has no changeset (it consumed them to bump versions), so the
+      # contributor-facing gate would always fail there. Build/lint/test still run.
       - name: Check changeset status
+        if: ${{ !startsWith(github.head_ref, 'changeset-release/') }}
         run: pnpm exec changeset status --since=origin/main
