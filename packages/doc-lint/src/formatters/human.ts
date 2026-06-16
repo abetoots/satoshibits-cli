@@ -13,10 +13,10 @@ export async function formatAssembleHuman(result: AssembleResult): Promise<strin
   if (result.signals.mismatch) {
     const { undeclared, stale } = result.signals.mismatch;
     if (undeclared.length > 0) {
-      lines.push(chalk.yellow(`  Undeclared signals found in docs: ${undeclared.join(", ")}`));
+      lines.push(chalk.yellow(`  Undeclared signals detected: ${undeclared.join(", ")}`));
     }
     if (stale.length > 0) {
-      lines.push(chalk.yellow(`  Declared signals not found in docs: ${stale.join(", ")}`));
+      lines.push(chalk.yellow(`  Declared signals not detected: ${stale.join(", ")}`));
     }
   }
 
@@ -90,10 +90,10 @@ export async function formatLintHuman(result: LintResult): Promise<string> {
     lines.push("");
     const { undeclared, stale } = result.signals.mismatch;
     if (undeclared.length > 0) {
-      lines.push(chalk.yellow(`  Undeclared signals found in docs: ${undeclared.join(", ")}`));
+      lines.push(chalk.yellow(`  Undeclared signals detected: ${undeclared.join(", ")}`));
     }
     if (stale.length > 0) {
-      lines.push(chalk.yellow(`  Declared signals not found in docs: ${stale.join(", ")}`));
+      lines.push(chalk.yellow(`  Declared signals not detected: ${stale.join(", ")}`));
     }
   }
 

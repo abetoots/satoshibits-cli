@@ -767,6 +767,52 @@ describe("assemble — external prep (lens, mode, code roots)", () => {
   });
 });
 
+describe("assemble auto_detect merges CODE-derived signals (reconcile)", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "doc-lint-codesignals-"));
+    fs.mkdirSync(path.join(tmpDir, "docs"), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, "src"), { recursive: true });
+    // docs deliberately say NOTHING about payments
+    fs.writeFileSync(path.join(tmpDir, "docs/add.md"), "# Architecture\nA REST service.");
+    fs.writeFileSync(path.join(tmpDir, "src/pay.mts"), "app.post('/charge', handler);\n");
+    // the code commits to Stripe — `payments` lives only in the implementation
+    fs.writeFileSync(
+      path.join(tmpDir, "package.json"),
+      JSON.stringify({ name: "cs", dependencies: { express: "^4", stripe: "^14" } }),
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, "doc-lint.yaml"),
+      [
+        'version: "1.0"',
+        "mode: reconcile",
+        "project:",
+        "  name: cs",
+        "documents:",
+        "  required:",
+        "    - role: add",
+        "      path: docs/add.md",
+        "code:",
+        '  paths: ["."]',
+        "signals:",
+        "  declared: [rest-api]",
+        "  auto_detect: true",
+      ].join("\n"),
+    );
+  });
+
+  afterEach(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+
+  it("surfaces a code-only signal (payments) absent from the docs and declared set", async () => {
+    const result = await assemble({ projectPath: tmpDir });
+    // payments came from the Stripe dependency in code, not from docs or `declared`
+    expect(result.signals.declared).not.toContain("payments");
+    expect(result.signals.detected).toContain("payments");
+    expect(result.signals.effective).toContain("payments"); // merged into what concerns match on
+  });
+});
+
 describe("lint rejects code-first (onboarding, not a lint mode)", () => {
   let tmpDir: string;
 

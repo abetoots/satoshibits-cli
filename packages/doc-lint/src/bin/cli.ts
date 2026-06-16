@@ -78,6 +78,7 @@ program
   .option("-c, --config <file>", "Path to doc-lint.yaml")
   .option("-f, --format <format>", "Output format (human|json)")
   .option("-o, --output-dir <path>", "Write signal-detection.md to this directory")
+  .option("--code <paths>", "Also detect signals from source roots (comma-separated); defaults to manifest code.paths in reconcile mode")
   .option("--no-inline", "Reference documents by file path instead of inlining content")
   .action(async (projectPath: string | undefined, options: DetectOptions) => {
     const { detectCommand } = await import("../commands/detect.js");

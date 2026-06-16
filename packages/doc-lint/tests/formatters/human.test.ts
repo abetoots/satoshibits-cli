@@ -119,8 +119,8 @@ describe("human formatter", () => {
     };
 
     const output = await formatAssembleHuman(result);
-    expect(output).toContain("Undeclared signals found in docs: rate-limiting");
-    expect(output).toContain("Declared signals not found in docs: webhooks");
+    expect(output).toContain("Undeclared signals detected: rate-limiting");
+    expect(output).toContain("Declared signals not detected: webhooks");
   });
 
   it("displays mismatch warnings in lint output", async () => {
@@ -155,7 +155,7 @@ describe("human formatter", () => {
     };
 
     const output = await formatLintHuman(result);
-    expect(output).toContain("Undeclared signals found in docs: authentication");
+    expect(output).toContain("Undeclared signals detected: authentication");
   });
 
   it("shows PASS for results with no errors", async () => {

@@ -93,7 +93,7 @@ export interface SignalAnalysis {
   detected: string[];       // empty when detection didn't run
   effective: string[];      // what was actually used for concern matching
   mismatch?: {
-    undeclared: string[];   // detected in docs but not in declared
+    undeclared: string[];   // detected (in docs or code) but not in declared
     stale: string[];        // declared but not detected in docs
   };
 }
