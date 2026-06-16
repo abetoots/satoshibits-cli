@@ -401,7 +401,11 @@ function buildEvaluationContext(input: {
     completeness: {
       requireEnumeration: true,
       requireAdversarialVerify: false,
-      minSourcesRead: "all",
+      // the real guarantee is the per-source `required` gate (a required source the
+      // agent never read → completeness=partial). We deliberately do NOT claim
+      // minSourcesRead:"all" here, since the engine does not enforce a blanket
+      // "every source read" rule (that would over-flag legitimate grep-zero-match
+      // absence). Don't advertise a policy stronger than what's enforced.
     },
   };
 }
@@ -439,7 +443,10 @@ export async function lint(input: LintInput): Promise<LintResult> {
   }
 
   const docs = loadDocuments(manifest, input.projectPath);
-  // lint always needs inlined content for the evaluation engine
+  // lint always assembles inline so the toolless SdkEngine has its evidence.
+  // v1 caveat: the agentic engine also receives this inline content as a starting
+  // point (it still reads real source via EvaluationContext); a pure reference-mode
+  // agent path is a tracked follow-up. See EvaluationContext docs.
   const assembled = await assemble({ ...input, inline: true });
 
   if (assembled.signals.mismatch) {
