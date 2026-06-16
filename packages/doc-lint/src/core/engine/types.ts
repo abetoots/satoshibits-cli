@@ -16,8 +16,15 @@ export interface EvaluationEngine {
   evaluate(prompt: AssembledPrompt, context?: EvaluationContext): Promise<EvaluationResult>;
 }
 
-// AssembledPrompt stays a pure INTENT artifact (concern + schema). Repo-read
-// authority is EXECUTION and lives here, passed alongside the prompt.
+// EvaluationContext carries EXECUTION authority (repo-read access) alongside the
+// prompt, so an engine can read real source on demand.
+//
+// Design intent: AssembledPrompt is the INTENT (concern + schema) and this is the
+// execution authority. v1 caveat: `lint()` still assembles the prompt in inline
+// mode (doc content embedded, plus the reconcile code map), so the agentic engine
+// currently receives that inline evidence as a STARTING point in `prompt.user`
+// even though it also reads source via this context. Moving the agent path to pure
+// reference-mode (paths only, no code map) is a tracked follow-up.
 export interface EvaluationContext {
   projectRoot: string; // absolute repo root
   sources: EvaluationSource[]; // the "lens": which roots, docs vs code
