@@ -9,6 +9,7 @@ import type {
   EvaluationEngine,
   EvaluationResult,
   EvaluationSandbox,
+  EvaluationSource,
 } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -70,6 +71,7 @@ const DEFAULT_MAX_FILE_BYTES = 256 * 1024;
 const GREP_MAX_MATCHES = 200;
 const GREP_MAX_FILES = 5000;
 const GREP_MAX_PATTERN_LEN = 200;
+const GREP_MAX_LINE_LEN = 1000;
 
 export type ResolveResult =
   | { ok: true; absPath: string }
@@ -123,35 +125,49 @@ export function resolveSandboxPath(
   return { ok: true, absPath: real };
 }
 
-// match a `sandbox.ignore` pattern against a directory/file. supports a bare
-// segment name (matched anywhere) and a glob (matched against the repo-relative
-// path), so patterns like "**/fixtures/**" or ".claude/worktrees" work. Paths
-// are normalized to "/" so globs match on Windows too.
+// convert a "/"-normalized glob to an anchored RegExp with real glob semantics:
+//   `**/` matches zero or more leading path segments (so a root-level
+//         `**/x` matches `x` AND `a/x`), `**` spans segments, `*` stays within one.
 function globToRegExp(glob: string): RegExp {
-  return new RegExp(
-    "^" +
-      glob
-        .split(/(\*\*|\*)/)
-        .map((seg) => {
-          if (seg === "**") return ".*";
-          if (seg === "*") return "[^/]*";
-          return seg.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
-        })
-        .join("") +
-      "$",
-  );
+  let re = "";
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i]!;
+    if (c === "*") {
+      if (glob[i + 1] === "*") {
+        if (glob[i + 2] === "/") {
+          re += "(?:.*/)?"; // `**/` → optional run of whole segments
+          i += 2;
+        } else {
+          re += ".*"; // trailing/!-slash `**` → anything
+          i += 1;
+        }
+      } else {
+        re += "[^/]*"; // single `*` stays within a segment
+      }
+    } else if (c === "?") {
+      re += "[^/]";
+    } else {
+      re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+    }
+  }
+  return new RegExp("^" + re + "$");
 }
 
+// match a `sandbox.ignore` pattern against a directory/file. A bare segment name
+// (no glob, no slash) matches that entry anywhere; otherwise the glob is matched
+// against the repo-relative path (anchored). Paths are normalized to "/" so globs
+// work on Windows too.
 function matchesIgnore(pattern: string, name: string, relPath: string): boolean {
   const norm = relPath.split(path.sep).join("/");
   const p = pattern.replace(/\/+$/, "");
-  if (p === name || p === norm) return true;
-  if (!p.includes("*") && !p.includes("/")) return false;
-  // prune the directory itself for "**/x/**" / "x/**" style patterns, not just
-  // its children, so the walker can skip the whole subtree.
+  if (!p.includes("*") && !p.includes("?") && !p.includes("/")) {
+    return p === name; // bare name → match the entry anywhere in the tree
+  }
+  if (globToRegExp(p).test(norm)) return true;
+  // also prune the directory itself for trailing "/**", so the whole subtree is
+  // skipped rather than walked-then-filtered (e.g. "**/skip/**" prunes "src/skip").
   const dirPat = p.replace(/\/\*\*$/, "");
-  if (dirPat !== p && (dirPat === name || globToRegExp(dirPat).test(norm))) return true;
-  return globToRegExp(p).test(norm) || globToRegExp(p).test(name);
+  return dirPat !== p && globToRegExp(dirPat).test(norm);
 }
 
 function isIgnored(name: string, relPath: string, sandbox: EvaluationSandbox): boolean {
@@ -347,8 +363,13 @@ export class FileTools {
       const rel = this.rel(abs);
       const lines = buf.toString("utf8").split("\n");
       for (let i = 0; i < lines.length; i++) {
-        if (re.test(lines[i]!)) {
-          matches.push(`${rel}:${i + 1}: ${lines[i]!.trim()}`);
+        const line = lines[i]!;
+        // bound per-line work: catastrophic backtracking scales with input length,
+        // so test at most GREP_MAX_LINE_LEN chars. (Full ReDoS safety would need an
+        // RE2-backed matcher; this caps the blast radius without a new dependency.)
+        const probe = line.length > GREP_MAX_LINE_LEN ? line.slice(0, GREP_MAX_LINE_LEN) : line;
+        if (re.test(probe)) {
+          matches.push(`${rel}:${i + 1}: ${line.trim()}`);
           if (matches.length >= GREP_MAX_MATCHES) return;
         }
       }
@@ -411,14 +432,36 @@ export interface AgentLoopOptions {
   maxTokens?: number;
 }
 
+// did the agent read this source? a file source matches an exact read; a dir
+// source matches if any file beneath it was read. Paths normalized to "/".
+function sourceWasRead(sourcePath: string, filesRead: string[]): boolean {
+  const norm = (p: string): string => p.split(path.sep).join("/").replace(/\/+$/, "");
+  const src = norm(sourcePath);
+  return filesRead.some((f) => {
+    const r = norm(f);
+    return r === src || r.startsWith(src + "/");
+  });
+}
+
 function computeCompleteness(
   aborted: boolean, // turn-limit OR max_tokens truncation — exploration was cut short
   policy: CompletenessPolicy | undefined,
+  sources: EvaluationSource[],
   partial: Omit<EvaluationCoverage, "toolTurnCount" | "completeness">,
 ): EvaluationCoverage["completeness"] {
   if (aborted) return "insufficient";
   if (policy?.requireEnumeration && partial.searchesPerformed.length === 0) return "partial";
   if (partial.unreadable && partial.unreadable.length > 0) return "partial";
+  // a `required` source the agent never opened means an absence verdict can't be
+  // trusted — exactly the "never read the auth-middleware file" false-pass.
+  const requiredUnread = sources.filter(
+    (s) => s.required && !sourceWasRead(s.path, partial.filesRead),
+  );
+  if (requiredUnread.length > 0) return "partial";
+  // honor an explicit minimum-reads policy for absence-based concerns
+  if (typeof policy?.minSourcesRead === "number" && partial.filesRead.length < policy.minSourcesRead) {
+    return "partial";
+  }
   return "complete";
 }
 
@@ -492,7 +535,7 @@ export async function runAgentLoop(
   const coverage: EvaluationCoverage = {
     ...partial,
     toolTurnCount,
-    completeness: computeCompleteness(aborted, context.completeness, partial),
+    completeness: computeCompleteness(aborted, context.completeness, context.sources, partial),
   };
 
   // an aborted run (turn limit OR max_tokens truncation) is NEVER a success, even

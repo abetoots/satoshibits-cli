@@ -170,6 +170,35 @@ describe("agent-engine sandbox", () => {
     expect(out).not.toContain("src/skip");
   });
 
+  it("honors a root-level '**/dir/**' ignore (the worktrees use-case)", () => {
+    fs.mkdirSync(path.join(root, ".claude/worktrees"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".claude/worktrees/w.ts"), "const tok = 'NEEDLE';\n");
+    fs.writeFileSync(path.join(root, "src/keep.ts"), "const tok = 'NEEDLE';\n");
+    const base = makeContext(root);
+    const ctx: EvaluationContext = {
+      ...base,
+      sandbox: { ...base.sandbox, ignore: ["**/.claude/worktrees/**"] },
+    };
+    const out = new FileTools(ctx).execute("grep", { pattern: "NEEDLE" });
+    expect(out).toContain("src/keep.ts");
+    expect(out).not.toContain(".claude/worktrees"); // root-level pattern matched
+  });
+
+  it("anchors 'fixtures/**' to the repo root (does not overmatch nested fixtures)", () => {
+    fs.mkdirSync(path.join(root, "fixtures"), { recursive: true });
+    fs.mkdirSync(path.join(root, "src/fixtures"), { recursive: true });
+    fs.writeFileSync(path.join(root, "fixtures/a.ts"), "const tok = 'NEEDLE';\n");
+    fs.writeFileSync(path.join(root, "src/fixtures/b.ts"), "const tok = 'NEEDLE';\n");
+    const base = makeContext(root);
+    const ctx: EvaluationContext = {
+      ...base,
+      sandbox: { ...base.sandbox, ignore: ["fixtures/**"] },
+    };
+    const out = new FileTools(ctx).execute("grep", { pattern: "NEEDLE" });
+    expect(out).not.toContain("fixtures/a.ts"); // root fixtures ignored
+    expect(out).toContain("src/fixtures/b.ts"); // nested fixtures NOT ignored (anchored)
+  });
+
   it("grep rejects an over-long pattern (backtracking-DoS guard)", () => {
     const ctx = makeContext(root);
     const tools = new FileTools(ctx);
@@ -275,6 +304,44 @@ describe("agent-engine loop", () => {
     expect(res.ok).toBe(true);
     expect(res.coverage?.unreadable?.length).toBeGreaterThan(0);
     expect(res.coverage?.completeness).toBe("partial");
+  });
+
+  it("reports partial when a REQUIRED source was never read", async () => {
+    fs.writeFileSync(path.join(root, "must-read.md"), "# required intent\n");
+    const base = makeContext(root);
+    const ctx: EvaluationContext = {
+      ...base,
+      sources: [
+        { kind: "code", path: "src" },
+        { kind: "docs", path: "must-read.md", role: "add", required: true },
+      ],
+    };
+    // agent enumerates + reads a code file but never opens the required doc
+    const client = scriptedClient([
+      toolUse("t1", "grep", { pattern: "charge" }),
+      toolUse("t2", "read_file", { path: "src/http.ts" }),
+      final('{"gaps": []}'),
+    ]);
+    const res = await runAgentLoop(client, PROMPT, ctx);
+    expect(res.ok).toBe(true);
+    expect(res.coverage?.completeness).toBe("partial"); // required doc unread → can't be complete
+  });
+
+  it("reports complete when the required source WAS read", async () => {
+    fs.writeFileSync(path.join(root, "must-read.md"), "# required intent\n");
+    const base = makeContext(root);
+    const ctx: EvaluationContext = {
+      ...base,
+      sources: [{ kind: "docs", path: "must-read.md", role: "add", required: true }],
+    };
+    const client = scriptedClient([
+      toolUse("t1", "grep", { pattern: "intent" }),
+      toolUse("t2", "read_file", { path: "must-read.md" }),
+      final('{"gaps": []}'),
+    ]);
+    const res = await runAgentLoop(client, PROMPT, ctx);
+    expect(res.ok).toBe(true);
+    expect(res.coverage?.completeness).toBe("complete");
   });
 
   it("treats a max_tokens truncation as insufficient, not a final answer", async () => {

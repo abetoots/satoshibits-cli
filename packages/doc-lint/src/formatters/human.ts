@@ -220,18 +220,17 @@ export async function formatLintHuman(result: LintResult): Promise<string> {
     }
   }
 
+  // an inconclusive run exits non-zero (see lint command), so it must NOT read as
+  // a PASS. Priority: FAIL > INCONCLUSIVE > PASS(with warnings) > PASS.
   const inconclusive = (s.incompleteEvaluations ?? 0) > 0;
+  lines.push("");
   if (s.errors > 0) {
-    lines.push("");
     lines.push(chalk.red.bold("RESULT: FAIL"));
-  } else if (s.warnings > 0) {
-    lines.push("");
-    lines.push(chalk.yellow.bold(`RESULT: PASS (with warnings)${inconclusive ? " — inconclusive" : ""}`));
   } else if (inconclusive) {
-    lines.push("");
-    lines.push(chalk.yellow.bold("RESULT: PASS (inconclusive — sources not fully explored)"));
+    lines.push(chalk.yellow.bold("RESULT: INCONCLUSIVE (sources not fully explored — exits non-zero)"));
+  } else if (s.warnings > 0) {
+    lines.push(chalk.yellow.bold("RESULT: PASS (with warnings)"));
   } else {
-    lines.push("");
     lines.push(chalk.green.bold("RESULT: PASS"));
   }
 
