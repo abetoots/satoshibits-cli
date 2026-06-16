@@ -1,5 +1,12 @@
 # @satoshibits/doc-lint
 
+## 1.4.0
+
+### Minor Changes
+
+- 3e79a89: makes the free `assemble` route first-class for "bring your own agent" workflows. The `assemble` CLI now exposes the same `--lens` (`docs`/`code`/`reconcile`), `--mode`, `--code`, and `--no-drift` knobs as `lint`, so the prompts it emits for an external agentic CLI match exactly what `lint` would evaluate — with no doc-lint API calls. In reference mode (`--no-inline`), a `code`/`reconcile` lens or `--mode reconcile` now adds a `## Source code` section and a `codeRoots` array to each prompt so the agent reads the real implementation, not just the docs. The default `docs` lens / inline behavior is unchanged.
+- 422e9c5: closes the signal-discovery blind spot for stale-doc repos: signals are no longer derived from documentation alone. In reconcile mode, `assemble`/`lint` `auto_detect` now also runs the code-based detector over the static code map and merges the result, so a capability present in the implementation but absent from the docs (e.g. a Stripe integration → `payments`) still surfaces as a signal and triggers its concerns. The `detect` command is now code-aware too — a new `--code <paths>` flag (defaulting to the manifest's `code.paths` in reconcile mode) makes the emitted prompt instruct the external agent to scan the source for signals the docs omit. Docs-only detection is unchanged.
+
 ## 1.3.0
 
 ### Minor Changes
