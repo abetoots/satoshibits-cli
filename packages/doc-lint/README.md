@@ -71,6 +71,27 @@ In reference mode, prompts instruct the evaluator to "read the following files f
 
 Use `--no-inline` when the consumer has filesystem access (agentic CLIs, IDEs with tool-use, CI pipelines) and you want smaller prompts or to avoid duplicating document content across multiple prompt files.
 
+### Evaluation Engines (`sdk` vs `agent`)
+
+`lint` evaluates each assembled prompt through a pluggable **engine** (`--engine`). The contract is `evaluate(prompt, context?)`: the prompt is pure *intent* (the concern + schema), and an optional `EvaluationContext` carries *execution authority* (a read-only, repo-scoped sandbox).
+
+| Engine | How it evaluates | When to use |
+|--------|------------------|-------------|
+| `sdk` (default) | Toolless: one Anthropic call per prompt. All evidence is pre-stuffed into the prompt (inlined docs + the reconcile code map). | The simple, cheap default. Deterministic prompt you can inspect. |
+| `agent` | Agentic: an Anthropic tool-use loop with **read-only** `list_dir`/`grep`/`read_file` tools scoped to the repo. It reads the real source on demand and cites `file:line`. | When you want the evaluator to verify against the actual code, not a static summary. Needs no code map. |
+
+**The lens (`--lens`)** reframes the concern's question without changing the concern library. A concern is a *system principle*; the lens decides which question it asks and which roots it reads:
+
+| Lens | Question | Output |
+|------|----------|--------|
+| `docs` (default) | Is X **documented**? | doc gaps (byte-identical to prior behavior) |
+| `code` | Does the system **satisfy** X, per the source? | implementation risks |
+| `reconcile` | Do docs and code **agree** on X? | drift |
+
+**Completeness & honesty.** The `agent` engine enforces enumerate-before-conclude (it must search/list before asserting an absence) and self-reports coverage. If a run's exploration was cut short — a turn limit, a `max_tokens` truncation, a `required` source it never read, or a missing API key — its findings are flagged `requiresHumanReview`, the result `summary` gains an `incompleteEvaluations` count, the human output reads `RESULT: INCONCLUSIVE`, and the CLI **exits non-zero**. An unverified "we found nothing" never passes green. The toolless `sdk` engine reports no coverage and is unaffected.
+
+> The `sdk` engine remains the default and is unchanged. `agent` is opt-in via `--engine agent` (CLI) or by passing `AnthropicAgentEngine` to `lint()` programmatically.
+
 ## Tier System
 
 Concerns are assigned to **tiers** that control evaluation scope. The `--tier` flag is required for `assemble` and `lint` commands:
@@ -324,7 +345,8 @@ Assembles prompts and evaluates them via the Anthropic SDK. `[path]` is the proj
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--tier <level>` | **Required.** Tier scope: `1`, `2`, `3`, or `all` | - |
-| `--engine <engine>` | Evaluation engine (currently only `sdk`) | `sdk` |
+| `--engine <engine>` | Evaluation engine: `sdk` (toolless, single call) or `agent` (reads real source via tools) | `sdk` |
+| `--lens <lens>` | Evidence lens: `docs` (is X documented?), `code` (does the system satisfy X?), `reconcile` (do docs and code agree?) | `docs` |
 | `-c, --config <file>` | Path to manifest file | Auto-detect `doc-lint.yaml` or `doc-lint.yml` |
 | `-f, --format <format>` | Output format: `human` or `json` | `human` |
 | `--no-contradiction` | Skip the contradiction scanner | enabled |
@@ -340,7 +362,7 @@ Assembles prompts and evaluates them via the Anthropic SDK. `[path]` is the proj
 | `--auto-detect` / `--no-auto-detect` | Auto-detect signals from document content | manifest value or `false` |
 | `--warn-on-mismatch` / `--no-warn-on-mismatch` | Warn when detected signals differ from declared | manifest value or `false` |
 
-**Exit codes:** `0` = pass, `1` = errors found, `2` = tool error
+**Exit codes:** `0` = pass, `1` = errors found **or run inconclusive** (an `agent`-engine run whose exploration was cut short — see [Evaluation Engines](#evaluation-engines-sdk-vs-agent)), `2` = tool error. The toolless `sdk` engine never reports coverage, so it never exits inconclusive.
 
 **Tolerance flags:** `--severity-threshold` actively filters findings from output. `--allow-implicit` and `--allow-external-refs` are recorded in the result's `toleranceApplied` field for audit purposes but do not currently filter findings.
 
@@ -666,6 +688,7 @@ const result: LintResult = await lint({
 
 console.log(result.summary);
 // { totalFindings: 3, errors: 1, warnings: 2, notes: 0, contradictions: 0, drifts: 0, humanReviewRequired: 1 }
+// agentic runs may also carry `incompleteEvaluations` when exploration was cut short
 console.log(result.coverage);
 // { concernsEvaluated: [...], concernsSkipped: [...], concernsExcluded: [...], documentsLoaded: [...], documentsMissing: [...] }
 ```
@@ -673,8 +696,8 @@ console.log(result.coverage);
 ### Key Exports
 
 ```typescript
-// Functions
-import { assemble, lint, SdkEngine } from "@satoshibits/doc-lint";
+// Functions & engines
+import { assemble, lint, SdkEngine, AnthropicAgentEngine } from "@satoshibits/doc-lint";
 
 // Input types
 import type { AssembleInput, LintInput } from "@satoshibits/doc-lint";
@@ -695,6 +718,12 @@ import type {
 import type {
   EvaluationEngine,
   EvaluationResult,
+  EvaluationContext,   // execution authority: projectRoot, sources, sandbox, completeness
+  EvaluationSource,
+  EvaluationSandbox,
+  CompletenessPolicy,
+  EvaluationCoverage,  // engine's self-reported proof-of-work (agentic engines)
+  Lens,                // "docs" | "code" | "reconcile"
 } from "@satoshibits/doc-lint";
 
 // Schema and manifest types
@@ -717,30 +746,38 @@ import type {
 > mode. `await` it. `lint()` rejects `code-first` projects (no docs to lint) and points
 > to `bootstrap`; the `bootstrap` command is deterministic and exported separately.
 
-### Custom Evaluation Engines
+### Evaluation engines
 
-Implement the `EvaluationEngine` interface to use any LLM:
+Two engines ship in the box (see [Evaluation Engines](#evaluation-engines-sdk-vs-agent)):
 
 ```typescript
-import type { EvaluationEngine, AssembledPrompt } from "@satoshibits/doc-lint";
+import { lint, SdkEngine, AnthropicAgentEngine } from "@satoshibits/doc-lint";
+
+// toolless (default) — evidence pre-stuffed into the prompt
+await lint({ projectPath: ".", engine: new SdkEngine(), tierFilter: "all" });
+
+// agentic — reads real source via read-only tools, reports coverage
+await lint({ projectPath: ".", engine: new AnthropicAgentEngine(), tierFilter: "all", lens: "code" });
+```
+
+**Custom engine.** Implement `EvaluationEngine` to use any LLM. The second `context`
+parameter is optional — a toolless engine ignores it; an agentic engine uses its
+read-only sandbox (`context.sandbox.allowedReadRoots`) to read source and returns
+`coverage` so incomplete runs stay honest:
+
+```typescript
+import type { EvaluationEngine, AssembledPrompt, EvaluationContext } from "@satoshibits/doc-lint";
 
 class MyEngine implements EvaluationEngine {
-  async evaluate(prompt: AssembledPrompt) {
-    const response = await myLlmClient.chat({
-      system: prompt.system,
-      user: prompt.user,
-    });
-
+  async evaluate(prompt: AssembledPrompt, context?: EvaluationContext) {
+    const response = await myLlmClient.chat({ system: prompt.system, user: prompt.user });
     return { ok: true, content: response.text };
     // or: { ok: false, error: "rate limited" }
+    // agentic engines may also return `coverage: { ..., completeness: "partial" }`
   }
 }
 
-const result = await lint({
-  projectPath: ".",
-  engine: new MyEngine(),
-  tierFilter: "all",
-});
+const result = await lint({ projectPath: ".", engine: new MyEngine(), tierFilter: "all" });
 ```
 
 ### Output Structure
@@ -783,7 +820,7 @@ Example JSON finding (from `doc-lint lint . --tier all -f json`):
 
 Contradiction findings have a different structure with `statementA`, `statementB`, `conflictType` (`quantitative`, `temporal`, `behavioral`, `scope`), and `explanation` fields.
 
-The `LintResult` also includes `toleranceApplied`, `exclusionsApplied`, and `coverage` fields for audit and CI integration.
+The `LintResult` also includes `toleranceApplied`, `exclusionsApplied`, and `coverage` fields for audit and CI integration. With the `agent` engine, `summary.incompleteEvaluations` counts runs whose exploration was cut short; when it is set, passing results are inconclusive (human output reads `RESULT: INCONCLUSIVE` and the CLI exits non-zero).
 
 ## How Concern Matching Works
 
@@ -919,7 +956,8 @@ To use a custom evaluation engine with your own prompt logic, implement the `Eva
 ## Limitations
 
 - **Bundled concerns only** — custom concern YAML schemas are not yet supported
-- **Anthropic SDK only** — the built-in CLI engine uses the Anthropic API; use the programmatic API with a custom `EvaluationEngine` for other providers
+- **Anthropic engines only (built-in)** — both built-in engines (`sdk`, `agent`) use the Anthropic API; for other providers implement a custom `EvaluationEngine` via the programmatic API
+- **Agent engine (v1) caveats** — its `grep` regex has bounded length/line caps (not full RE2-grade ReDoS safety); symlink escapes out of the sandbox are blocked but a narrow check-then-read race remains (acceptable for a local, trusted working tree); and the agentic path is still handed the inline-assembled prompt (doc content + code map) as a starting point while it reads real source — a pure reference-mode agent path is a planned follow-up
 - **Required document roles** — in `doc-first` mode, manifests must include `brd`, `frd`, and `add` roles in `documents.required` (relaxed in `reconcile`/`code-first`)
 - **Code map is sampled, not exhaustive** — the code scan uses lightweight, language-agnostic regex/heuristics (no full parse). It may miss multi-line route declarations, dynamically-registered routes, or non-JS/TS languages; drift/parity findings it can't confirm are marked `requiresHumanReview` rather than asserted
 - **No `.env` loading** — `ANTHROPIC_API_KEY` must be set as a shell environment variable
