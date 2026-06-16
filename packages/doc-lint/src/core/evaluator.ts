@@ -401,11 +401,11 @@ function buildEvaluationContext(input: {
     completeness: {
       requireEnumeration: true,
       requireAdversarialVerify: false,
-      // the real guarantee is the per-source `required` gate (a required source the
-      // agent never read → completeness=partial). We deliberately do NOT claim
-      // minSourcesRead:"all" here, since the engine does not enforce a blanket
-      // "every source read" rule (that would over-flag legitimate grep-zero-match
-      // absence). Don't advertise a policy stronger than what's enforced.
+      // the default guarantee is the per-source `required` gate (a required source
+      // the agent never read → completeness=partial). We deliberately do NOT opt
+      // into the stricter minSourcesRead:"all" rule here (the engine enforces it
+      // when set, but a blanket "every source read" would over-flag legitimate
+      // grep-zero-match absence). Callers can still opt in via CompletenessPolicy.
     },
   };
 }
