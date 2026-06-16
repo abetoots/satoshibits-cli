@@ -133,6 +133,49 @@ describe("agent-engine sandbox", () => {
     expect(out).toContain("src/http.ts:1");
     expect(tools.coverage().searchesPerformed.length).toBeGreaterThan(0);
   });
+
+  it("grep does NOT follow a symlink that escapes the sandbox", () => {
+    // src/leak -> ../secret.env (outside the allowed root [root/src])
+    fs.symlinkSync(path.join(root, "secret.env"), path.join(root, "src/leak"));
+    const ctx = makeContext(root, [path.join(root, "src")]);
+    const tools = new FileTools(ctx);
+    const out = tools.execute("grep", { pattern: "super-secret", path: "src" });
+    expect(out).toBe("(no matches)"); // the symlinked secret is never read
+    expect(out).not.toContain("super-secret");
+  });
+
+  it("grep does NOT descend into a symlinked directory that escapes the sandbox", () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "doc-lint-outside-"));
+    fs.writeFileSync(path.join(outside, "leak.ts"), "const token = 'ESCAPED';\n");
+    // src/up -> <outside dir>
+    fs.symlinkSync(outside, path.join(root, "src/up"));
+    const ctx = makeContext(root, [path.join(root, "src")]);
+    const tools = new FileTools(ctx);
+    const out = tools.execute("grep", { pattern: "ESCAPED", path: "src" });
+    expect(out).toBe("(no matches)");
+    fs.rmSync(outside, { recursive: true, force: true });
+  });
+
+  it("grep honors path-glob ignore patterns, not just segment names", () => {
+    fs.mkdirSync(path.join(root, "src/skip"), { recursive: true });
+    fs.writeFileSync(path.join(root, "src/skip/x.ts"), "const tok = 'NEEDLE';\n");
+    fs.writeFileSync(path.join(root, "src/keep.ts"), "const tok = 'NEEDLE';\n");
+    const ctx: EvaluationContext = {
+      ...makeContext(root),
+      sandbox: { ...makeContext(root).sandbox, ignore: ["**/skip/**"] },
+    };
+    const tools = new FileTools(ctx);
+    const out = tools.execute("grep", { pattern: "NEEDLE" });
+    expect(out).toContain("src/keep.ts");
+    expect(out).not.toContain("src/skip");
+  });
+
+  it("grep rejects an over-long pattern (backtracking-DoS guard)", () => {
+    const ctx = makeContext(root);
+    const tools = new FileTools(ctx);
+    const out = tools.execute("grep", { pattern: "a".repeat(500) });
+    expect(out).toMatch(/pattern too long/i);
+  });
 });
 
 describe("agent-engine loop", () => {
@@ -177,6 +220,37 @@ describe("agent-engine loop", () => {
     expect(res.ok).toBe(false); // never produced final text
     expect(res.coverage?.completeness).toBe("insufficient");
     expect(client.callCount).toBe(2);
+  });
+
+  it("NEVER returns ok:true on a turn-limit abort, even with trailing text", async () => {
+    // model keeps emitting planning text alongside a tool call, never a clean stop
+    const planning: AgentMessage = msg(
+      [
+        { type: "text", text: "Let me look at one more file before I answer..." },
+        { type: "tool_use", id: "t1", name: "read_file", input: { path: "src/http.ts" } },
+      ],
+      "tool_use",
+    );
+    const client = scriptedClient([planning]);
+    const res = await runAgentLoop(client, PROMPT, makeContext(root), { maxTurns: 2 });
+    expect(res.ok).toBe(false); // planning chatter must not be returned as the final answer
+    if (!res.ok) expect(res.error).toMatch(/turn limit/i);
+    expect(res.coverage?.completeness).toBe("insufficient");
+  });
+
+  it("does not treat text emitted alongside a tool_use as the final answer", async () => {
+    // turn 1 has both chatter + a tool call; turn 2 is the real final JSON
+    const chatterThenTool: AgentMessage = msg(
+      [
+        { type: "text", text: "thinking out loud, not my answer" },
+        { type: "tool_use", id: "t1", name: "read_file", input: { path: "src/http.ts" } },
+      ],
+      "tool_use",
+    );
+    const client = scriptedClient([chatterThenTool, final('{"gaps": []}')]);
+    const res = await runAgentLoop(client, PROMPT, makeContext(root));
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.content).toBe('{"gaps": []}'); // not the chatter
   });
 
   it("an out-of-sandbox read during the loop downgrades completeness to partial", async () => {

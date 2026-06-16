@@ -178,6 +178,13 @@ export async function formatLintHuman(result: LintResult): Promise<string> {
   if (s.humanReviewRequired > 0) {
     lines.push(chalk.red(`  Human review required: ${s.humanReviewRequired}`));
   }
+  if (s.incompleteEvaluations && s.incompleteEvaluations > 0) {
+    lines.push(
+      chalk.yellow(
+        `  Inconclusive evaluations: ${s.incompleteEvaluations} (sources not fully explored — passing results are unconfirmed)`,
+      ),
+    );
+  }
 
   // coverage info
   if (result.coverage) {
@@ -213,12 +220,16 @@ export async function formatLintHuman(result: LintResult): Promise<string> {
     }
   }
 
+  const inconclusive = (s.incompleteEvaluations ?? 0) > 0;
   if (s.errors > 0) {
     lines.push("");
     lines.push(chalk.red.bold("RESULT: FAIL"));
   } else if (s.warnings > 0) {
     lines.push("");
-    lines.push(chalk.yellow.bold("RESULT: PASS (with warnings)"));
+    lines.push(chalk.yellow.bold(`RESULT: PASS (with warnings)${inconclusive ? " — inconclusive" : ""}`));
+  } else if (inconclusive) {
+    lines.push("");
+    lines.push(chalk.yellow.bold("RESULT: PASS (inconclusive — sources not fully explored)"));
   } else {
     lines.push("");
     lines.push(chalk.green.bold("RESULT: PASS"));
