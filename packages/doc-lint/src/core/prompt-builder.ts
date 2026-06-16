@@ -91,6 +91,22 @@ function buildDocumentReferences(docs: LoadedDocument[]): DocumentReference[] {
   }));
 }
 
+// reference mode: tell an external agent which source roots to open. The code
+// lens asks "does the system satisfy X?" — without this, the prompt would only
+// list docs and the agent wouldn't know where the implementation lives.
+function formatCodeRootsBlock(roots: string[]): string {
+  const lines = [
+    "## Source code",
+    "",
+    "Read the relevant implementation under these roots before evaluating, and cite `file:line`:",
+    "",
+  ];
+  for (const root of roots) {
+    lines.push(`- \`${root}\``);
+  }
+  return lines.join("\n");
+}
+
 // render the code map as compact, citable text for drift/reconcile prompts.
 // includes a coverage section so the model can distinguish "not scanned" from
 // "not present in code".
@@ -184,6 +200,7 @@ export function buildEvaluationPrompt(
   inline = true,
   codeMap?: CodeMap,
   lens: Lens = "docs",
+  codeRoots?: string[],
 ): AssembledPrompt {
   const template = loadTemplate("evaluation.md");
   const concernYaml = fs.readFileSync(concern.filePath, "utf8");
@@ -193,6 +210,13 @@ export function buildEvaluationPrompt(
   // the actual implementation alongside the docs.
   if (codeMap) {
     documentsBlock += `\n\n### Code Map (extracted from source)\n\n${formatCodeMapBlock(codeMap)}`;
+  }
+
+  // reference mode + a code/reconcile evaluation: point the agent at the source
+  // roots it must read (it has filesystem access; we don't inline the code).
+  const hasCodeRoots = !inline && codeRoots != null && codeRoots.length > 0;
+  if (hasCodeRoots) {
+    documentsBlock += `\n\n${formatCodeRootsBlock(codeRoots)}`;
   }
 
   const userPrompt = template
@@ -218,6 +242,9 @@ export function buildEvaluationPrompt(
 
   if (!inline) {
     prompt.documents = buildDocumentReferences(docs);
+    if (hasCodeRoots) {
+      prompt.codeRoots = codeRoots;
+    }
   }
 
   return prompt;

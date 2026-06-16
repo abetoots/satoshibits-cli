@@ -305,4 +305,29 @@ describe("prompt-builder", () => {
       expect(prompt.system).toContain("AGREEMENT");
     });
   });
+
+  describe("reference-mode code roots", () => {
+    it("renders a Source code block and sets codeRoots in reference mode", () => {
+      const concern = loadAllConcerns().find((c) => c.id === "idempotency-boundaries")!;
+      const prompt = buildEvaluationPrompt(concern, makeDocs(), false, undefined, "code", ["src", "lib"]);
+      expect(prompt.user).toContain("## Source code");
+      expect(prompt.user).toContain("`src`");
+      expect(prompt.user).toContain("`lib`");
+      expect(prompt.codeRoots).toEqual(["src", "lib"]);
+    });
+
+    it("does NOT render code roots in inline mode (code isn't inlined)", () => {
+      const concern = loadAllConcerns().find((c) => c.id === "idempotency-boundaries")!;
+      const prompt = buildEvaluationPrompt(concern, makeDocs(), true, undefined, "code", ["src"]);
+      expect(prompt.user).not.toContain("## Source code");
+      expect(prompt.codeRoots).toBeUndefined();
+    });
+
+    it("omits code roots when none are provided (docs-only reference mode)", () => {
+      const concern = loadAllConcerns().find((c) => c.id === "idempotency-boundaries")!;
+      const prompt = buildEvaluationPrompt(concern, makeDocs(), false);
+      expect(prompt.user).not.toContain("## Source code");
+      expect(prompt.codeRoots).toBeUndefined();
+    });
+  });
 });

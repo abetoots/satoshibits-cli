@@ -16,7 +16,10 @@ export interface AssembledPrompt {
     documentsIncluded: string[];
     templateVersion: string;
   };
+  // reference mode (`--no-inline`) only: the files/roots the consumer must read.
   documents?: DocumentReference[];
+  // source roots an external agent should read (code/reconcile lens or reconcile mode)
+  codeRoots?: string[];
 }
 
 // the evidence lens a concern is evaluated through. a concern is a system

@@ -6,7 +6,7 @@ import { formatAssembleJson } from "../formatters/json.js";
 import { formatAssembleHuman } from "../formatters/human.js";
 import { writePromptFiles } from "../formatters/files.js";
 
-import type { AssembleOptions } from "../types/index.js";
+import type { AssembleOptions, DocLintMode, Lens } from "../types/index.js";
 import { parseTierFlag } from "../core/tier.js";
 
 export async function assembleCommand(
@@ -15,17 +15,24 @@ export async function assembleCommand(
 ): Promise<number> {
   const resolved = path.resolve(projectPath ?? ".");
 
-  // code-first has no authored docs to assemble — redirect to bootstrap.
-  try {
-    if (loadManifest(resolved, options.config).mode === "code-first") {
-      console.error(
-        "This is a code-first project (no authored docs). Run `doc-lint bootstrap` to " +
-          "scaffold as-built docs + a documentation gap inventory.",
-      );
-      return 2;
+  const mode = options.mode as DocLintMode | undefined;
+
+  // code-first has no authored docs to assemble — redirect to bootstrap. Honor a
+  // --mode override (the effective mode), falling back to the manifest's mode.
+  let effectiveMode = mode;
+  if (!effectiveMode) {
+    try {
+      effectiveMode = loadManifest(resolved, options.config).mode;
+    } catch {
+      // no manifest yet; let assemble surface the error
     }
-  } catch {
-    // no manifest yet; let assemble surface the error
+  }
+  if (effectiveMode === "code-first") {
+    console.error(
+      "This is a code-first project (no authored docs). Run `doc-lint bootstrap` to " +
+        "scaffold as-built docs + a documentation gap inventory.",
+    );
+    return 2;
   }
 
   const tierFilter = parseTierFlag(options.tier);
@@ -35,6 +42,19 @@ export async function assembleCommand(
     );
     return 2;
   }
+
+  const VALID_LENSES: Lens[] = ["docs", "code", "reconcile"];
+  if (options.lens && !VALID_LENSES.includes(options.lens as Lens)) {
+    console.error(
+      `Error: invalid --lens value "${options.lens}". Use one of: ${VALID_LENSES.join(", ")}`,
+    );
+    return 2;
+  }
+  const lens = options.lens as Lens | undefined;
+
+  const codePaths = options.code
+    ? options.code.split(",").map((s) => s.trim()).filter(Boolean)
+    : undefined;
 
   const filterConcernIds = options.concerns
     ? options.concerns.split(",").map((s) => s.trim())
@@ -55,12 +75,16 @@ export async function assembleCommand(
     projectPath: resolved,
     configPath: options.config,
     contradiction: options.contradiction,
+    drift: options.drift,
     filterConcernIds,
     tierFilter,
     tierCumulative: options.tierCumulative,
     autoDetect: options.autoDetect,
     warnOnMismatch: options.warnOnMismatch,
     inline: options.inline,
+    mode,
+    codePaths,
+    lens,
   });
 
   if (options.outputDir) {

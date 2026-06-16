@@ -7,11 +7,15 @@ export interface AssembleOptions extends BaseCommandOptions {
   tier: string;
   tierCumulative?: boolean;
   contradiction?: boolean;
+  drift?: boolean;
   concerns?: string;
   autoDetect?: boolean;
   warnOnMismatch?: boolean;
   outputDir?: string;
   inline?: boolean;
+  mode?: string;
+  code?: string;
+  lens?: string;
 }
 
 export interface DetectOptions extends BaseCommandOptions {
