@@ -458,8 +458,12 @@ function computeCompleteness(
     (s) => s.required && !sourceWasRead(s.path, partial.filesRead),
   );
   if (requiredUnread.length > 0) return "partial";
-  // honor an explicit minimum-reads policy for absence-based concerns
-  if (typeof policy?.minSourcesRead === "number" && partial.filesRead.length < policy.minSourcesRead) {
+  // honor an explicit minimum-reads policy for absence-based concerns:
+  //   "all"  → every listed source must have been read (strict; opt-in)
+  //   number → at least N files read
+  if (policy?.minSourcesRead === "all") {
+    if (sources.some((s) => !sourceWasRead(s.path, partial.filesRead))) return "partial";
+  } else if (typeof policy?.minSourcesRead === "number" && partial.filesRead.length < policy.minSourcesRead) {
     return "partial";
   }
   return "complete";
