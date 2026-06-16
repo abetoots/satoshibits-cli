@@ -10,11 +10,16 @@ import type {
   DriftFinding,
   ExclusionEntry,
   Finding,
+  Lens,
   LintResult,
   SignalAnalysis,
   ToleranceConfig,
 } from "../types/index.js";
-import type { EvaluationEngine } from "./engine/types.js";
+import type {
+  EvaluationContext,
+  EvaluationEngine,
+  EvaluationSource,
+} from "./engine/types.js";
 
 import { loadAllConcerns } from "./concerns.js";
 import { loadDocuments } from "./documents.js";
@@ -65,6 +70,9 @@ export interface AssembleInput {
   // overrides for manifest fields (CLI flags); fall back to manifest when unset
   mode?: DocLintMode;
   codePaths?: string[];
+  // evidence lens reframing the concern question. default "docs" (back-compat,
+  // byte-identical prompts). "code"/"reconcile" point the question at source.
+  lens?: Lens;
 }
 
 export interface LintInput extends AssembleInput {
@@ -286,6 +294,10 @@ export async function assemble(input: AssembleInput): Promise<AssembleResult> {
   }
 
   const inline = input.inline !== false;
+  // lens defaults to "docs" (back-compat). The agentic code-audit path opts into
+  // "code"/"reconcile" explicitly; we do NOT auto-derive from mode, so the SdkEngine
+  // path stays byte-identical for existing modes.
+  const lens: Lens = input.lens ?? "docs";
   const prompts: AssembledPrompt[] = [];
 
   for (const concern of matched) {
@@ -293,7 +305,7 @@ export async function assemble(input: AssembleInput): Promise<AssembleResult> {
     // injecting code facts into every concern would let implementation stand in for
     // documentation and falsely pass an ordinary doc-gap concern.
     const concernCodeMap = CODE_AWARE_CONCERNS.has(concern.id) ? codeMap : undefined;
-    const prompt = buildEvaluationPrompt(concern, docs.all, inline, concernCodeMap);
+    const prompt = buildEvaluationPrompt(concern, docs.all, inline, concernCodeMap, lens);
     prompts.push(prompt);
   }
 
@@ -352,6 +364,53 @@ export async function assemble(input: AssembleInput): Promise<AssembleResult> {
   return result;
 }
 
+// build the execution authority an agentic engine reads source through. The
+// sandbox boundary is the repo root (read-only); `sources` are advisory hints
+// about where the relevant docs/code live. SdkEngine ignores all of this.
+function buildEvaluationContext(input: {
+  projectRoot: string;
+  docPaths: string[];
+  codePaths: string[];
+  ignore?: string[];
+}): EvaluationContext {
+  const { projectRoot } = input;
+  const rel = (p: string): string => (path.isAbsolute(p) ? path.relative(projectRoot, p) : p);
+
+  const sources: EvaluationSource[] = [
+    ...input.docPaths.map((p): EvaluationSource => ({ kind: "docs", path: rel(p) })),
+    ...input.codePaths.map((p): EvaluationSource => ({ kind: "code", path: rel(p) })),
+  ];
+
+  return {
+    projectRoot,
+    sources,
+    sandbox: {
+      mode: "read-only",
+      allowExecution: false,
+      allowNetwork: false,
+      allowedReadRoots: [projectRoot],
+      ignore: input.ignore,
+    },
+    completeness: {
+      requireEnumeration: true,
+      requireAdversarialVerify: false,
+      minSourcesRead: "all",
+    },
+  };
+}
+
+// incomplete exploration means every conclusion from that run is advisory: a
+// "no gap"/"absent" verdict the agent never fully searched for is exactly the
+// false-pass the regex coverage section used to guard. Flag for human review.
+function downgradeForCoverage<T extends { requiresHumanReview?: boolean }>(
+  items: T[],
+  completeness: "complete" | "partial" | "insufficient" | undefined,
+): boolean {
+  if (!completeness || completeness === "complete") return false;
+  for (const item of items) item.requiresHumanReview = true;
+  return items.length > 0;
+}
+
 // lint composes assemble — the two-layer architecture is enforced structurally
 export async function lint(input: LintInput): Promise<LintResult> {
   const manifest = loadManifest(input.projectPath, input.configPath);
@@ -404,6 +463,14 @@ export async function lint(input: LintInput): Promise<LintResult> {
     progress(`Skipping excluded concerns: ${preExcludedConcernIds.join(", ")}`);
   }
 
+  // execution authority for agentic engines (read real source). SdkEngine ignores it.
+  const context = buildEvaluationContext({
+    projectRoot: path.resolve(input.projectPath),
+    docPaths: docs.all.map((d) => d.path),
+    codePaths: input.codePaths ?? manifest.code?.paths ?? [],
+    ignore: manifest.code?.ignore,
+  });
+
   let findings: Finding[] = [];
   const contradictions: ContradictionFinding[] = [];
   let drifts: DriftFinding[] = [];
@@ -411,7 +478,7 @@ export async function lint(input: LintInput): Promise<LintResult> {
   for (const prompt of activePrompts) {
     if (prompt.type === "contradiction") {
       progress("Running contradiction scanner...");
-      const result = await input.engine.evaluate(prompt);
+      const result = await input.engine.evaluate(prompt, context);
 
       if (result.ok) {
         const parsed = parseContradictionResponse(result.content);
@@ -424,12 +491,17 @@ export async function lint(input: LintInput): Promise<LintResult> {
       }
     } else if (prompt.type === "drift") {
       progress("Running documentation–code drift scanner...");
-      const result = await input.engine.evaluate(prompt);
+      const result = await input.engine.evaluate(prompt, context);
 
       if (result.ok) {
         const parsed = parseDriftResponse(result.content);
         if (parsed.parseError) {
           progress(`  Warning: ${parsed.parseError}`);
+        }
+        if (downgradeForCoverage(parsed.drifts, result.coverage?.completeness)) {
+          progress(
+            `  Note: exploration was ${result.coverage?.completeness} — drift findings flagged for human review`,
+          );
         }
         drifts.push(...parsed.drifts);
       } else {
@@ -437,7 +509,7 @@ export async function lint(input: LintInput): Promise<LintResult> {
       }
     } else {
       progress(`Evaluating: ${prompt.concernName} (${prompt.concernId})`);
-      const result = await input.engine.evaluate(prompt);
+      const result = await input.engine.evaluate(prompt, context);
 
       if (result.ok) {
         const parsed = parseEvaluationResponse(
@@ -446,6 +518,11 @@ export async function lint(input: LintInput): Promise<LintResult> {
         );
         if (parsed.parseError) {
           progress(`  Warning: ${parsed.parseError}`);
+        }
+        if (downgradeForCoverage(parsed.findings, result.coverage?.completeness)) {
+          progress(
+            `  Note: exploration was ${result.coverage?.completeness} — findings flagged for human review`,
+          );
         }
         findings.push(...parsed.findings);
       } else {

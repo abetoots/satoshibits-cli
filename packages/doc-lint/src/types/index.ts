@@ -28,6 +28,7 @@ export {
 export type {
   AssembledPrompt,
   DocumentReference,
+  Lens,
   Severity,
   Confidence,
   Finding,

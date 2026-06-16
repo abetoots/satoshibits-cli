@@ -1,5 +1,5 @@
 import type { AssembledPrompt } from "../../types/index.js";
-import type { EvaluationEngine, EvaluationResult } from "./types.js";
+import type { EvaluationContext, EvaluationEngine, EvaluationResult } from "./types.js";
 
 // minimal shape of the Anthropic SDK surface we use — avoids `any` for a dynamic import
 interface AnthropicContentBlock {
@@ -48,7 +48,13 @@ export class SdkEngine implements EvaluationEngine {
     return this.client;
   }
 
-  async evaluate(prompt: AssembledPrompt): Promise<EvaluationResult> {
+  // toolless engine: `_context` (repo access) is intentionally ignored. All evidence
+  // must be pre-stuffed into prompt.user (inline docs + code map). Agentic engines
+  // use the context to read source on demand instead.
+  async evaluate(
+    prompt: AssembledPrompt,
+    _context?: EvaluationContext,
+  ): Promise<EvaluationResult> {
     try {
       const client = await this.getClient();
 

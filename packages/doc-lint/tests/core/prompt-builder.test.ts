@@ -275,4 +275,34 @@ describe("prompt-builder", () => {
       expect(prompt.user).toContain("POST /charge");
     });
   });
+
+  describe("lens framing", () => {
+    it("docs lens (default) is byte-identical to no lens", () => {
+      const concern = loadAllConcerns().find((c) => c.id === "idempotency-boundaries")!;
+      const docs = makeDocs();
+      const noLens = buildEvaluationPrompt(concern, docs);
+      const docsLens = buildEvaluationPrompt(concern, docs, true, undefined, "docs");
+      expect(docsLens.system).toBe(noLens.system);
+      expect(docsLens.user).toBe(noLens.user);
+    });
+
+    it("code lens reframes the question toward the system as implemented", () => {
+      const concern = loadAllConcerns().find((c) => c.id === "idempotency-boundaries")!;
+      const prompt = buildEvaluationPrompt(concern, makeDocs(), true, undefined, "code");
+      expect(prompt.system).toContain("CODE AUDIT");
+      expect(prompt.system).toContain("SYSTEM AS IMPLEMENTED");
+      // it must NOT turn into a "is it documented" check in this lens
+      expect(prompt.system).toContain("Do NOT report 'undocumented'");
+      // user prompt (concern YAML + docs) is unchanged — framing rides on the system msg
+      const docsLensUser = buildEvaluationPrompt(concern, makeDocs(), true, undefined, "docs").user;
+      expect(prompt.user).toBe(docsLensUser);
+    });
+
+    it("reconcile lens reframes the question toward doc↔code agreement", () => {
+      const concern = loadAllConcerns().find((c) => c.id === "idempotency-boundaries")!;
+      const prompt = buildEvaluationPrompt(concern, makeDocs(), true, undefined, "reconcile");
+      expect(prompt.system).toContain("RECONCILE");
+      expect(prompt.system).toContain("AGREEMENT");
+    });
+  });
 });
