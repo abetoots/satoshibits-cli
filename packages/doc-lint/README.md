@@ -64,12 +64,13 @@ In reference mode, prompts instruct the evaluator to "read the following files f
   "prompts": [{
     "documents": [
       { "role": "brd", "label": "BRD", "path": "docs/brd.md" }
-    ]
+    ],
+    "codeRoots": ["src"]
   }]
 }
 ```
 
-Use `--no-inline` when the consumer has filesystem access (agentic CLIs, IDEs with tool-use, CI pipelines) and you want smaller prompts or to avoid duplicating document content across multiple prompt files.
+Use `--no-inline` when the consumer has filesystem access (agentic CLIs, IDEs with tool-use, CI pipelines) and you want smaller prompts or to avoid duplicating document content across multiple prompt files. When the evaluation is code-aware — a `code`/`reconcile` lens or `--mode reconcile` — reference-mode prompts also add a **`## Source code`** section (and a `codeRoots` array) so the agent reads the real implementation, not just the docs.
 
 ### Evaluation Engines (`sdk` vs `agent`)
 
@@ -91,6 +92,20 @@ Use `--no-inline` when the consumer has filesystem access (agentic CLIs, IDEs wi
 **Completeness & honesty.** The `agent` engine enforces enumerate-before-conclude (it must search/list before asserting an absence) and self-reports coverage. If a run's exploration was cut short — a turn limit, a `max_tokens` truncation, a `required` source it never read, or a missing API key — its findings are flagged `requiresHumanReview`, the result `summary` gains an `incompleteEvaluations` count, the human output reads `RESULT: INCONCLUSIVE`, and the CLI **exits non-zero**. An unverified "we found nothing" never passes green. The toolless `sdk` engine reports no coverage and is unaffected.
 
 > The `sdk` engine remains the default and is unchanged. `agent` is opt-in via `--engine agent` (CLI) or by passing `AnthropicAgentEngine` to `lint()` programmatically.
+
+### Bring your own agent (no doc-lint API calls)
+
+If you already run an agentic CLI/IDE, you don't need doc-lint's engines at all — stay in the free `assemble`/`detect` layer and let your tool be the evaluator. `assemble` takes the same `--lens`, `--mode`, and `--code` knobs as `lint`, so the prompts match exactly what `lint` would have evaluated.
+
+```bash
+# (optional) figure out which signals your docs declare, via your own agent
+doc-lint detect . -o ./out                       # writes out/signal-detection.md
+
+# emit standalone prompt files for your agent — reframed for code audit, pointing at source
+doc-lint assemble . --tier all --lens code --mode reconcile --no-inline --code src -o ./out/prompts
+```
+
+Each `.md` carries the concern, the docs to read, and (for `code`/`reconcile`) a `## Source code` section naming the roots to open. Hand them to your agent; it reads the real source and returns findings. Zero tokens billed by doc-lint. (To have doc-lint orchestrate the agent for you instead, use `--engine agent` — that path *does* call the Anthropic API.)
 
 ## Tier System
 
@@ -312,16 +327,22 @@ Assembles evaluation prompts without making any API calls. `[path]` is the proje
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--tier <level>` | **Required.** Tier scope: `1`, `2`, `3`, or `all` | - |
+| `--lens <lens>` | Evidence lens: `docs` (is X documented?), `code` (does the system satisfy X?), `reconcile` (do docs and code agree?) | `docs` |
+| `--mode <mode>` | Override mode: `doc-first` \| `reconcile` (reconcile adds the drift scanner) | manifest `mode` |
+| `--code <paths>` | Source roots (comma-separated) — scanned for the code map and listed for the agent to read | manifest `code.paths` |
 | `-c, --config <file>` | Path to manifest file | Auto-detect `doc-lint.yaml` or `doc-lint.yml` |
 | `-f, --format <format>` | Output format: `human` or `json` (to stdout) | *required if `-o` not set* |
 | `-o, --output-dir <path>` | Write each prompt as a standalone `.md` file to this directory | *required if `-f` not set* |
 | `--no-contradiction` | Skip the contradiction scanner prompt | enabled |
+| `--no-drift` | Skip the documentation↔code drift scanner (reconcile mode) | enabled |
 | `--concerns <ids>` | Only specific concerns (comma-separated) | all matched |
 | `--auto-detect` / `--no-auto-detect` | Auto-detect signals from document content | manifest value or `false` |
 | `--warn-on-mismatch` / `--no-warn-on-mismatch` | Warn when detected signals differ from declared | manifest value or `false` |
 | `--no-inline` | Reference documents by file path instead of inlining content | inline (content embedded) |
 
 One of `-f` or `-o` must be provided. If both are given, `-o` takes priority. When `--output-dir` is used, each assembled prompt is written as an individual Markdown file (e.g., `idempotency-boundaries.md`) with YAML front-matter metadata. These files are self-contained and ready to hand off to any external LLM.
+
+`assemble` is the **first-class, zero-cost path** for the common "bring your own agent" case: produce prompts here for free, hand them to an agentic CLI/IDE you already pay for, and let *it* do the reasoning — no doc-lint API calls. `--lens`, `--mode`, and `--code` are the same knobs `lint` has, so the prompts you emit match exactly what `lint` would evaluate. Under `--no-inline`, a `code`/`reconcile` lens (or `--mode reconcile`) adds a **`## Source code`** section listing the roots the agent must read (and a `codeRoots` array on each prompt in JSON), so the agent knows where the implementation lives — not just the docs.
 
 ### `doc-lint detect [path]`
 
@@ -652,11 +673,13 @@ const assembled: AssembleResult = await assemble({
   contradiction: true,                // default: true
   drift: true,                        // default: true (reconcile mode)
   mode: "reconcile",                  // optional override
+  lens: "code",                       // optional: "docs" (default) | "code" | "reconcile"
+  codePaths: ["src"],                 // optional: source roots (agent reads these in reference mode)
   filterConcernIds: ["idempotency-boundaries"],  // optional
   tierFilter: 2,                      // 1, 2, 3, or "all" (omit to include all tiers)
   autoDetect: true,                   // optional: merge detected signals with declared
   warnOnMismatch: true,               // optional: report signal drift
-  inline: false,                      // optional: false = file path references instead of content
+  inline: false,                      // optional: false = file path references (+ codeRoots) instead of content
 });
 
 console.log(assembled.version);          // "2.0"

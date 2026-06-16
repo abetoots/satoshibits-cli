@@ -298,6 +298,12 @@ export async function assemble(input: AssembleInput): Promise<AssembleResult> {
   // "code"/"reconcile" explicitly; we do NOT auto-derive from mode, so the SdkEngine
   // path stays byte-identical for existing modes.
   const lens: Lens = input.lens ?? "docs";
+  // in reference mode, a code/reconcile evaluation needs the agent pointed at the
+  // real source roots (it reads them itself). Omit for the doc-only docs lens.
+  const codeRoots =
+    !inline && (lens !== "docs" || mode === "reconcile")
+      ? (input.codePaths ?? manifest.code?.paths ?? ["."])
+      : undefined;
   const prompts: AssembledPrompt[] = [];
 
   for (const concern of matched) {
@@ -305,7 +311,7 @@ export async function assemble(input: AssembleInput): Promise<AssembleResult> {
     // injecting code facts into every concern would let implementation stand in for
     // documentation and falsely pass an ordinary doc-gap concern.
     const concernCodeMap = CODE_AWARE_CONCERNS.has(concern.id) ? codeMap : undefined;
-    const prompt = buildEvaluationPrompt(concern, docs.all, inline, concernCodeMap, lens);
+    const prompt = buildEvaluationPrompt(concern, docs.all, inline, concernCodeMap, lens, codeRoots);
     prompts.push(prompt);
   }
 

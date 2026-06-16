@@ -697,6 +697,76 @@ describe("coverage-driven human-review downgrade", () => {
   });
 });
 
+describe("assemble — external prep (lens, mode, code roots)", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "doc-lint-assemble-ext-"));
+    fs.mkdirSync(path.join(tmpDir, "docs"), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, "src"), { recursive: true });
+    for (const role of ["brd", "frd", "add"]) {
+      fs.writeFileSync(path.join(tmpDir, `docs/${role}.md`), `# ${role}\nPayments via Stripe with idempotency keys.`);
+    }
+    fs.writeFileSync(path.join(tmpDir, "src/http.ts"), "app.post('/charge', handler);\n");
+    fs.writeFileSync(
+      path.join(tmpDir, "package.json"),
+      JSON.stringify({ name: "ext", dependencies: { stripe: "^14" } }),
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, "doc-lint.yaml"),
+      [
+        'version: "1.0"',
+        "project:",
+        "  name: ext",
+        "documents:",
+        "  required:",
+        "    - role: brd",
+        "      path: docs/brd.md",
+        "    - role: frd",
+        "      path: docs/frd.md",
+        "    - role: add",
+        "      path: docs/add.md",
+        "code:",
+        '  paths: ["src"]',
+        "signals:",
+        "  declared: [payments]",
+      ].join("\n"),
+    );
+  });
+
+  afterEach(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+
+  it("--lens code + --no-inline points the agent at code roots (independent of mode)", async () => {
+    const result = await assemble({
+      projectPath: tmpDir,
+      lens: "code",
+      inline: false,
+      codePaths: ["src"],
+    });
+    const concerns = result.prompts.filter((p) => p.type === "concern");
+    expect(concerns.length).toBeGreaterThan(0);
+    // code lens reframing rides on the system message
+    expect(concerns[0]!.system).toContain("CODE AUDIT");
+    // every concern prompt carries the source roots for the external agent to read
+    expect(concerns.every((p) => p.codeRoots?.includes("src"))).toBe(true);
+    expect(concerns[0]!.user).toContain("## Source code");
+  });
+
+  it("does not attach code roots for the default docs lens", async () => {
+    const result = await assemble({ projectPath: tmpDir, inline: false });
+    const concerns = result.prompts.filter((p) => p.type === "concern");
+    expect(concerns.every((p) => p.codeRoots == null)).toBe(true);
+  });
+
+  it("--mode reconcile via assemble emits the drift scanner; --no-drift suppresses it", async () => {
+    const withDrift = await assemble({ projectPath: tmpDir, mode: "reconcile" });
+    expect(withDrift.prompts.some((p) => p.type === "drift")).toBe(true);
+
+    const noDrift = await assemble({ projectPath: tmpDir, mode: "reconcile", drift: false });
+    expect(noDrift.prompts.some((p) => p.type === "drift")).toBe(false);
+  });
+});
+
 describe("lint rejects code-first (onboarding, not a lint mode)", () => {
   let tmpDir: string;
 
