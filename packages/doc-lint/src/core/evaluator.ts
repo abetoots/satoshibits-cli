@@ -475,12 +475,20 @@ export async function lint(input: LintInput): Promise<LintResult> {
   const contradictions: ContradictionFinding[] = [];
   let drifts: DriftFinding[] = [];
 
+  // an incomplete run can't be trusted to have found everything — track it so a
+  // zero-finding "partial"/"insufficient" run is surfaced, never a silent green.
+  let incompleteEvaluations = 0;
+  const noteIncomplete = (completeness: string | undefined): void => {
+    if (completeness && completeness !== "complete") incompleteEvaluations++;
+  };
+
   for (const prompt of activePrompts) {
     if (prompt.type === "contradiction") {
       progress("Running contradiction scanner...");
       const result = await input.engine.evaluate(prompt, context);
 
       if (result.ok) {
+        noteIncomplete(result.coverage?.completeness);
         const parsed = parseContradictionResponse(result.content);
         if (parsed.parseError) {
           progress(`  Warning: ${parsed.parseError}`);
@@ -494,6 +502,7 @@ export async function lint(input: LintInput): Promise<LintResult> {
       const result = await input.engine.evaluate(prompt, context);
 
       if (result.ok) {
+        noteIncomplete(result.coverage?.completeness);
         const parsed = parseDriftResponse(result.content);
         if (parsed.parseError) {
           progress(`  Warning: ${parsed.parseError}`);
@@ -512,6 +521,7 @@ export async function lint(input: LintInput): Promise<LintResult> {
       const result = await input.engine.evaluate(prompt, context);
 
       if (result.ok) {
+        noteIncomplete(result.coverage?.completeness);
         const parsed = parseEvaluationResponse(
           result.content,
           prompt.concernId,
@@ -578,6 +588,15 @@ export async function lint(input: LintInput): Promise<LintResult> {
     findings.filter((f) => f.requiresHumanReview).length +
     drifts.filter((d) => d.requiresHumanReview).length;
 
+  // an incomplete run with zero flagged findings would otherwise read as a clean
+  // pass — warn so "we didn't find anything" can't masquerade as "there's nothing".
+  if (incompleteEvaluations > 0) {
+    progress(
+      `Warning: ${incompleteEvaluations} evaluation(s) did not fully explore the sources — ` +
+        `treat passing results as inconclusive, not confirmed.`,
+    );
+  }
+
   return {
     version: "2.0",
     timestamp: new Date().toISOString(),
@@ -595,6 +614,7 @@ export async function lint(input: LintInput): Promise<LintResult> {
       contradictions: contradictions.length,
       drifts: drifts.length,
       humanReviewRequired: humanReview,
+      ...(incompleteEvaluations > 0 ? { incompleteEvaluations } : {}),
     },
     toleranceApplied: tolerance,
     exclusionsApplied: exclusions,

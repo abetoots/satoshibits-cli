@@ -122,6 +122,9 @@ export interface LintResult {
     contradictions: number;
     drifts: number;
     humanReviewRequired: number;
+    // count of evaluations whose agentic exploration was not "complete"; when set,
+    // passing results are inconclusive (the engine couldn't fully verify absence)
+    incompleteEvaluations?: number;
   };
   toleranceApplied?: import("./manifest.js").ToleranceConfig;
   exclusionsApplied?: import("./manifest.js").ExclusionEntry[];

@@ -69,6 +69,7 @@ const DEFAULT_IGNORE_DIRS = new Set([
 const DEFAULT_MAX_FILE_BYTES = 256 * 1024;
 const GREP_MAX_MATCHES = 200;
 const GREP_MAX_FILES = 5000;
+const GREP_MAX_PATTERN_LEN = 200;
 
 export type ResolveResult =
   | { ok: true; absPath: string }
@@ -116,11 +117,31 @@ function isUnderAnyRoot(abs: string, sandbox: EvaluationSandbox): boolean {
   });
 }
 
-function isIgnored(name: string, sandbox: EvaluationSandbox): boolean {
+// match a `sandbox.ignore` pattern against a directory/file. supports a bare
+// segment name (matched anywhere) and a glob (matched against the repo-relative
+// path), so patterns like "**/fixtures/**" or ".claude/worktrees" work.
+function matchesIgnore(pattern: string, name: string, relPath: string): boolean {
+  const p = pattern.replace(/\/+$/, "");
+  if (p === name || p === relPath) return true;
+  if (!p.includes("*") && !p.includes("/")) return false;
+  const re = new RegExp(
+    "^" +
+      p
+        .split(/(\*\*|\*)/)
+        .map((seg) => {
+          if (seg === "**") return ".*";
+          if (seg === "*") return "[^/]*";
+          return seg.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+        })
+        .join("") +
+      "$",
+  );
+  return re.test(relPath) || re.test(name);
+}
+
+function isIgnored(name: string, relPath: string, sandbox: EvaluationSandbox): boolean {
   if (DEFAULT_IGNORE_DIRS.has(name)) return true;
-  // sandbox.ignore is matched loosely on the segment name (full glob support is
-  // unnecessary for the agentic walk — the goal is to keep the agent out of noise).
-  return (sandbox.ignore ?? []).some((pat) => pat === name || pat.replace(/\/+$/, "") === name);
+  return (sandbox.ignore ?? []).some((pat) => matchesIgnore(pat, name, relPath));
 }
 
 function looksBinary(buf: Buffer): boolean {
@@ -228,8 +249,9 @@ export class FileTools {
 
     const entries = fs
       .readdirSync(resolved.absPath, { withFileTypes: true })
-      .filter((e) => !isIgnored(e.name, this.context.sandbox))
-      .map((e) => `${e.isDirectory() ? "dir " : "file"}  ${e.name}`)
+      .filter((e) => !isIgnored(e.name, this.rel(path.join(resolved.absPath, e.name)), this.context.sandbox))
+      // label symlinks distinctly — read_file/grep will still refuse to follow them out of the sandbox
+      .map((e) => `${e.isSymbolicLink() ? "link" : e.isDirectory() ? "dir " : "file"}  ${e.name}`)
       .sort();
     return entries.length > 0 ? entries.join("\n") : "(empty)";
   }
@@ -255,6 +277,10 @@ export class FileTools {
 
   private grep(pattern: string, scope: string | undefined): string {
     this.searchesPerformed.push(`grep /${pattern}/ ${scope ?? "."}`);
+    // bound the pattern to blunt catastrophic-backtracking DoS from model input
+    if (pattern.length > GREP_MAX_PATTERN_LEN) {
+      return `error: pattern too long (max ${GREP_MAX_PATTERN_LEN} chars)`;
+    }
     let re: RegExp;
     try {
       re = new RegExp(pattern);
@@ -270,13 +296,20 @@ export class FileTools {
 
     const matches: string[] = [];
     let filesVisited = 0;
+    // lstatSync (no symlink follow) at every node; symlink children are skipped
+    // explicitly below. Together these stop a `src/leak -> /etc` symlink from
+    // letting grep read outside allowedReadRoots — read_file/resolveSandboxPath
+    // already realpath-guard, but the recursive walk would otherwise bypass them.
     const walk = (abs: string): void => {
       if (matches.length >= GREP_MAX_MATCHES || filesVisited >= GREP_MAX_FILES) return;
-      const stat = fs.statSync(abs);
+      const stat = fs.lstatSync(abs);
+      if (stat.isSymbolicLink()) return; // never follow links out of the sandbox
       if (stat.isDirectory()) {
         for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
-          if (isIgnored(entry.name, this.context.sandbox)) continue;
-          walk(path.join(abs, entry.name));
+          if (entry.isSymbolicLink()) continue;
+          const childAbs = path.join(abs, entry.name);
+          if (isIgnored(entry.name, this.rel(childAbs), this.context.sandbox)) continue;
+          walk(childAbs);
           if (matches.length >= GREP_MAX_MATCHES) return;
         }
         return;
@@ -384,7 +417,7 @@ export async function runAgentLoop(
   let inputTokens = 0;
   let outputTokens = 0;
   let toolTurnCount = 0;
-  let lastText = "";
+  let finalText = "";
   let done = false;
   let i = 0;
 
@@ -400,14 +433,14 @@ export async function runAgentLoop(
     inputTokens += resp.usage.input_tokens;
     outputTokens += resp.usage.output_tokens;
 
-    const text = resp.content
-      .filter((b): b is TextBlock => b.type === "text")
-      .map((b) => b.text)
-      .join("\n");
-    if (text) lastText = text;
-
     const toolUses = resp.content.filter((b): b is ToolUseBlock => b.type === "tool_use");
     if (resp.stop_reason !== "tool_use" || toolUses.length === 0) {
+      // natural stop — ONLY text from a terminating turn is the final answer.
+      // Text emitted alongside a tool_use is planning chatter, never the result.
+      finalText = resp.content
+        .filter((b): b is TextBlock => b.type === "text")
+        .map((b) => b.text)
+        .join("\n");
       done = true;
       break;
     }
@@ -430,19 +463,22 @@ export async function runAgentLoop(
     completeness: computeCompleteness(turnLimitHit, context.completeness, partial),
   };
 
-  if (!lastText) {
+  // a turn-limit abort is NEVER a success, even if the model emitted text on the
+  // way out — that text is at best a partial answer and would mis-parse as final.
+  if (turnLimitHit) {
     return {
       ok: false,
-      error: turnLimitHit
-        ? `agent hit the ${maxTurns}-turn limit without returning a result`
-        : "agent returned no text content",
+      error: `agent hit the ${maxTurns}-turn limit without returning a final result`,
       coverage,
     };
+  }
+  if (!finalText) {
+    return { ok: false, error: "agent returned no text content", coverage };
   }
 
   return {
     ok: true,
-    content: lastText,
+    content: finalText,
     usage: { inputTokens, outputTokens },
     coverage,
   };

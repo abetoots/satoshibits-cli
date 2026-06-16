@@ -631,6 +631,47 @@ describe("coverage-driven human-review downgrade", () => {
     expect(result.findings.length).toBeGreaterThan(0);
     expect(result.findings.some((f) => f.requiresHumanReview)).toBe(false);
   });
+
+  // an incomplete run that finds NOTHING must not read as a clean pass
+  function makeEmptyCoverageEngine(
+    completeness: "complete" | "partial" | "insufficient",
+  ): EvaluationEngine {
+    return {
+      evaluate(prompt: AssembledPrompt): Promise<EvaluationResult> {
+        if (prompt.type === "concern") {
+          return Promise.resolve({
+            ok: true,
+            content: '{"gaps": []}',
+            coverage: { filesRead: [], searchesPerformed: [], toolTurnCount: 0, completeness },
+          });
+        }
+        const empty = prompt.type === "contradiction" ? '{"contradictions":[]}' : '{"drifts":[]}';
+        return Promise.resolve({ ok: true, content: empty });
+      },
+    };
+  }
+
+  it("surfaces a zero-finding incomplete run as inconclusive, not a silent pass", async () => {
+    const result = await lint({
+      projectPath: tmpDir,
+      engine: makeEmptyCoverageEngine("partial"),
+      contradiction: false,
+      drift: false,
+    });
+    expect(result.findings).toHaveLength(0);
+    expect(result.summary.incompleteEvaluations).toBeGreaterThanOrEqual(1);
+  });
+
+  it("a fully-complete zero-finding run has no incompleteEvaluations marker", async () => {
+    const result = await lint({
+      projectPath: tmpDir,
+      engine: makeEmptyCoverageEngine("complete"),
+      contradiction: false,
+      drift: false,
+    });
+    expect(result.findings).toHaveLength(0);
+    expect(result.summary.incompleteEvaluations).toBeUndefined();
+  });
 });
 
 describe("lint rejects code-first (onboarding, not a lint mode)", () => {
