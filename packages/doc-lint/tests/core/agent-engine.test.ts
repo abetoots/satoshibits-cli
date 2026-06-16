@@ -344,6 +344,27 @@ describe("agent-engine loop", () => {
     expect(res.coverage?.completeness).toBe("complete");
   });
 
+  it("enforces minSourcesRead:'all' — partial when any listed source is unread", async () => {
+    fs.writeFileSync(path.join(root, "other.md"), "# other\n");
+    const base = makeContext(root);
+    const ctx: EvaluationContext = {
+      ...base,
+      sources: [
+        { kind: "code", path: "src" },
+        { kind: "docs", path: "other.md" }, // not required, but "all" still demands it
+      ],
+      completeness: { requireEnumeration: true, requireAdversarialVerify: false, minSourcesRead: "all" },
+    };
+    const client = scriptedClient([
+      toolUse("t1", "grep", { pattern: "charge" }),
+      toolUse("t2", "read_file", { path: "src/http.ts" }), // reads src, never other.md
+      final('{"gaps": []}'),
+    ]);
+    const res = await runAgentLoop(client, PROMPT, ctx);
+    expect(res.ok).toBe(true);
+    expect(res.coverage?.completeness).toBe("partial"); // other.md unread → "all" not satisfied
+  });
+
   it("treats a max_tokens truncation as insufficient, not a final answer", async () => {
     // model stops on max_tokens mid-answer — the partial text must not be promoted
     const truncatedMsg: AgentMessage = msg([{ type: "text", text: '{"gaps": [ {"id":' }], "max_tokens");
