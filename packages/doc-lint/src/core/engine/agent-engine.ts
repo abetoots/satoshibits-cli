@@ -78,11 +78,29 @@ export type ResolveResult =
 // resolve a model-supplied path against the sandbox. relative paths are resolved
 // against projectRoot; the realpath (symlinks followed) must sit under an allowed
 // root or the read is refused.
+// realpath each allowed root ONCE; the roots are invariant for a whole run, so
+// callers (FileTools) pass the cached list to avoid O(reads × roots) syscalls.
+export function computeRealRoots(sandbox: EvaluationSandbox): string[] {
+  return sandbox.allowedReadRoots.map((root) => {
+    try {
+      return fs.realpathSync(root);
+    } catch {
+      return root; // root may not resolve yet; fall back to the literal path
+    }
+  });
+}
+
+function isUnderRealRoots(abs: string, realRoots: string[]): boolean {
+  return realRoots.some((root) => abs === root || abs.startsWith(root + path.sep));
+}
+
 export function resolveSandboxPath(
   context: EvaluationContext,
   requested: string,
+  realRoots?: string[],
 ): ResolveResult {
   const { projectRoot, sandbox } = context;
+  const roots = realRoots ?? computeRealRoots(sandbox);
   const abs = path.isAbsolute(requested)
     ? path.normalize(requested)
     : path.resolve(projectRoot, requested);
@@ -93,40 +111,26 @@ export function resolveSandboxPath(
   } catch {
     // not found (or unreadable) — still verify the *intended* path is in-bounds so
     // we report "not found" rather than leaking that an out-of-bounds path exists.
-    if (!isUnderAnyRoot(abs, sandbox)) {
+    if (!isUnderRealRoots(abs, roots)) {
       return { ok: false, reason: "permission denied: path is outside the allowed read roots" };
     }
     return { ok: false, reason: "path not found" };
   }
 
-  if (!isUnderAnyRoot(real, sandbox)) {
+  if (!isUnderRealRoots(real, roots)) {
     return { ok: false, reason: "permission denied: path is outside the allowed read roots" };
   }
   return { ok: true, absPath: real };
 }
 
-function isUnderAnyRoot(abs: string, sandbox: EvaluationSandbox): boolean {
-  return sandbox.allowedReadRoots.some((root) => {
-    let realRoot = root;
-    try {
-      realRoot = fs.realpathSync(root);
-    } catch {
-      // root may not resolve; fall back to the literal root
-    }
-    return abs === realRoot || abs.startsWith(realRoot + path.sep);
-  });
-}
-
 // match a `sandbox.ignore` pattern against a directory/file. supports a bare
 // segment name (matched anywhere) and a glob (matched against the repo-relative
-// path), so patterns like "**/fixtures/**" or ".claude/worktrees" work.
-function matchesIgnore(pattern: string, name: string, relPath: string): boolean {
-  const p = pattern.replace(/\/+$/, "");
-  if (p === name || p === relPath) return true;
-  if (!p.includes("*") && !p.includes("/")) return false;
-  const re = new RegExp(
+// path), so patterns like "**/fixtures/**" or ".claude/worktrees" work. Paths
+// are normalized to "/" so globs match on Windows too.
+function globToRegExp(glob: string): RegExp {
+  return new RegExp(
     "^" +
-      p
+      glob
         .split(/(\*\*|\*)/)
         .map((seg) => {
           if (seg === "**") return ".*";
@@ -136,7 +140,18 @@ function matchesIgnore(pattern: string, name: string, relPath: string): boolean 
         .join("") +
       "$",
   );
-  return re.test(relPath) || re.test(name);
+}
+
+function matchesIgnore(pattern: string, name: string, relPath: string): boolean {
+  const norm = relPath.split(path.sep).join("/");
+  const p = pattern.replace(/\/+$/, "");
+  if (p === name || p === norm) return true;
+  if (!p.includes("*") && !p.includes("/")) return false;
+  // prune the directory itself for "**/x/**" / "x/**" style patterns, not just
+  // its children, so the walker can skip the whole subtree.
+  const dirPat = p.replace(/\/\*\*$/, "");
+  if (dirPat !== p && (dirPat === name || globToRegExp(dirPat).test(norm))) return true;
+  return globToRegExp(p).test(norm) || globToRegExp(p).test(name);
 }
 
 function isIgnored(name: string, relPath: string, sandbox: EvaluationSandbox): boolean {
@@ -204,8 +219,17 @@ export class FileTools {
   private filesRead = new Set<string>();
   private searchesPerformed: string[] = [];
   private unreadable: { path: string; reason: string }[] = [];
+  // allowed roots resolved once per run (roots are invariant) — avoids realpathing
+  // them on every read/list/grep.
+  private realRoots: string[];
 
-  constructor(private context: EvaluationContext) {}
+  constructor(private context: EvaluationContext) {
+    this.realRoots = computeRealRoots(context.sandbox);
+  }
+
+  private resolve(p: string): ResolveResult {
+    return resolveSandboxPath(this.context, p, this.realRoots);
+  }
 
   private rel(abs: string): string {
     const r = path.relative(this.context.projectRoot, abs);
@@ -238,8 +262,7 @@ export class FileTools {
   }
 
   private listDir(p: string): string {
-    this.searchesPerformed.push(`list_dir ${p}`);
-    const resolved = resolveSandboxPath(this.context, p);
+    const resolved = this.resolve(p);
     if (!resolved.ok) {
       this.unreadable.push({ path: p, reason: resolved.reason });
       return `error: ${resolved.reason}`;
@@ -247,6 +270,8 @@ export class FileTools {
     const stat = fs.statSync(resolved.absPath);
     if (!stat.isDirectory()) return `error: not a directory: ${p}`;
 
+    // count only SUCCESSFUL enumeration toward the completeness gate
+    this.searchesPerformed.push(`list_dir ${p}`);
     const entries = fs
       .readdirSync(resolved.absPath, { withFileTypes: true })
       .filter((e) => !isIgnored(e.name, this.rel(path.join(resolved.absPath, e.name)), this.context.sandbox))
@@ -257,7 +282,7 @@ export class FileTools {
   }
 
   private readFile(p: string): string {
-    const resolved = resolveSandboxPath(this.context, p);
+    const resolved = this.resolve(p);
     if (!resolved.ok) {
       this.unreadable.push({ path: p, reason: resolved.reason });
       return `error: ${resolved.reason}`;
@@ -276,7 +301,6 @@ export class FileTools {
   }
 
   private grep(pattern: string, scope: string | undefined): string {
-    this.searchesPerformed.push(`grep /${pattern}/ ${scope ?? "."}`);
     // bound the pattern to blunt catastrophic-backtracking DoS from model input
     if (pattern.length > GREP_MAX_PATTERN_LEN) {
       return `error: pattern too long (max ${GREP_MAX_PATTERN_LEN} chars)`;
@@ -288,11 +312,13 @@ export class FileTools {
       return `error: invalid regex: ${err instanceof Error ? err.message : String(err)}`;
     }
 
-    const start = resolveSandboxPath(this.context, scope ?? ".");
+    const start = this.resolve(scope ?? ".");
     if (!start.ok) {
       this.unreadable.push({ path: scope ?? ".", reason: start.reason });
       return `error: ${start.reason}`;
     }
+    // count only a SUCCESSFULLY-scoped search toward the completeness gate
+    this.searchesPerformed.push(`grep /${pattern}/ ${scope ?? "."}`);
 
     const matches: string[] = [];
     let filesVisited = 0;
@@ -386,11 +412,11 @@ export interface AgentLoopOptions {
 }
 
 function computeCompleteness(
-  turnLimitHit: boolean,
+  aborted: boolean, // turn-limit OR max_tokens truncation — exploration was cut short
   policy: CompletenessPolicy | undefined,
   partial: Omit<EvaluationCoverage, "toolTurnCount" | "completeness">,
 ): EvaluationCoverage["completeness"] {
-  if (turnLimitHit) return "insufficient";
+  if (aborted) return "insufficient";
   if (policy?.requireEnumeration && partial.searchesPerformed.length === 0) return "partial";
   if (partial.unreadable && partial.unreadable.length > 0) return "partial";
   return "complete";
@@ -419,6 +445,7 @@ export async function runAgentLoop(
   let toolTurnCount = 0;
   let finalText = "";
   let done = false;
+  let truncated = false;
   let i = 0;
 
   for (; i < maxTurns; i++) {
@@ -434,13 +461,17 @@ export async function runAgentLoop(
     outputTokens += resp.usage.output_tokens;
 
     const toolUses = resp.content.filter((b): b is ToolUseBlock => b.type === "tool_use");
-    if (resp.stop_reason !== "tool_use" || toolUses.length === 0) {
-      // natural stop — ONLY text from a terminating turn is the final answer.
-      // Text emitted alongside a tool_use is planning chatter, never the result.
+    const wantsTools = toolUses.length > 0 && resp.stop_reason === "tool_use";
+    if (!wantsTools) {
+      // terminating turn — ONLY text from here is the final answer (text emitted
+      // alongside a tool_use is planning chatter, never the result).
       finalText = resp.content
         .filter((b): b is TextBlock => b.type === "text")
         .map((b) => b.text)
         .join("\n");
+      // a max_tokens stop is a TRUNCATION, not a clean answer — its text is a
+      // partial JSON blob that must not be promoted to a confirmed result.
+      if (resp.stop_reason === "max_tokens") truncated = true;
       done = true;
       break;
     }
@@ -456,19 +487,22 @@ export async function runAgentLoop(
   }
 
   const turnLimitHit = !done;
+  const aborted = turnLimitHit || truncated; // neither yields a trustworthy answer
   const partial = tools.coverage();
   const coverage: EvaluationCoverage = {
     ...partial,
     toolTurnCount,
-    completeness: computeCompleteness(turnLimitHit, context.completeness, partial),
+    completeness: computeCompleteness(aborted, context.completeness, partial),
   };
 
-  // a turn-limit abort is NEVER a success, even if the model emitted text on the
-  // way out — that text is at best a partial answer and would mis-parse as final.
-  if (turnLimitHit) {
+  // an aborted run (turn limit OR max_tokens truncation) is NEVER a success, even
+  // if the model emitted text on the way out — that text would mis-parse as final.
+  if (aborted) {
     return {
       ok: false,
-      error: `agent hit the ${maxTurns}-turn limit without returning a final result`,
+      error: truncated
+        ? "agent response was truncated at max_tokens before a final result"
+        : `agent hit the ${maxTurns}-turn limit without returning a final result`,
       coverage,
     };
   }
@@ -487,6 +521,15 @@ export async function runAgentLoop(
 // ---------------------------------------------------------------------------
 // Reference engine: an Anthropic tool-use agent that reads real source on demand.
 // ---------------------------------------------------------------------------
+
+// coverage stamped on a run that never reached the model (config/load failure) —
+// it could not have verified anything, so it must read as insufficient.
+const AGENT_NOT_RUN_COVERAGE: EvaluationCoverage = {
+  filesRead: [],
+  searchesPerformed: [],
+  toolTurnCount: 0,
+  completeness: "insufficient",
+};
 
 export class AnthropicAgentEngine implements EvaluationEngine {
   private apiKey?: string;
@@ -530,6 +573,7 @@ export class AnthropicAgentEngine implements EvaluationEngine {
         error:
           "AnthropicAgentEngine requires an EvaluationContext (projectRoot + sandbox). " +
           "Run via `lint` so the orchestrator can supply repo access.",
+        coverage: AGENT_NOT_RUN_COVERAGE,
       };
     }
     try {
@@ -540,13 +584,16 @@ export class AnthropicAgentEngine implements EvaluationEngine {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      // attach insufficient coverage so a misconfigured/broken agent run (e.g. no
+      // API key) is counted as inconclusive, never a silent green pass.
       if (message.includes("Cannot find package")) {
         return {
           ok: false,
           error: "@anthropic-ai/sdk is not installed. Install it with: pnpm add @anthropic-ai/sdk",
+          coverage: AGENT_NOT_RUN_COVERAGE,
         };
       }
-      return { ok: false, error: `agent engine error: ${message}` };
+      return { ok: false, error: `agent engine error: ${message}`, coverage: AGENT_NOT_RUN_COVERAGE };
     }
   }
 }

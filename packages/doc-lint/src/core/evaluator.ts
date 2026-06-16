@@ -369,7 +369,7 @@ export async function assemble(input: AssembleInput): Promise<AssembleResult> {
 // about where the relevant docs/code live. SdkEngine ignores all of this.
 function buildEvaluationContext(input: {
   projectRoot: string;
-  docPaths: string[];
+  docs: { path: string; role: string; required: boolean }[];
   codePaths: string[];
   ignore?: string[];
 }): EvaluationContext {
@@ -377,7 +377,14 @@ function buildEvaluationContext(input: {
   const rel = (p: string): string => (path.isAbsolute(p) ? path.relative(projectRoot, p) : p);
 
   const sources: EvaluationSource[] = [
-    ...input.docPaths.map((p): EvaluationSource => ({ kind: "docs", path: rel(p) })),
+    // carry role + required so the agent prompt can flag which docs MUST be read
+    // (absence there can't be a silent pass)
+    ...input.docs.map((d): EvaluationSource => ({
+      kind: "docs",
+      path: rel(d.path),
+      role: d.role,
+      required: d.required,
+    })),
     ...input.codePaths.map((p): EvaluationSource => ({ kind: "code", path: rel(p) })),
   ];
 
@@ -464,9 +471,10 @@ export async function lint(input: LintInput): Promise<LintResult> {
   }
 
   // execution authority for agentic engines (read real source). SdkEngine ignores it.
+  const requiredRoles = new Set((manifest.documents?.required ?? []).map((d) => d.role));
   const context = buildEvaluationContext({
     projectRoot: path.resolve(input.projectPath),
-    docPaths: docs.all.map((d) => d.path),
+    docs: docs.all.map((d) => ({ path: d.path, role: d.role, required: requiredRoles.has(d.role) })),
     codePaths: input.codePaths ?? manifest.code?.paths ?? [],
     ignore: manifest.code?.ignore,
   });
@@ -486,9 +494,11 @@ export async function lint(input: LintInput): Promise<LintResult> {
     if (prompt.type === "contradiction") {
       progress("Running contradiction scanner...");
       const result = await input.engine.evaluate(prompt, context);
+      // count incompleteness even on a failed run (turn-limit / no-key carry
+      // insufficient coverage) so an all-aborted run can't read as a clean pass
+      noteIncomplete(result.coverage?.completeness);
 
       if (result.ok) {
-        noteIncomplete(result.coverage?.completeness);
         const parsed = parseContradictionResponse(result.content);
         if (parsed.parseError) {
           progress(`  Warning: ${parsed.parseError}`);
@@ -500,9 +510,9 @@ export async function lint(input: LintInput): Promise<LintResult> {
     } else if (prompt.type === "drift") {
       progress("Running documentation–code drift scanner...");
       const result = await input.engine.evaluate(prompt, context);
+      noteIncomplete(result.coverage?.completeness);
 
       if (result.ok) {
-        noteIncomplete(result.coverage?.completeness);
         const parsed = parseDriftResponse(result.content);
         if (parsed.parseError) {
           progress(`  Warning: ${parsed.parseError}`);
@@ -519,9 +529,9 @@ export async function lint(input: LintInput): Promise<LintResult> {
     } else {
       progress(`Evaluating: ${prompt.concernName} (${prompt.concernId})`);
       const result = await input.engine.evaluate(prompt, context);
+      noteIncomplete(result.coverage?.completeness);
 
       if (result.ok) {
-        noteIncomplete(result.coverage?.completeness);
         const parsed = parseEvaluationResponse(
           result.content,
           prompt.concernId,
