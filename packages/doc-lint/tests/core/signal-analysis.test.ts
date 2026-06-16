@@ -227,10 +227,10 @@ describe("signal analysis (auto_detect / warn_on_mismatch)", () => {
       });
 
       const undeclaredWarning = messages.find((m) =>
-        m.includes("Signals detected in docs but not declared"),
+        m.includes("Signals detected but not declared"),
       );
       const staleWarning = messages.find((m) =>
-        m.includes("Declared signals not found in docs"),
+        m.includes("Declared signals not detected"),
       );
 
       expect(undeclaredWarning).toBeDefined();

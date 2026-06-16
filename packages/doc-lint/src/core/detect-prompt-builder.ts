@@ -18,6 +18,8 @@ export interface DetectResult {
   projectRoot?: string;
   documents: string[];
   documentRefs?: DetectDocumentReference[];
+  // source roots the agent should also scan for signals (code-aware detection)
+  codeRoots?: string[];
   prompt: DetectPrompt;
 }
 
@@ -55,6 +57,7 @@ function buildDocumentsSection(documents: LoadedDocument[], inline: boolean): st
   return lines.join("\n");
 }
 
+// docs-only system prompt (unchanged — kept byte-identical for back-compat)
 const SYSTEM_PROMPT = `You are a documentation signal detector for doc-lint, a documentation linter that evaluates architecture documents against concern schemas.
 
 Your task is to analyze project documentation and identify which architectural signals are present. Signals indicate areas of concern (e.g., "authentication", "payments", "rate-limiting") that determine which evaluation rules apply to the project.
@@ -63,19 +66,51 @@ You must ONLY return signals from the provided vocabulary. If you identify a con
 
 Respond with valid JSON matching the response schema exactly. No markdown fences, no commentary — just the JSON object.`;
 
+// code-aware variant: the agent reads docs AND source, so capabilities present in
+// the implementation but missing from (stale) docs still surface as signals.
+const SYSTEM_PROMPT_WITH_CODE = `You are a signal detector for doc-lint, a linter that evaluates a project against concern schemas.
+
+Your task is to analyze the project's documentation AND its source code, and identify which architectural signals are present. Signals indicate areas of concern (e.g., "authentication", "payments", "rate-limiting") that determine which evaluation rules apply to the project. Capabilities implemented in the code but not described in the docs are exactly what you must surface — do not limit yourself to what the documentation states.
+
+You must ONLY return signals from the provided vocabulary. If you identify a concept that does not map to any signal in the vocabulary, include it in the unmappedConcepts field.
+
+Respond with valid JSON matching the response schema exactly. No markdown fences, no commentary — just the JSON object.`;
+
+function buildSourceCodeSection(codeRoots: string[]): string {
+  const lines = [
+    "## Source Code",
+    "",
+    "Also scan the implementation under these roots and surface signals present in the code even if the documentation omits them:",
+    "",
+  ];
+  for (const root of codeRoots) {
+    lines.push(`- \`${root}\``);
+  }
+  return lines.join("\n");
+}
+
 export function buildDetectPrompt(
   projectName: string,
   documents: LoadedDocument[],
-  options: { inline?: boolean; projectRoot?: string } = {},
+  options: { inline?: boolean; projectRoot?: string; codeRoots?: string[] } = {},
 ): DetectResult {
   const inline = options.inline !== false;
+  const hasCode = options.codeRoots != null && options.codeRoots.length > 0;
   const vocabulary = buildSignalVocabulary();
   const documentsSection = buildDocumentsSection(documents, inline);
   const signalCount = Object.keys(SIGNAL_KEYWORDS).length;
 
+  const analyzeLine = hasCode
+    ? "Analyze the project's documentation and source code, and identify which architectural signals are present."
+    : "Analyze the following project documentation and identify which architectural signals are present.";
+  const unmappedNote = hasCode
+    ? "concepts you identified in the docs or code that don't map to any signal in the vocabulary — these help evolve the signal library"
+    : "concepts you identified in the docs that don't map to any signal in the vocabulary — these help evolve the signal library";
+  const sourceCodeSection = hasCode ? `\n\n${buildSourceCodeSection(options.codeRoots!)}` : "";
+
   const user = `# Signal Detection
 
-Analyze the following project documentation and identify which architectural signals are present.
+${analyzeLine}
 
 ## Signal Vocabulary (${signalCount} signals)
 
@@ -102,18 +137,22 @@ ${vocabulary}
 \`\`\`
 
 - **confidence**: "high" = explicit and central to the project, "medium" = mentioned or implied, "low" = tangentially related
-- **unmappedConcepts**: concepts you identified in the docs that don't map to any signal in the vocabulary — these help evolve the signal library
+- **unmappedConcepts**: ${unmappedNote}
 
 ## Project Documentation
 
-${documentsSection}`;
+${documentsSection}${sourceCodeSection}`;
 
   const result: DetectResult = {
     timestamp: new Date().toISOString(),
     project: projectName,
     documents: documents.map((d) => d.path),
-    prompt: { system: SYSTEM_PROMPT, user },
+    prompt: { system: hasCode ? SYSTEM_PROMPT_WITH_CODE : SYSTEM_PROMPT, user },
   };
+
+  if (hasCode) {
+    result.codeRoots = options.codeRoots;
+  }
 
   if (!inline) {
     result.projectRoot = options.projectRoot ?? process.cwd();

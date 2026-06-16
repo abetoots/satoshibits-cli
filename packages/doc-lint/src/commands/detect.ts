@@ -18,6 +18,9 @@ async function formatDetectHuman(result: DetectResult): Promise<string> {
 
   lines.push(chalk.bold(`doc-lint detect: ${result.project}`));
   lines.push(chalk.dim(`Documents: ${result.documents.join(", ")}`));
+  if (result.codeRoots && result.codeRoots.length > 0) {
+    lines.push(chalk.dim(`Source roots: ${result.codeRoots.join(", ")}`));
+  }
   lines.push("");
   lines.push(chalk.bold("System Message"));
   lines.push(chalk.dim("─".repeat(60)));
@@ -49,9 +52,20 @@ export async function detectCommand(
 
   const manifest = loadManifest(resolved, options.config);
   const docs = loadDocuments(manifest, resolved);
+
+  // code-aware detection: surface signals the implementation has but the docs lack.
+  // Use --code when given; otherwise fall back to the manifest's code roots in
+  // reconcile mode (so `detect .` on a stale-doc repo is code-aware by default).
+  const codeRoots = options.code
+    ? options.code.split(",").map((s) => s.trim()).filter(Boolean)
+    : manifest.mode === "reconcile"
+      ? manifest.code?.paths
+      : undefined;
+
   const result = buildDetectPrompt(manifest.project.name, docs.all, {
     inline: options.inline,
     projectRoot: resolved,
+    codeRoots,
   });
 
   if (options.outputDir) {

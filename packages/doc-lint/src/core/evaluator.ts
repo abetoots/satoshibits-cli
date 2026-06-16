@@ -34,7 +34,7 @@ import {
   parseDriftResponse,
   parseEvaluationResponse,
 } from "./response-parser.js";
-import { detectSignals, resolveDocumentPaths } from "./signal-keywords.js";
+import { detectSignals, detectSignalsFromCode, resolveDocumentPaths } from "./signal-keywords.js";
 import { matchConcerns } from "./signals.js";
 import { buildCodeMap } from "./code-scan.js";
 
@@ -262,10 +262,19 @@ export async function assemble(input: AssembleInput): Promise<AssembleResult> {
       input.projectPath,
       docs.all.map((d) => d.path),
     );
-    const allDetected = detectSignals(docPaths);
-    detectedSignals = allDetected
+    const docDetected = detectSignals(docPaths)
       .filter((s) => s.confidence === "high" || s.confidence === "medium")
       .map((s) => s.signal);
+    // also detect from the code map (reconcile mode): capabilities present in the
+    // implementation but absent from (stale) docs must still surface as signals,
+    // or their concerns never get matched — the audit blind spot for code-first docs.
+    let codeDetected: string[] = [];
+    if (codeMap) {
+      codeDetected = detectSignalsFromCode(codeMap)
+        .filter((s) => s.confidence === "high" || s.confidence === "medium")
+        .map((s) => s.signal);
+    }
+    detectedSignals = [...new Set([...docDetected, ...codeDetected])];
   }
 
   if (autoDetect) {
@@ -459,12 +468,12 @@ export async function lint(input: LintInput): Promise<LintResult> {
     const { undeclared, stale } = assembled.signals.mismatch;
     if (undeclared.length > 0) {
       progress(
-        `Warning: Signals detected in docs but not declared: ${undeclared.join(", ")}`,
+        `Warning: Signals detected but not declared: ${undeclared.join(", ")}`,
       );
     }
     if (stale.length > 0) {
       progress(
-        `Warning: Declared signals not found in docs: ${stale.join(", ")}`,
+        `Warning: Declared signals not detected: ${stale.join(", ")}`,
       );
     }
   }

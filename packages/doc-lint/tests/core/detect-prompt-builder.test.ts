@@ -154,4 +154,27 @@ describe("buildDetectPrompt", () => {
       expect(refResult.documents).toEqual(["docs/brd.md", "docs/frd.md"]);
     });
   });
+
+  describe("code-aware detection", () => {
+    it("docs-only (no codeRoots) is byte-identical to the historical prompt", () => {
+      const noOpt = buildDetectPrompt("Test", makeDocs());
+      const emptyCode = buildDetectPrompt("Test", makeDocs(), { codeRoots: [] });
+      expect(emptyCode.prompt.system).toBe(noOpt.prompt.system);
+      expect(emptyCode.prompt.user).toBe(noOpt.prompt.user);
+      expect(emptyCode.codeRoots).toBeUndefined();
+    });
+
+    it("with code roots, the prompt instructs scanning source for undocumented signals", () => {
+      const result = buildDetectPrompt("Test", makeDocs(), {
+        codeRoots: ["apps/server/src", "packages/shared"],
+      });
+      expect(result.prompt.system).toContain("documentation AND its source code");
+      expect(result.prompt.system).toContain("not described in the docs");
+      expect(result.prompt.user).toContain("## Source Code");
+      expect(result.prompt.user).toContain("`apps/server/src`");
+      expect(result.prompt.user).toContain("`packages/shared`");
+      expect(result.prompt.user).toContain("even if the documentation omits them");
+      expect(result.codeRoots).toEqual(["apps/server/src", "packages/shared"]);
+    });
+  });
 });

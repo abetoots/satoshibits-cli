@@ -21,6 +21,7 @@ export interface AssembleOptions extends BaseCommandOptions {
 export interface DetectOptions extends BaseCommandOptions {
   outputDir?: string;
   inline?: boolean;
+  code?: string;
 }
 
 export interface InitOptions {
