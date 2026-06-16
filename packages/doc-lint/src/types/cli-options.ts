@@ -27,7 +27,8 @@ export interface InitOptions {
 export interface LintOptions extends BaseCommandOptions {
   tier: string;
   tierCumulative?: boolean;
-  engine?: "sdk";
+  engine?: "sdk" | "agent";
+  lens?: string;
   contradiction?: boolean;
   drift?: boolean;
   concerns?: string;

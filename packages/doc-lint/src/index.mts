@@ -2,8 +2,17 @@
 export { assemble, lint } from "./core/evaluator.js";
 export type { AssembleInput, LintInput } from "./core/evaluator.js";
 
-export type { EvaluationEngine, EvaluationResult } from "./core/engine/index.js";
-export { SdkEngine } from "./core/engine/index.js";
+// evaluation engines & the agentic execution contract
+export type {
+  EvaluationEngine,
+  EvaluationResult,
+  EvaluationContext,
+  EvaluationSource,
+  EvaluationSandbox,
+  CompletenessPolicy,
+  EvaluationCoverage,
+} from "./core/engine/index.js";
+export { SdkEngine, AnthropicAgentEngine } from "./core/engine/index.js";
 
 // primary types
 export type {
@@ -15,6 +24,7 @@ export type {
   LoadedConcern,
   AssembledPrompt,
   DocumentReference,
+  Lens,
   AssembleResult,
   LintResult,
   Finding,

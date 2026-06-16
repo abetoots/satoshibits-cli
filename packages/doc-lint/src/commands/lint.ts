@@ -4,9 +4,11 @@ import { assemble, lint } from "../core/evaluator.js";
 import { formatAssembleHuman, formatLintHuman } from "../formatters/human.js";
 import { formatAssembleJson, formatLintJson } from "../formatters/json.js";
 import { SdkEngine } from "../core/engine/sdk-engine.js";
+import { AnthropicAgentEngine } from "../core/engine/agent-engine.js";
 import { loadManifest } from "../core/manifest.js";
 
-import type { LintOptions, ToleranceConfig, Severity, DocLintMode } from "../types/index.js";
+import type { LintOptions, ToleranceConfig, Severity, DocLintMode, Lens } from "../types/index.js";
+import type { EvaluationEngine } from "../core/engine/types.js";
 import { parseTierFlag } from "../core/tier.js";
 
 export async function lintCommand(
@@ -31,6 +33,15 @@ export async function lintCommand(
   const codePaths = options.code
     ? options.code.split(",").map((s) => s.trim()).filter(Boolean)
     : undefined;
+
+  const VALID_LENSES: Lens[] = ["docs", "code", "reconcile"];
+  if (options.lens && !VALID_LENSES.includes(options.lens as Lens)) {
+    console.error(
+      `Error: invalid --lens value "${options.lens}". Use one of: ${VALID_LENSES.join(", ")}`,
+    );
+    return 2;
+  }
+  const lens = options.lens as Lens | undefined;
 
   // code-first is an onboarding mode, not a lint mode — redirect to `bootstrap`.
   let effectiveMode = mode;
@@ -64,6 +75,7 @@ export async function lintCommand(
       warnOnMismatch: options.warnOnMismatch,
       mode,
       codePaths,
+      lens,
     });
 
     const dryRunFormat = options.format ?? "human";
@@ -77,11 +89,16 @@ export async function lintCommand(
 
   // validate and create evaluation engine
   const engineName = options.engine ?? "sdk";
-  if (engineName !== "sdk") {
-    console.error(`Unknown engine: "${String(engineName)}". Supported engines: sdk`);
+  let engine: EvaluationEngine;
+  if (engineName === "sdk") {
+    engine = new SdkEngine();
+  } else if (engineName === "agent") {
+    // agentic engine reads real source on demand — no inline content / code map needed
+    engine = new AnthropicAgentEngine();
+  } else {
+    console.error(`Unknown engine: "${String(engineName)}". Supported engines: sdk, agent`);
     return 2;
   }
-  const engine = new SdkEngine();
 
   const onProgress = options.verbose
     ? (message: string) => {
@@ -109,6 +126,7 @@ export async function lintCommand(
     tierCumulative: options.tierCumulative,
     mode,
     codePaths,
+    lens,
     engine,
     verbose: options.verbose,
     onProgress,

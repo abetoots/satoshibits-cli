@@ -541,6 +541,98 @@ describe("lint in reconcile mode", () => {
   });
 });
 
+describe("coverage-driven human-review downgrade", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "doc-lint-coverage-"));
+    fs.mkdirSync(path.join(tmpDir, "docs"), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, "docs/add.md"), "# Architecture\nThe service charges via Stripe.");
+    fs.writeFileSync(
+      path.join(tmpDir, "doc-lint.yaml"),
+      [
+        'version: "1.0"',
+        "mode: reconcile",
+        "project:",
+        "  name: cov",
+        "documents:",
+        "  required:",
+        "    - role: add",
+        "      path: docs/add.md",
+        "code:",
+        '  paths: ["."]',
+        "signals:",
+        "  declared: [payments]",
+      ].join("\n"),
+    );
+  });
+
+  afterEach(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+
+  // an agentic engine that reports a gap but admits its exploration was incomplete
+  function makeCoverageEngine(
+    completeness: "complete" | "partial" | "insufficient",
+  ): EvaluationEngine {
+    const gap = JSON.stringify({
+      gaps: [
+        {
+          id: "g1",
+          related_item: "ChargeFlow",
+          severity: "warn",
+          confidence: "high",
+          description: "no idempotency key on charge",
+          source_searched: "src",
+          failure_condition_triggered: "missing key",
+          risk: "double charge",
+          recommendation: "add a key",
+          requires_human_review: false,
+        },
+      ],
+    });
+    return {
+      evaluate(prompt: AssembledPrompt): Promise<EvaluationResult> {
+        if (prompt.type === "concern") {
+          return Promise.resolve({
+            ok: true,
+            content: gap,
+            coverage: {
+              filesRead: ["src/http.ts"],
+              searchesPerformed: ["grep /charge/"],
+              toolTurnCount: 1,
+              completeness,
+            },
+          });
+        }
+        const empty = prompt.type === "contradiction" ? '{"contradictions":[]}' : '{"drifts":[]}';
+        return Promise.resolve({ ok: true, content: empty });
+      },
+    };
+  }
+
+  it("flags findings for human review when exploration is incomplete", async () => {
+    const result = await lint({
+      projectPath: tmpDir,
+      engine: makeCoverageEngine("partial"),
+      contradiction: false,
+      drift: false,
+    });
+    expect(result.findings.length).toBeGreaterThan(0);
+    expect(result.findings.every((f) => f.requiresHumanReview)).toBe(true);
+    expect(result.summary.humanReviewRequired).toBeGreaterThanOrEqual(1);
+  });
+
+  it("does NOT flag findings when exploration is complete", async () => {
+    const result = await lint({
+      projectPath: tmpDir,
+      engine: makeCoverageEngine("complete"),
+      contradiction: false,
+      drift: false,
+    });
+    expect(result.findings.length).toBeGreaterThan(0);
+    expect(result.findings.some((f) => f.requiresHumanReview)).toBe(false);
+  });
+});
+
 describe("lint rejects code-first (onboarding, not a lint mode)", () => {
   let tmpDir: string;
 

@@ -19,6 +19,13 @@ export interface AssembledPrompt {
   documents?: DocumentReference[];
 }
 
+// the evidence lens a concern is evaluated through. a concern is a system
+// principle; the lens decides which question it asks of which source roots:
+//   docs      → "is X documented?"            (doc gaps; today's default)
+//   code      → "does the system satisfy X?"  (system risks, audited from source)
+//   reconcile → "do docs and code agree on X?" (drift)
+export type Lens = "docs" | "code" | "reconcile";
+
 export type Severity = "error" | "warn" | "note";
 export type Confidence = "high" | "medium" | "low";
 

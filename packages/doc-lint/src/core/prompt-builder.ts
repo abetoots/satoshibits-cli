@@ -5,9 +5,25 @@ import { isConcernSchema, isInteractionSchema } from "../types/concerns.js";
 import { getConcernsDir } from "./paths.js";
 
 import type { LoadedDocument } from "./documents.js";
-import type { AssembledPrompt, CodeMap, DocumentReference, LoadedConcern } from "../types/index.js";
+import type { AssembledPrompt, CodeMap, DocumentReference, Lens, LoadedConcern } from "../types/index.js";
 
 const TEMPLATE_VERSION = "1.0";
+
+// the lens reframes the concern's question without touching the concern library.
+// `docs` is the historical default and adds NOTHING (output stays byte-identical).
+// `code`/`reconcile` append a framing directive that swaps the question's target
+// from "the documentation" to "the system as implemented" / "doc↔code agreement".
+const LENS_FRAMING: Record<Exclude<Lens, "docs">, string> = {
+  code:
+    "EVALUATION LENS — CODE AUDIT: Read the concern's question as a question about the SYSTEM AS IMPLEMENTED, not about the documentation. Wherever it asks whether something is *documented*, instead determine whether the system *satisfies* that invariant according to the actual source code. Report violations and under-implementations as gaps, each citing real file:line evidence. Do NOT report 'undocumented' as a finding in this lens — absence of docs is out of scope here.",
+  reconcile:
+    "EVALUATION LENS — RECONCILE: Read the concern's question as a question about AGREEMENT between the documentation and the code. A gap here is a divergence where the docs and the implementation disagree about this invariant (documented-but-not-implemented, implemented-but-not-documented, or a value mismatch). Cite both the documentation location and the real file:line.",
+};
+
+function buildLensFraming(lens: Lens): string {
+  if (lens === "docs") return "";
+  return `\n\n${LENS_FRAMING[lens]}`;
+}
 
 const TIER_CONTEXT: Record<number, { label: string; guidance: string }> = {
   1: {
@@ -164,6 +180,7 @@ export function buildEvaluationPrompt(
   docs: LoadedDocument[],
   inline = true,
   codeMap?: CodeMap,
+  lens: Lens = "docs",
 ): AssembledPrompt {
   const template = loadTemplate("evaluation.md");
   const concernYaml = fs.readFileSync(concern.filePath, "utf8");
@@ -179,7 +196,8 @@ export function buildEvaluationPrompt(
     .replace("{{CONCERN_YAML}}", concernYaml)
     .replace("{{DOCUMENTS}}", documentsBlock);
 
-  const system = buildSystemMessage(concern);
+  // lens framing reshapes the question (docs adds nothing → byte-identical to today)
+  const system = buildSystemMessage(concern) + buildLensFraming(lens);
 
   const prompt: AssembledPrompt = {
     concernId: concern.id,
