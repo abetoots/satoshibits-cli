@@ -22,7 +22,10 @@ const LENS_FRAMING: Record<Exclude<Lens, "docs">, string> = {
 
 function buildLensFraming(lens: Lens): string {
   if (lens === "docs") return "";
-  return `\n\n${LENS_FRAMING[lens]}`;
+  // guard the assemble() API boundary: an unknown lens must not splice "undefined"
+  // into the system prompt (the CLI validates, but programmatic callers may not).
+  const framing = LENS_FRAMING[lens];
+  return framing ? `\n\n${framing}` : "";
 }
 
 const TIER_CONTEXT: Record<number, { label: string; guidance: string }> = {

@@ -176,6 +176,16 @@ describe("agent-engine sandbox", () => {
     const out = tools.execute("grep", { pattern: "a".repeat(500) });
     expect(out).toMatch(/pattern too long/i);
   });
+
+  it("a FAILED (out-of-bounds) list_dir does not count as enumeration", () => {
+    const ctx = makeContext(root, [path.join(root, "src")]);
+    const tools = new FileTools(ctx);
+    const out = tools.execute("list_dir", { path: ".." }); // escapes the allowed root
+    expect(out).toMatch(/permission denied/i);
+    // a refused search must NOT satisfy the enumerate-before-conclude gate
+    expect(tools.coverage().searchesPerformed).toHaveLength(0);
+    expect(tools.coverage().unreadable?.length).toBeGreaterThan(0);
+  });
 });
 
 describe("agent-engine loop", () => {
@@ -265,6 +275,16 @@ describe("agent-engine loop", () => {
     expect(res.ok).toBe(true);
     expect(res.coverage?.unreadable?.length).toBeGreaterThan(0);
     expect(res.coverage?.completeness).toBe("partial");
+  });
+
+  it("treats a max_tokens truncation as insufficient, not a final answer", async () => {
+    // model stops on max_tokens mid-answer — the partial text must not be promoted
+    const truncatedMsg: AgentMessage = msg([{ type: "text", text: '{"gaps": [ {"id":' }], "max_tokens");
+    const client = scriptedClient([truncatedMsg]);
+    const res = await runAgentLoop(client, PROMPT, makeContext(root));
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/truncated/i);
+    expect(res.coverage?.completeness).toBe("insufficient");
   });
 
   it("feeds tool results back to the client across turns", async () => {

@@ -143,6 +143,10 @@ export async function lintCommand(
     console.log(await formatLintHuman(result));
   }
 
-  // exit code: 1 if errors found, 0 otherwise
-  return result.summary.errors > 0 ? 1 : 0;
+  // exit code: 1 on errors, OR when any evaluation was inconclusive (agentic
+  // exploration cut short). An unverified "we found nothing" must not exit 0 green
+  // in CI — that's the false-pass the coverage machinery exists to prevent. The
+  // toolless SdkEngine never reports coverage, so its exit behavior is unchanged.
+  const inconclusive = (result.summary.incompleteEvaluations ?? 0) > 0;
+  return result.summary.errors > 0 || inconclusive ? 1 : 0;
 }

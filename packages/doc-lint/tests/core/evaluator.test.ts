@@ -672,6 +672,29 @@ describe("coverage-driven human-review downgrade", () => {
     expect(result.findings).toHaveLength(0);
     expect(result.summary.incompleteEvaluations).toBeUndefined();
   });
+
+  it("counts a FAILED run that carries insufficient coverage as inconclusive", async () => {
+    // mimics a turn-limit / no-key abort: ok:false but coverage says insufficient
+    const abortingEngine: EvaluationEngine = {
+      evaluate(): Promise<EvaluationResult> {
+        return Promise.resolve({
+          ok: false,
+          error: "agent hit the turn limit",
+          coverage: { filesRead: [], searchesPerformed: [], toolTurnCount: 0, completeness: "insufficient" },
+        });
+      },
+    };
+    const result = await lint({
+      projectPath: tmpDir,
+      engine: abortingEngine,
+      contradiction: false,
+      drift: false,
+    });
+    expect(result.findings).toHaveLength(0);
+    expect(result.summary.errors).toBe(0);
+    // must NOT look like a clean pass — surfaced as inconclusive
+    expect(result.summary.incompleteEvaluations).toBeGreaterThanOrEqual(1);
+  });
 });
 
 describe("lint rejects code-first (onboarding, not a lint mode)", () => {
