@@ -21,6 +21,7 @@ import {
   handleHookError,
   initHookContext,
   readStdin,
+  resolveHookDir,
   RuleMatcher,
   sessionState,
 } from "@satoshibits/claude-skill-runtime";
@@ -37,7 +38,8 @@ import type {
 interface HookInput {
   prompt: string;
   session_id: string;
-  working_directory: string;
+  cwd?: string;
+  working_directory?: string;
 }
 
 /**
@@ -168,7 +170,7 @@ async function main() {
     const input = await readStdin();
     const data: HookInput = JSON.parse(input) as HookInput;
 
-    const { prompt, session_id, working_directory } = data;
+    const { prompt, session_id } = data;
 
     // initialize hook context
     const {
@@ -177,7 +179,8 @@ async function main() {
       config,
       logger: contextLogger,
     } = initHookContext({
-      workingDirectory: working_directory,
+      cwd: resolveHookDir(data),
+      userScope: true,
     });
     logger = contextLogger;
     sessionState.clearCurrentPromptSkills(session_id);

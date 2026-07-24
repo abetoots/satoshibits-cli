@@ -21,6 +21,42 @@ import type {
 import { resolveFilePath } from "./path-utils.mjs";
 
 /**
+ * Collect the string leaf values of a hook payload for regex matching.
+ *
+ * Tool inputs arrive as objects (`{ command: "rm -rf /", description: "…" }`). Patterns
+ * are tested against each string leaf SEPARATELY rather than against a JSON dump of the
+ * object, because a dump breaks anchored patterns — `^rm ` can never match a subject that
+ * starts with `{"command":` — and injects key names and JSON escaping into the subject.
+ *
+ * Cycles are guarded, and any traversal failure yields an empty list rather than throwing:
+ * a hook must never crash on odd input.
+ */
+function collectStrings(value: unknown, seen = new WeakSet<object>()): string[] {
+  if (typeof value === "string") return [value];
+  // deliberately NOT numbers/booleans: coercing them makes a pattern like `^false$`
+  // match an unrelated flag such as `{ sandbox: false }`. Patterns are written against
+  // user-authored text (commands, file paths, prompts), which is always a string.
+  if (value === null || value === undefined) return [];
+  if (typeof value !== "object") return [];
+
+  // value is an object/array from here on
+  if (seen.has(value)) return []; // cycle
+  seen.add(value);
+  try {
+    const children = Array.isArray(value)
+      ? value
+      : Object.values(value as Record<string, unknown>);
+    return children.flatMap((child) => collectStrings(child, seen));
+  } catch {
+    return [];
+  } finally {
+    // release on the way out so a repeated *sibling* reference is still visited —
+    // only genuine cycles (an ancestor revisited) are skipped
+    seen.delete(value);
+  }
+}
+
+/**
  * Match prompts and files against skill rules
  */
 export class RuleMatcher {
@@ -277,8 +313,22 @@ export class RuleMatcher {
    * Match tool usage against pre-tool triggers
    * Returns skills that should be loaded/suggested before tool execution
    */
-  matchPreToolTriggers(toolName: string, toolInput: string): PreToolMatch[] {
+  matchPreToolTriggers(toolName: string, toolInput: unknown): PreToolMatch[] {
     const matches: PreToolMatch[] = [];
+
+    // Claude Code sends tool_input as an OBJECT (e.g. { command: "rm -rf /" }). Passing it
+    // straight to RegExp.test coerced it to "[object Object]", so every inputPatterns rule
+    // silently failed to match and the guardrail never fired.
+    //
+    // Serialization is deferred and memoized: this runs on EVERY tool call, and a large
+    // Write/Edit payload should not be stringified in projects whose rules never inspect
+    // the input.
+    let inputTextsCache: string[] | null = null;
+    const inputTexts = (): string[] => {
+      inputTextsCache ??=
+        typeof toolInput === "string" ? [toolInput] : collectStrings(toolInput);
+      return inputTextsCache;
+    };
 
     if (!this.config.skills || typeof this.config.skills !== "object") {
       return matches;
@@ -315,7 +365,7 @@ export class RuleMatcher {
       const compiledPatterns =
         this.compiledPatterns.get(skillName)?.preToolInputPatterns ?? [];
       for (const pattern of compiledPatterns) {
-        if (pattern.test(toolInput)) {
+        if (inputTexts().some((text) => pattern.test(text))) {
           this.logger?.log("activation", "pre-tool match", {
             skill: skillName,
             toolName,

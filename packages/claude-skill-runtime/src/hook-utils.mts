@@ -24,10 +24,49 @@ export interface HookContext {
  * Options for initializing hook context
  */
 export interface InitHookContextOptions {
-  /** Working directory from hook input */
-  workingDirectory: string;
+  /**
+   * Working directory from hook input.
+   *
+   * Claude Code sends this as `cwd`; older payloads used `working_directory`.
+   * Prefer passing the raw payload field through `resolveHookDir()` so both shapes work.
+   */
+  workingDirectory?: string;
+  /** Current working directory from hook input (`cwd` in current Claude Code payloads) */
+  cwd?: string;
   /** Whether to initialize session state (default: true) */
   initSessionState?: boolean;
+  /**
+   * Also read user-level rules from ~/.claude/skills/ and merge them under project rules
+   * (project wins on skill-name collision). Default false — project-only, unchanged.
+   */
+  userScope?: boolean;
+}
+
+/**
+ * Raw hook payload fields that can carry the invocation directory.
+ *
+ * Claude Code currently sends `cwd`; earlier versions sent `working_directory`.
+ * Hook templates should not read either field directly.
+ */
+export interface HookDirInput {
+  cwd?: string;
+  working_directory?: string;
+}
+
+/**
+ * Resolve the directory a hook was invoked in, across payload shapes.
+ *
+ * Returns undefined when neither field is present, so callers can fall back
+ * (initHookContext falls back to CLAUDE_PROJECT_DIR, then process.cwd()).
+ *
+ * @example
+ * ```ts
+ * const data = JSON.parse(await readStdin()) as HookDirInput & { prompt: string };
+ * const ctx = initHookContext({ cwd: resolveHookDir(data) });
+ * ```
+ */
+export function resolveHookDir(data: HookDirInput | undefined): string | undefined {
+  return data?.cwd ?? data?.working_directory;
 }
 
 /**
@@ -67,7 +106,8 @@ export function readStdin(): Promise<string> {
  * Initialize standard hook context
  *
  * Consolidates the common initialization pattern used by all hooks:
- * - Determines project directory (from CLAUDE_PROJECT_DIR env or working_directory)
+ * - Determines project directory (CLAUDE_PROJECT_DIR env, then cwd, then working_directory,
+ *   then process.cwd() — so a payload missing every directory field still resolves)
  * - Initializes session state
  * - Loads configuration
  * - Creates logger
@@ -75,16 +115,22 @@ export function readStdin(): Promise<string> {
  * @example
  * ```ts
  * const { projectDir, configLoader, config, logger } = initHookContext({
- *   workingDirectory: data.working_directory,
+ *   cwd: resolveHookDir(data),
  * });
  * ```
  */
 export function initHookContext(options: InitHookContextOptions): HookContext {
-  const { workingDirectory, initSessionState: shouldInitSessionState = true } =
-    options;
+  const {
+    workingDirectory,
+    cwd,
+    initSessionState: shouldInitSessionState = true,
+    userScope = false,
+  } = options;
 
-  // determine project directory
-  const projectDir = process.env.CLAUDE_PROJECT_DIR ?? workingDirectory;
+  // determine project directory; process.cwd() is the last resort so a hook never
+  // throws on an unfamiliar payload shape
+  const projectDir =
+    process.env.CLAUDE_PROJECT_DIR ?? cwd ?? workingDirectory ?? process.cwd();
 
   // initialize session state if requested
   if (shouldInitSessionState) {
@@ -92,7 +138,7 @@ export function initHookContext(options: InitHookContextOptions): HookContext {
   }
 
   // load configuration
-  const configLoader = new ConfigLoader(projectDir);
+  const configLoader = new ConfigLoader(projectDir, { userScope });
   const config = configLoader.loadSkillRules();
 
   // create logger

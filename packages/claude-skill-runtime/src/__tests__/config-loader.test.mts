@@ -291,6 +291,19 @@ skills:
       const loader = new ConfigLoader(tmpDir);
       expect(loader.skillExists('missing-skill')).toBe(false);
     });
+
+    it('resolves a lowercase skill.md (matches case-insensitive discovery)', () => {
+      // skills are discovered with a nocase glob; on a case-sensitive filesystem a
+      // lowercase skill.md would sync and validate cleanly but never load its content if
+      // the resolver were uppercase-only
+      const dir = path.join(tmpDir, '.claude', 'skills', 'lower-skill');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'skill.md'), '# lowercase content');
+
+      const loader = new ConfigLoader(tmpDir);
+      expect(loader.skillExists('lower-skill')).toBe(true);
+      expect(loader.loadSkillContent('lower-skill')).toContain('lowercase content');
+    });
   });
 
   describe('getLogger()', () => {
@@ -326,5 +339,282 @@ skills:
       const logPath = path.join(cacheDir, 'debug.log');
       expect(fs.existsSync(logPath)).toBe(true);
     });
+  });
+});
+
+describe('config-loader user scope', () => {
+  let projectDir: string;
+  let homeDir: string;
+  let originalHome: string | undefined;
+  let originalDebug: string | undefined;
+
+  beforeEach(() => {
+    projectDir = createTempDir('user-scope-project-');
+    homeDir = createTempDir('user-scope-home-');
+    // os.homedir() honors $HOME on POSIX, so this redirects ~/.claude for the test
+    originalHome = process.env.HOME;
+    process.env.HOME = homeDir;
+    originalDebug = process.env.DEBUG;
+    delete process.env.DEBUG;
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    if (originalDebug !== undefined) process.env.DEBUG = originalDebug;
+    cleanupTempDir(projectDir);
+    cleanupTempDir(homeDir);
+  });
+
+  const rule = (description: string) => ({
+    type: 'domain' as const,
+    enforcement: 'suggest' as const,
+    priority: 'high' as const,
+    description,
+    activationStrategy: 'suggestive' as const,
+    promptTriggers: { keywords: ['thing'] },
+  });
+
+  it('ignores user rules by default (unchanged behavior)', () => {
+    createSkillRulesYaml(homeDir, { skills: { 'user-skill': rule('from user') } });
+    createSkillRulesYaml(projectDir, { skills: { 'proj-skill': rule('from project') } });
+
+    const config = new ConfigLoader(projectDir).loadSkillRules();
+
+    expect(Object.keys(config.skills)).toEqual(['proj-skill']);
+  });
+
+  it('merges user rules beneath project rules when enabled', () => {
+    createSkillRulesYaml(homeDir, { skills: { 'user-skill': rule('from user') } });
+    createSkillRulesYaml(projectDir, { skills: { 'proj-skill': rule('from project') } });
+
+    const config = new ConfigLoader(projectDir, { userScope: true }).loadSkillRules();
+
+    expect(Object.keys(config.skills).sort()).toEqual(['proj-skill', 'user-skill']);
+  });
+
+  it('project wins on skill-name collision', () => {
+    createSkillRulesYaml(homeDir, { skills: { shared: rule('from user') } });
+    createSkillRulesYaml(projectDir, { skills: { shared: rule('from project') } });
+
+    const config = new ConfigLoader(projectDir, { userScope: true }).loadSkillRules();
+
+    expect(config.skills.shared?.description).toBe('from project');
+  });
+
+  it('loads user rules when the project has none', () => {
+    createSkillRulesYaml(homeDir, { skills: { 'user-skill': rule('from user') } });
+
+    const config = new ConfigLoader(projectDir, { userScope: true }).loadSkillRules();
+
+    expect(config.skills['user-skill']?.description).toBe('from user');
+  });
+
+  it('degrades to project-only when the user file is malformed', () => {
+    const userSkillsDir = path.join(homeDir, '.claude', 'skills');
+    fs.mkdirSync(userSkillsDir, { recursive: true });
+    fs.writeFileSync(path.join(userSkillsDir, 'skill-rules.yaml'), 'skills: [unclosed\n');
+    createSkillRulesYaml(projectDir, { skills: { 'proj-skill': rule('from project') } });
+
+    const config = new ConfigLoader(projectDir, { userScope: true }).loadSkillRules();
+
+    expect(Object.keys(config.skills)).toEqual(['proj-skill']);
+  });
+
+  it('resolves content from the scope that DECLARED each skill', () => {
+    createSkillRulesYaml(homeDir, { skills: { 'user-skill': rule('from user') } });
+    createSkill(homeDir, 'user-skill', '# user version');
+    createSkill(homeDir, 'shared', '# user shared');
+    createSkillRulesYaml(projectDir, { skills: { shared: rule('from project') } });
+    createSkill(projectDir, 'shared', '# project shared');
+
+    const loader = new ConfigLoader(projectDir, { userScope: true });
+
+    // user-declared rule resolves under ~/.claude even without an explicit
+    // loadSkillRules() call first — the scope map populates on demand
+    expect(loader.skillExists('user-skill')).toBe(true);
+    expect(loader.loadSkillContent('user-skill')).toContain('user version');
+    // project declared `shared`, so the project copy wins
+    expect(loader.loadSkillContent('shared')).toContain('project shared');
+    expect(loader.skillExists('nope')).toBe(false);
+  });
+
+  it('does not merge a directory with itself when the project IS ~/.claude', () => {
+    createSkillRulesYaml(homeDir, { skills: { 'user-skill': rule('from user') } });
+
+    const config = new ConfigLoader(homeDir, { userScope: true }).loadSkillRules();
+
+    expect(Object.keys(config.skills)).toEqual(['user-skill']);
+  });
+});
+
+describe('config-loader user/project settings merge', () => {
+  let projectDir: string;
+  let homeDir: string;
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    projectDir = createTempDir('settings-merge-project-');
+    homeDir = createTempDir('settings-merge-home-');
+    originalHome = process.env.HOME;
+    process.env.HOME = homeDir;
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    cleanupTempDir(projectDir);
+    cleanupTempDir(homeDir);
+  });
+
+  it('keeps user settings the project does not override', () => {
+    // a project that sets only one key must not wipe the user's global preferences
+    createSkillRulesYaml(homeDir, {
+      settings: {
+        maxSuggestions: 1,
+        enableDebugLogging: false,
+        thresholds: { recentActivationMinutes: 60 },
+      },
+      skills: {},
+    });
+    createSkillRulesYaml(projectDir, {
+      settings: { enableDebugLogging: true },
+      skills: {},
+    });
+
+    const config = new ConfigLoader(projectDir, { userScope: true }).loadSkillRules();
+
+    expect(config.settings?.enableDebugLogging).toBe(true); // project wins
+    expect(config.settings?.maxSuggestions).toBe(1); // user preserved
+    expect(config.settings?.thresholds?.recentActivationMinutes).toBe(60);
+  });
+
+  it('merges nested scoring keys with project precedence', () => {
+    createSkillRulesYaml(homeDir, {
+      settings: { scoring: { keywordMatchScore: 99, intentPatternScore: 88 } },
+      skills: {},
+    });
+    createSkillRulesYaml(projectDir, {
+      settings: { scoring: { keywordMatchScore: 5 } },
+      skills: {},
+    });
+
+    const config = new ConfigLoader(projectDir, { userScope: true }).loadSkillRules();
+
+    expect(config.settings?.scoring?.keywordMatchScore).toBe(5); // project wins
+    expect(config.settings?.scoring?.intentPatternScore).toBe(88); // user preserved
+  });
+});
+
+describe('config-loader scope isolation (security)', () => {
+  let projectDir: string;
+  let homeDir: string;
+  let originalHome: string | undefined;
+  let originalUserProfile: string | undefined;
+
+  beforeEach(() => {
+    projectDir = createTempDir('scope-isolation-project-');
+    homeDir = createTempDir('scope-isolation-home-');
+    originalHome = process.env.HOME;
+    originalUserProfile = process.env.USERPROFILE;
+    // os.homedir() reads USERPROFILE on win32 and HOME on POSIX — set both
+    process.env.HOME = homeDir;
+    process.env.USERPROFILE = homeDir;
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = originalUserProfile;
+    cleanupTempDir(projectDir);
+    cleanupTempDir(homeDir);
+  });
+
+  const rule = (description: string) => ({
+    type: 'domain' as const,
+    enforcement: 'suggest' as const,
+    priority: 'high' as const,
+    description,
+    activationStrategy: 'suggestive' as const,
+    promptTriggers: { keywords: ['thing'] },
+  });
+
+  it('does NOT let a project rule read a user-scope skill file', () => {
+    // a cloned repo's skill-rules.yaml is untrusted data; if it could name a user skill,
+    // the hook would read and print a private file out of $HOME
+    createSkill(homeDir, 'private-notes', '# SECRET user content');
+    createSkillRulesYaml(projectDir, { skills: { 'private-notes': rule('claimed by project') } });
+
+    const loader = new ConfigLoader(projectDir, { userScope: true });
+    loader.loadSkillRules();
+
+    expect(loader.skillExists('private-notes')).toBe(false);
+    expect(loader.loadSkillContent('private-notes')).toBeNull();
+  });
+
+  it('still resolves a user-scope skill that the USER declared', () => {
+    createSkillRulesYaml(homeDir, { skills: { 'my-skill': rule('declared by user') } });
+    createSkill(homeDir, 'my-skill', '# user content');
+
+    const loader = new ConfigLoader(projectDir, { userScope: true });
+    loader.loadSkillRules();
+
+    expect(loader.skillExists('my-skill')).toBe(true);
+    expect(loader.loadSkillContent('my-skill')).toContain('user content');
+  });
+
+  it('resolves the project copy when both scopes declare the same name', () => {
+    createSkillRulesYaml(homeDir, { skills: { shared: rule('user') } });
+    createSkill(homeDir, 'shared', '# user copy');
+    createSkillRulesYaml(projectDir, { skills: { shared: rule('project') } });
+    createSkill(projectDir, 'shared', '# project copy');
+
+    const loader = new ConfigLoader(projectDir, { userScope: true });
+    loader.loadSkillRules();
+
+    expect(loader.loadSkillContent('shared')).toContain('project copy');
+  });
+
+  it('rejects traversal even when the traversed-to SKILL.md really exists', () => {
+    // plant a file that IS reachable by traversal, so the guard is the only thing
+    // stopping the read — asserting on non-existent paths would pass with no guard at all
+    const reachable = path.join(projectDir, '.claude', 'evil');
+    fs.mkdirSync(reachable, { recursive: true });
+    fs.writeFileSync(path.join(reachable, 'SKILL.md'), '# REACHED');
+
+    const loader = new ConfigLoader(projectDir, { userScope: true });
+    loader.loadSkillRules();
+
+    expect(loader.loadSkillContent('../evil')).toBeNull();
+    expect(loader.skillExists('../evil')).toBe(false);
+    expect(loader.loadSkillContent('/etc/passwd')).toBeNull();
+
+    // control: the same content IS readable when reached legitimately, proving the
+    // fixture is live and the nulls above come from the guard, not a missing file
+    fs.cpSync(reachable, path.join(projectDir, '.claude', 'skills', 'evil'), {
+      recursive: true,
+    });
+    expect(loader.loadSkillContent('evil')).toContain('REACHED');
+  });
+
+  it('an UNPARSEABLE project file degrades to empty, not to the user rule set', () => {
+    // a project typo must not silently swap in a different set of active skills
+    createSkillRulesYaml(homeDir, { skills: { 'user-skill': rule('from user') } });
+    const projectSkills = path.join(projectDir, '.claude', 'skills');
+    fs.mkdirSync(projectSkills, { recursive: true });
+    fs.writeFileSync(path.join(projectSkills, 'skill-rules.yaml'), 'skills: [unclosed\n');
+
+    const config = new ConfigLoader(projectDir, { userScope: true }).loadSkillRules();
+
+    expect(Object.keys(config.skills)).toEqual([]);
+  });
+
+  it('an ABSENT project file still merges user scope', () => {
+    createSkillRulesYaml(homeDir, { skills: { 'user-skill': rule('from user') } });
+
+    const config = new ConfigLoader(projectDir, { userScope: true }).loadSkillRules();
+
+    expect(Object.keys(config.skills)).toEqual(['user-skill']);
   });
 });

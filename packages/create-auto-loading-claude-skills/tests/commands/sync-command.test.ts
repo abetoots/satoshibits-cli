@@ -38,7 +38,7 @@ describe("sync command", () => {
   });
 
   describe("syncCommand", () => {
-    it("should handle empty project (no .claude/commands/)", async () => {
+    it("should handle empty project (no .claude/skills/)", async () => {
       await syncCommand({ verbose: false });
 
       // should not create skill-rules.yaml
@@ -53,7 +53,7 @@ describe("sync command", () => {
 
     it("should sync skills with x-smart-triggers", async () => {
       // create skill with x-smart-triggers
-      const skillDir = path.join(testDir, ".claude", "commands", "terraform");
+      const skillDir = path.join(testDir, ".claude", "skills", "terraform");
       fs.mkdirSync(skillDir, { recursive: true });
 
       const skillContent = `---
@@ -118,7 +118,7 @@ This skill helps with Terraform apply operations.
 
     it("should skip skills without x-smart-triggers", async () => {
       // create skill without x-smart-triggers
-      const skillDir = path.join(testDir, ".claude", "commands", "simple");
+      const skillDir = path.join(testDir, ".claude", "skills", "simple");
       fs.mkdirSync(skillDir, { recursive: true });
 
       const skillContent = `---
@@ -179,7 +179,7 @@ Just a simple skill.
       );
 
       // create a new skill with x-smart-triggers
-      const skillDir = path.join(testDir, ".claude", "commands", "new-skill");
+      const skillDir = path.join(testDir, ".claude", "skills", "new-skill");
       fs.mkdirSync(skillDir, { recursive: true });
 
       const skillContent = `---
@@ -214,7 +214,7 @@ x-smart-triggers:
 
     it("should respect dry-run option", async () => {
       // create skill with x-smart-triggers
-      const skillDir = path.join(testDir, ".claude", "commands", "test-skill");
+      const skillDir = path.join(testDir, ".claude", "skills", "test-skill");
       fs.mkdirSync(skillDir, { recursive: true });
 
       const skillContent = `---
@@ -242,7 +242,7 @@ x-smart-triggers:
 
     it("should include sync metadata", async () => {
       // create skill with x-smart-triggers
-      const skillDir = path.join(testDir, ".claude", "commands", "meta-skill");
+      const skillDir = path.join(testDir, ".claude", "skills", "meta-skill");
       fs.mkdirSync(skillDir, { recursive: true });
 
       const skillContent = `---
@@ -280,7 +280,7 @@ x-smart-triggers:
   describe("checkSyncStatus", () => {
     it("should report stale when SKILL.md changed after sync", async () => {
       // create and sync a skill
-      const skillDir = path.join(testDir, ".claude", "commands", "stale-test");
+      const skillDir = path.join(testDir, ".claude", "skills", "stale-test");
       fs.mkdirSync(skillDir, { recursive: true });
 
       const skillContent1 = `---
@@ -342,7 +342,7 @@ x-smart-triggers:
 
     it("should report not stale when no changes", async () => {
       // create and sync a skill
-      const skillDir = path.join(testDir, ".claude", "commands", "stable-test");
+      const skillDir = path.join(testDir, ".claude", "skills", "stable-test");
       fs.mkdirSync(skillDir, { recursive: true });
 
       const skillContent = `---
@@ -398,12 +398,47 @@ x-smart-triggers:
       const config = yaml.load(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
       const skills = config.skills as Record<string, unknown>;
 
-      expect(skills["personal-tool"]).toBeDefined();
+      // personal skills are deliberately NOT written into a project config: content is
+      // resolved only from the scope that declared a rule, so a project-declared copy
+      // would point at <project>/.claude/skills/personal-tool (which does not exist) and
+      // would shadow the working user-scope entry. Sync from the home dir instead.
+      expect(skills?.["personal-tool"]).toBeUndefined();
+    });
 
-      // check sync metadata tracks scope
+    it("should write personal skills when syncing the home directory itself", async () => {
+      const personalSkillDir = path.join(fakeHomeDir, ".claude", "skills", "home-tool");
+      fs.mkdirSync(personalSkillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(personalSkillDir, "SKILL.md"),
+        `---
+name: home-tool
+description: A personal tool skill
+x-smart-triggers:
+  activationStrategy: suggestive
+  promptTriggers:
+    keywords:
+      - personal
+---
+
+# Home Tool
+`,
+      );
+
+      const previousCwd = process.cwd();
+      process.chdir(fakeHomeDir);
+      try {
+        await syncCommand({ verbose: false });
+      } finally {
+        process.chdir(previousCwd);
+      }
+
+      const configPath = path.join(fakeHomeDir, ".claude", "skills", "skill-rules.yaml");
+      const config = yaml.load(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
+      const skills = config.skills as Record<string, unknown>;
+
+      expect(skills["home-tool"]).toBeDefined();
       const sync = config._sync as Record<string, unknown>;
-      expect(sync.skillScopes).toBeDefined();
-      expect((sync.skillScopes as Record<string, string>)["personal-tool"]).toBe("personal");
+      expect((sync.skillScopes as Record<string, string>)["home-tool"]).toBe("personal");
     });
 
     it("should have project skills override personal skills with same name", async () => {
@@ -427,7 +462,7 @@ x-smart-triggers:
       fs.writeFileSync(path.join(personalSkillDir, "SKILL.md"), personalSkillContent);
 
       // create project skill with same name
-      const projectSkillDir = path.join(testDir, ".claude", "commands", "override-test");
+      const projectSkillDir = path.join(testDir, ".claude", "skills", "override-test");
       fs.mkdirSync(projectSkillDir, { recursive: true });
 
       const projectSkillContent = `---
@@ -481,7 +516,7 @@ x-smart-triggers:
       fs.writeFileSync(path.join(personalSkillDir, "SKILL.md"), personalSkillContent);
 
       // create project skill with different name
-      const projectSkillDir = path.join(testDir, ".claude", "commands", "project-only");
+      const projectSkillDir = path.join(testDir, ".claude", "skills", "project-only");
       fs.mkdirSync(projectSkillDir, { recursive: true });
 
       const projectSkillContent = `---
@@ -502,13 +537,13 @@ x-smart-triggers:
       const config = yaml.load(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
       const skills = config.skills as Record<string, unknown>;
 
-      expect(skills["personal-only"]).toBeDefined();
+      // only the project skill lands in a project config; the personal one stays in
+      // ~/.claude/skills where the runtime can actually resolve its SKILL.md
       expect(skills["project-only"]).toBeDefined();
+      expect(skills["personal-only"]).toBeUndefined();
 
-      // check scopes are tracked correctly
       const sync = config._sync as Record<string, unknown>;
       const scopes = sync.skillScopes as Record<string, string>;
-      expect(scopes["personal-only"]).toBe("personal");
       expect(scopes["project-only"]).toBe("project");
     });
 
@@ -518,7 +553,7 @@ x-smart-triggers:
       fs.mkdirSync(personalDir, { recursive: true });
 
       // create project skill
-      const projectSkillDir = path.join(testDir, ".claude", "commands", "project-skill");
+      const projectSkillDir = path.join(testDir, ".claude", "skills", "project-skill");
       fs.mkdirSync(projectSkillDir, { recursive: true });
 
       const projectSkillContent = `---
@@ -546,7 +581,7 @@ x-smart-triggers:
       // don't create any personal directory - it shouldn't exist
 
       // create project skill
-      const projectSkillDir = path.join(testDir, ".claude", "commands", "project-skill");
+      const projectSkillDir = path.join(testDir, ".claude", "skills", "project-skill");
       fs.mkdirSync(projectSkillDir, { recursive: true });
 
       const projectSkillContent = `---
@@ -569,5 +604,56 @@ x-smart-triggers:
 
       expect(skills["project-skill"]).toBeDefined();
     });
+  });
+});
+
+describe("legacy .claude/commands/ location", () => {
+  it("warns about SKILL.md files there instead of syncing them", async () => {
+    // syncing them produced rules no reader could resolve: `validate` reported them as
+    // orphaned and the runtime returned null for their content
+    const tmp = fs.mkdtempSync("/tmp/legacy-commands-");
+    const prevCwd = process.cwd();
+    const prevHome = process.env.HOME;
+    const home = fs.mkdtempSync("/tmp/legacy-home-");
+    try {
+      fs.mkdirSync(path.join(tmp, ".claude", "commands", "legacy"), {
+        recursive: true,
+      });
+      fs.writeFileSync(
+        path.join(tmp, ".claude", "commands", "legacy", "SKILL.md"),
+        `---
+name: legacy
+description: legacy
+x-smart-triggers:
+  activationStrategy: suggestive
+  promptTriggers:
+    keywords: [legacy]
+---
+
+# legacy
+`,
+      );
+      process.chdir(tmp);
+      process.env.HOME = home;
+
+      const logs: string[] = [];
+      const spy = vi.spyOn(console, "log").mockImplementation((...args) => {
+        logs.push(args.join(" "));
+      });
+      await syncCommand({ verbose: false });
+      spy.mockRestore();
+
+      expect(logs.join("\n")).toContain(".claude/commands/");
+      const configPath = path.join(tmp, ".claude", "skills", "skill-rules.yaml");
+      if (fs.existsSync(configPath)) {
+        expect(fs.readFileSync(configPath, "utf8")).not.toContain("legacy");
+      }
+    } finally {
+      process.chdir(prevCwd);
+      if (prevHome === undefined) delete process.env.HOME;
+      else process.env.HOME = prevHome;
+      fs.rmSync(tmp, { recursive: true, force: true });
+      fs.rmSync(home, { recursive: true, force: true });
+    }
   });
 });

@@ -4,6 +4,7 @@
  */
 
 import fs from "fs";
+import yaml from "js-yaml";
 import path from "path";
 import { execSync } from "child_process";
 import { fileURLToPath } from "url";
@@ -71,16 +72,31 @@ describe("Validate command", () => {
   }
 
   describe("Valid configurations", () => {
+    /** A rule is only valid if its SKILL.md exists — otherwise it is an orphan. */
+    function createSkillFile(name: string): void {
+      fs.mkdirSync(path.join(skillsDir, name), { recursive: true });
+      fs.writeFileSync(
+        path.join(skillsDir, name, "SKILL.md"),
+        `---\nname: ${name}\ndescription: test skill\n---\n\n# ${name}\n`,
+        "utf8",
+      );
+    }
+
     it("should validate a correct skill-rules.yaml", () => {
+      createSkillFile("error-handling");
       fs.writeFileSync(
         path.join(skillsDir, "skill-rules.yaml"),
+        // all four schema-required fields present — this fixture previously omitted
+        // enforcement and description, so it was never actually a "correct" config
         `version: "1.0"
 settings:
   maxSuggestions: 3
 skills:
   error-handling:
     type: domain
+    enforcement: suggest
     priority: high
+    description: "Error handling patterns"
     promptTriggers:
       keywords: [error, exception]
 `,
@@ -89,10 +105,11 @@ skills:
 
       const result = runValidate();
       expect(result.exitCode).toBe(0);
-      expect(result.stdout.includes("valid") || !result.stderr).toBe(true);
+      expect(result.stdout).toContain("1 valid skill(s)");
     });
 
     it("should validate skill-rules.json", () => {
+      createSkillFile("api-design");
       fs.writeFileSync(
         path.join(skillsDir, "skill-rules.json"),
         JSON.stringify(
@@ -102,7 +119,9 @@ skills:
             skills: {
               "api-design": {
                 type: "domain",
+                enforcement: "suggest",
                 priority: "medium",
+                description: "API design patterns",
                 promptTriggers: { keywords: ["API", "endpoint"] },
               },
             },
@@ -134,10 +153,12 @@ skills:
       );
 
       const result = runValidate();
-      expect(
-        result.stdout.includes("orphan") ||
-          result.stdout.includes("missing-skill"),
-      ).toBe(true);
+      // assert the DIAGNOSIS, not the skill's name — the old disjunction passed on
+      // `includes("missing-skill")`, which any mention of the rule satisfies
+      expect(result.stdout).toContain(
+        "Referenced in skill-rules but SKILL.md not found",
+      );
+      expect(result.exitCode).not.toBe(0);
     });
 
     it("should detect invalid YAML syntax", () => {
@@ -200,7 +221,9 @@ settings:
 skills:
   valid-skill:
     type: domain
+    enforcement: suggest
     priority: medium
+    description: "A properly configured skill"
     promptTriggers:
       keywords: [test]
 `,
@@ -217,134 +240,34 @@ skills:
       );
 
       const result = runValidate();
-      expect(result.stdout.includes("valid") || result.exitCode === 0).toBe(true);
+      // exitCode is the only load-bearing signal here: `includes("valid")` matches the
+      // skill's own name, and runValidate hardcodes stderr to "" on success
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("1 valid skill(s)");
     });
   });
 
   describe("Auto-fix functionality", () => {
-    it("should fix missing settings with --fix flag", () => {
+    it("treats a missing settings block as valid (settings are optional)", () => {
+      // NOTE: this replaces a test named "should fix missing settings with --fix flag".
+      // There is no settings auto-fix in the codebase; that test asserted
+      // `content.includes("settings") || exitCode === 0` and passed purely on the second
+      // disjunct, which was 0 only because --fix silently did nothing.
+      fs.mkdirSync(path.join(skillsDir, "test-skill"), { recursive: true });
+      fs.writeFileSync(
+        path.join(skillsDir, "test-skill", "SKILL.md"),
+        "---\nname: test-skill\ndescription: test\n---\n# test\n",
+        "utf8",
+      );
       fs.writeFileSync(
         path.join(skillsDir, "skill-rules.yaml"),
         `version: "1.0"
 skills:
   test-skill:
     type: domain
+    enforcement: suggest
     priority: medium
-    promptTriggers:
-      keywords: [test]
-`,
-        "utf8",
-      );
-
-      const result = runValidate("--fix");
-
-      // read the fixed file
-      const content = fs.readFileSync(
-        path.join(skillsDir, "skill-rules.yaml"),
-        "utf8",
-      );
-
-      expect(content.includes("settings") || result.exitCode === 0).toBe(true);
-    });
-
-    it("should remove orphaned skill entries with --fix flag", () => {
-      // create skill-rules with orphaned skill (no matching SKILL.md)
-      fs.writeFileSync(
-        path.join(skillsDir, "skill-rules.yaml"),
-        `version: "1.0"
-settings:
-  maxSuggestions: 3
-skills:
-  orphaned-skill:
-    type: domain
-    priority: high
-    promptTriggers:
-      keywords: [orphan]
-  valid-skill:
-    type: domain
-    priority: medium
-    promptTriggers:
-      keywords: [valid]
-`,
-        "utf8",
-      );
-
-      // create SKILL.md only for valid-skill
-      const validSkillDir = path.join(skillsDir, "valid-skill");
-      fs.mkdirSync(validSkillDir, { recursive: true });
-      fs.writeFileSync(
-        path.join(validSkillDir, "SKILL.md"),
-        "# Valid Skill\nThis skill has matching SKILL.md",
-        "utf8",
-      );
-
-      const result = runValidate("--fix");
-
-      // read the fixed file
-      const content = fs.readFileSync(
-        path.join(skillsDir, "skill-rules.yaml"),
-        "utf8",
-      );
-
-      // orphaned skill should be removed or warned about
-      expect(
-        !content.includes("orphaned-skill") ||
-          result.stdout.includes("removed") ||
-          result.stdout.includes("orphan"),
-      ).toBe(true);
-
-      // valid skill should remain
-      expect(content.includes("valid-skill")).toBe(true);
-    });
-
-    it("should add unregistered skills with --fix flag", () => {
-      // create minimal skill-rules
-      fs.writeFileSync(
-        path.join(skillsDir, "skill-rules.yaml"),
-        `version: "1.0"
-settings:
-  maxSuggestions: 3
-skills: {}
-`,
-        "utf8",
-      );
-
-      // create unregistered skill directory with SKILL.md
-      const unregSkillDir = path.join(skillsDir, "unregistered-skill");
-      fs.mkdirSync(unregSkillDir, { recursive: true });
-      fs.writeFileSync(
-        path.join(unregSkillDir, "SKILL.md"),
-        "# Unregistered Skill\nThis skill exists but needs to be registered",
-        "utf8",
-      );
-
-      const result = runValidate("--fix");
-
-      // read the fixed file
-      const content = fs.readFileSync(
-        path.join(skillsDir, "skill-rules.yaml"),
-        "utf8",
-      );
-
-      // unregistered skill should be added or reported
-      expect(
-        content.includes("unregistered-skill") ||
-          result.stdout.includes("added") ||
-          result.stdout.includes("registered"),
-      ).toBe(true);
-    });
-
-    it("should handle schema validation errors", () => {
-      // create skill-rules with invalid schema (missing required fields)
-      fs.writeFileSync(
-        path.join(skillsDir, "skill-rules.yaml"),
-        `version: "1.0"
-settings:
-  maxSuggestions: 3
-skills:
-  invalid-skill:
-    # missing required 'type' field
-    priority: high
+    description: "no settings block present"
     promptTriggers:
       keywords: [test]
 `,
@@ -353,14 +276,318 @@ skills:
 
       const result = runValidate();
 
-      // should report schema validation error
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).not.toContain("error(s)");
+    });
+
+    it("removes the orphaned entry with --fix --yes, and the file proves it", () => {
+      // Previously asserted `!content.includes(...) || stdout.includes("orphan")`, which
+      // passed on the word "orphan" appearing in the ERROR listing while the repair path
+      // never executed. --yes makes the repair reachable non-interactively.
+      fs.writeFileSync(
+        path.join(skillsDir, "skill-rules.yaml"),
+        `version: "1.0"
+skills:
+  orphaned-skill:
+    type: domain
+    enforcement: suggest
+    priority: high
+    description: "no SKILL.md on disk"
+    promptTriggers:
+      keywords: [test]
+`,
+        "utf8",
+      );
+
+      const result = runValidate("--fix --yes");
+
+      const after = fs.readFileSync(
+        path.join(skillsDir, "skill-rules.yaml"),
+        "utf8",
+      );
+      expect(after).not.toContain("orphaned-skill"); // the observable
+      expect(result.stdout).toContain("Removed: orphaned-skill");
+      expect(result.exitCode).toBe(0);
+    });
+
+    it("adds the unregistered skill with --fix --yes, and the file proves it", () => {
+      fs.writeFileSync(
+        path.join(skillsDir, "skill-rules.yaml"),
+        `version: "1.0"
+skills: {}
+`,
+        "utf8",
+      );
+      fs.mkdirSync(path.join(skillsDir, "new-skill"), { recursive: true });
+      fs.writeFileSync(
+        path.join(skillsDir, "new-skill", "SKILL.md"),
+        "---\nname: new-skill\ndescription: test\n---\n# test\n",
+        "utf8",
+      );
+
+      const result = runValidate("--fix --yes");
+
+      const after = fs.readFileSync(
+        path.join(skillsDir, "skill-rules.yaml"),
+        "utf8",
+      );
+      expect(after).toContain("new-skill");
+      expect(result.stdout).toContain("Added: new-skill");
+    });
+
+    it("does not delete a malformed rule the user was told to fix by hand", () => {
+      // the crash guard used to mutate the same config object that --fix serializes, so
+      // `bare-skill` silently vanished while the output said to edit it manually
+      fs.mkdirSync(path.join(skillsDir, "kept-skill"), { recursive: true });
+      fs.writeFileSync(
+        path.join(skillsDir, "kept-skill", "SKILL.md"),
+        "---\nname: kept-skill\ndescription: test\n---\n# test\n",
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(skillsDir, "skill-rules.yaml"),
+        `version: "1.0"
+skills:
+  kept-skill:
+    type: domain
+    enforcement: suggest
+    priority: high
+    description: "fine"
+    promptTriggers:
+      keywords: [test]
+  bare-skill:
+`,
+        "utf8",
+      );
+
+      // an UNREGISTERED skill forces auto-fix to actually serialize the config —
+      // without a write, the assertion below would pass on a file nobody touched
+      fs.mkdirSync(path.join(skillsDir, "extra-skill"), { recursive: true });
+      fs.writeFileSync(
+        path.join(skillsDir, "extra-skill", "SKILL.md"),
+        "---\nname: extra-skill\ndescription: test\n---\n# test\n",
+        "utf8",
+      );
+
+      const result = runValidate("--fix --yes");
+
+      const after = fs.readFileSync(
+        path.join(skillsDir, "skill-rules.yaml"),
+        "utf8",
+      );
+      expect(result.stdout).toContain("Added: extra-skill"); // proves a write happened
+      expect(after).toContain("bare-skill"); // survives — it is the user's data
+      expect(result.exitCode).not.toBe(0);
+    });
+
+    it("should still exit non-zero when --fix cannot repair the errors", () => {
+      // --fix repairs orphaned/unregistered entries and missing settings, but not schema
+      // errors inside a rule. Exiting 0 there would let a CI job pass with a config whose
+      // skills can never fire.
+      fs.mkdirSync(path.join(skillsDir, "unfixable-skill"), { recursive: true });
+      fs.writeFileSync(
+        path.join(skillsDir, "unfixable-skill", "SKILL.md"),
+        "---\nname: unfixable-skill\ndescription: test\n---\n# test\n",
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(skillsDir, "skill-rules.yaml"),
+        `version: "1.0"
+skills:
+  unfixable-skill:
+    priority: high
+    promptTriggers:
+      keywords: [test]
+`,
+        "utf8",
+      );
+
+      const result = runValidate("--fix --yes");
+
+      expect(result.stdout).not.toContain("interactive terminal"); // repair path ran
+      expect(result.stdout).toContain("remain after auto-fix");
+      expect(result.exitCode).not.toBe(0);
+    });
+
+    it("refuses to auto-fix when stdin is not a TTY, and fails the run", () => {
+      // `prompts` gates every repair behind an interactive confirm; on a closed stdin it
+      // aborts and terminates the process from inside the prompt, so nothing is repaired
+      // and no later code runs. Previously that combination exited 0 — an open CI gate.
+      fs.writeFileSync(
+        path.join(skillsDir, "skill-rules.yaml"),
+        `version: "1.0"
+settings:
+  maxSuggestions: 3
+skills:
+  ghost-skill:
+    priority: high
+    promptTriggers:
+      keywords: [test]
+`,
+        "utf8",
+      );
+
+      const result = runValidate("--fix");
+
+      expect(result.stdout).toContain("requires an interactive terminal");
+      expect(result.exitCode).not.toBe(0);
+      // the observable that matters: the file was NOT modified
+      const after = fs.readFileSync(
+        path.join(skillsDir, "skill-rules.yaml"),
+        "utf8",
+      );
+      expect(after).toContain("ghost-skill");
+    });
+
+    it("reports a null rule entry instead of crashing", () => {
+      // `my-skill:` with no body parses to null; property access used to throw
+      fs.writeFileSync(
+        path.join(skillsDir, "skill-rules.yaml"),
+        `version: "1.0"
+skills:
+  empty-rule:
+`,
+        "utf8",
+      );
+
+      const result = runValidate();
+
+      expect(result.stdout).toContain("Rule is empty");
+      expect(result.stdout).not.toContain("TypeError");
+      expect(result.exitCode).not.toBe(0);
+    });
+
+    it("repairs a config with an absent skills block instead of crashing", () => {
+      // `skills` absent is normalizable — but auto-fix used to assign into `undefined`.
+      // Distinct from present-but-malformed, which must be refused.
+      fs.mkdirSync(path.join(skillsDir, "new-skill"), { recursive: true });
+      fs.writeFileSync(
+        path.join(skillsDir, "new-skill", "SKILL.md"),
+        "---\nname: new-skill\ndescription: test\n---\n# test\n",
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(skillsDir, "skill-rules.yaml"),
+        `version: "1.0"\n`,
+        "utf8",
+      );
+
+      const result = runValidate("--fix --yes");
+
+      expect(result.stdout).not.toContain("TypeError");
+      expect(result.stdout).not.toContain("Refusing to auto-fix");
       expect(
-        result.stdout.includes("type") ||
-          result.stdout.includes("required") ||
-          result.stdout.includes("invalid") ||
-          result.stderr.includes("type") ||
-          result.exitCode !== 0,
-      ).toBe(true);
+        fs.readFileSync(path.join(skillsDir, "skill-rules.yaml"), "utf8"),
+      ).toContain("new-skill");
+      expect(result.exitCode).toBe(0);
+    });
+
+    it("refuses to auto-fix a present-but-malformed skills block, preserving it", () => {
+      fs.writeFileSync(
+        path.join(skillsDir, "skill-rules.yaml"),
+        `version: "1.0"
+skills:
+  - name: legacy-one
+  - name: legacy-two
+`,
+        "utf8",
+      );
+
+      const result = runValidate("--fix --yes");
+
+      expect(result.stdout).toContain("Refusing to auto-fix");
+      expect(
+        fs.readFileSync(path.join(skillsDir, "skill-rules.yaml"), "utf8"),
+      ).toContain("legacy-one"); // the user's data survives
+      expect(result.exitCode).not.toBe(0);
+    });
+
+    it("rejects a scalar or array at the top level instead of crashing", () => {
+      // yaml.load returns a primitive; the truthiness check passed and assigning
+      // `.skills` onto it threw a TypeError
+      for (const body of ["true\n", "\"oops\"\n", "- a\n- b\n"]) {
+        fs.writeFileSync(path.join(skillsDir, "skill-rules.yaml"), body, "utf8");
+        const result = runValidate();
+        expect(result.stdout).not.toContain("TypeError");
+        expect(result.stdout).toContain("must be a mapping at the top level");
+        expect(result.exitCode).not.toBe(0);
+      }
+    });
+
+    it("accepts a config with no skills block at all", () => {
+      // structurally valid YAML; Object.keys(undefined) used to throw
+      fs.writeFileSync(
+        path.join(skillsDir, "skill-rules.yaml"),
+        `version: "1.0"
+settings:
+  maxSuggestions: 3
+`,
+        "utf8",
+      );
+
+      const result = runValidate();
+
+      expect(result.stdout).not.toContain("TypeError");
+      expect(result.exitCode).toBe(0);
+    });
+
+    it("does not flag a rule that has empty keywords but real intentPatterns", () => {
+      // `??` short-circuits on false, so the intentPatterns branch was never consulted
+      fs.mkdirSync(path.join(skillsDir, "mixed-triggers"), { recursive: true });
+      fs.writeFileSync(
+        path.join(skillsDir, "mixed-triggers", "SKILL.md"),
+        "---\nname: mixed-triggers\ndescription: test\n---\n# test\n",
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(skillsDir, "skill-rules.yaml"),
+        `version: "1.0"
+skills:
+  mixed-triggers:
+    type: domain
+    enforcement: suggest
+    priority: high
+    description: "has intent patterns only"
+    promptTriggers:
+      keywords: []
+      intentPatterns: ["deploy.*staging"]
+`,
+        "utf8",
+      );
+
+      const result = runValidate();
+
+      expect(result.stdout).not.toContain("no triggers defined");
+      expect(result.exitCode).toBe(0);
+    });
+
+    it("should reject an activationStrategy outside the enum", () => {
+      fs.mkdirSync(path.join(skillsDir, "bad-strategy"), { recursive: true });
+      fs.writeFileSync(
+        path.join(skillsDir, "bad-strategy", "SKILL.md"),
+        "---\nname: bad-strategy\ndescription: test\n---\n# test\n",
+        "utf8",
+      );
+      fs.writeFileSync(
+        path.join(skillsDir, "skill-rules.yaml"),
+        `version: "1.0"
+skills:
+  bad-strategy:
+    type: workflow
+    enforcement: suggest
+    priority: high
+    description: "test"
+    activationStrategy: imperative
+    promptTriggers:
+      keywords: [test]
+`,
+        "utf8",
+      );
+
+      const result = runValidate();
+
+      expect(result.stdout).toContain("Invalid activationStrategy: imperative");
+      expect(result.exitCode).not.toBe(0);
     });
   });
 
@@ -387,5 +614,91 @@ skills:
                          result.stderr.toLowerCase().includes("invalid");
       expect(hasError || hasWarning).toBe(true);
     });
+  });
+});
+
+/**
+ * `validate` hand-maintains the list of known/required rule fields. Nothing binds those
+ * lists to schema/skill-rules.schema.json, so adding a property to the schema would make
+ * every valid config emit a spurious "Unknown field" warning. Bind them here.
+ */
+describe("validate stays in sync with the JSON schema", () => {
+  const schemaPath = path.join(__dirname, "../../schema/skill-rules.schema.json");
+
+  function skillRuleSchema(): {
+    properties: Record<string, unknown>;
+    required: string[];
+  } {
+    const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8")) as unknown;
+    let found: { properties: Record<string, unknown>; required: string[] } | null = null;
+    const walk = (node: unknown): void => {
+      if (found || !node || typeof node !== "object") return;
+      const obj = node as Record<string, unknown>;
+      const props = obj.properties as Record<string, unknown> | undefined;
+      if (props && "enforcement" in props && "priority" in props) {
+        found = {
+          properties: props,
+          required: (obj.required as string[] | undefined) ?? [],
+        };
+        return;
+      }
+      Object.values(obj).forEach(walk);
+    };
+    walk(schema);
+    if (!found) throw new Error("SkillRule definition not found in schema");
+    return found;
+  }
+
+  it("accepts a rule using every property the schema allows", () => {
+    const tmp = fs.mkdtempSync("/tmp/schema-sync-");
+    const skills = path.join(tmp, ".claude", "skills");
+    fs.mkdirSync(path.join(skills, "everything"), { recursive: true });
+    fs.writeFileSync(
+      path.join(skills, "everything", "SKILL.md"),
+      "---\nname: everything\ndescription: test\n---\n# test\n",
+      "utf8",
+    );
+
+    const { properties, required } = skillRuleSchema();
+
+    // bind the schema's required list to validate.ts's hand-rolled requiredFields
+    expect([...required].sort()).toEqual(
+      ["description", "enforcement", "priority", "type"].sort(),
+    );
+    const rule: Record<string, unknown> = {
+      type: "domain",
+      enforcement: "suggest",
+      priority: "high",
+      description: "uses every schema property",
+      activationStrategy: "suggestive",
+      cooldownMinutes: 5,
+      promptTriggers: { keywords: ["x"] },
+      fileTriggers: { pathPatterns: ["**/*.ts"] },
+      preToolTriggers: { toolName: "Bash" },
+      shadowTriggers: { keywords: ["y"] },
+      stopTriggers: { keywords: ["z"] },
+      promptHook: { type: "prompt", prompt: "q" },
+      validationRules: [],
+    };
+
+    // if the schema gains a property this fixture does not cover, this fails loudly
+    // rather than silently drifting from validate.ts's knownKeys list
+    expect(Object.keys(rule).sort()).toEqual(Object.keys(properties).sort());
+
+    fs.writeFileSync(
+      path.join(skills, "skill-rules.yaml"),
+      yaml.dump({ version: "1.0", skills: { everything: rule } }),
+      "utf8",
+    );
+
+    const result = execSync(`node "${COMPILED_CLI_PATH}" validate --verbose`, {
+      cwd: tmp,
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    expect(result).not.toContain("Unknown field");
+    expect(result).not.toContain("Missing required field");
+    fs.rmSync(tmp, { recursive: true, force: true });
   });
 });

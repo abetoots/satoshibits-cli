@@ -6,6 +6,7 @@ import fs from "fs";
 import path from "path";
 
 import type { WizardOptions } from "../types/index.js";
+import { skillExists } from "../utils/skill-paths.js";
 import type { SkillConfig, SkillRule } from "@satoshibits/claude-skill-runtime";
 
 interface WizardAnswers {
@@ -46,15 +47,14 @@ export async function addSkillWizardCommand(
 ) {
   const cwd = process.cwd();
   const skillsDir = path.join(cwd, ".claude", "skills");
-  const skillDir = path.join(skillsDir, skillName);
 
   console.log(chalk.blue.bold("\n🧙 Skill Classification Wizard\n"));
   console.log(
     chalk.dim("This wizard helps determine the optimal loading strategy.\n"),
   );
 
-  // check if skill already exists
-  if (fs.existsSync(path.join(skillDir, "SKILL.md"))) {
+  // check if skill already exists (both SKILL.md / skill.md, via the shared predicate)
+  if (skillExists(skillsDir, skillName)) {
     console.log(chalk.yellow(`⚠️  Skill '${skillName}' already exists.`));
     const { proceed } = (await prompts({
       type: "confirm",

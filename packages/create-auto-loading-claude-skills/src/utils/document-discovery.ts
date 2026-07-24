@@ -2,6 +2,8 @@ import { glob } from "glob";
 import fs from "fs";
 import path from "path";
 
+import { resolveSkillFile } from "./skill-paths.js";
+
 export interface DocMatch {
   path: string;
   confidence: number;
@@ -92,15 +94,12 @@ export class DocumentDiscovery {
     resources?: { name: string; isSymlink: boolean; target: string | null }[];
     lastModified?: Date;
   } {
-    const skillPath = path.join(
-      this.projectDir,
-      ".claude",
-      "skills",
-      skillName,
-      "SKILL.md",
-    );
+    // resolve either casing via the shared predicate, so a lowercase skill.md is detected
+    // and the AI add-skill flow doesn't create a duplicate uppercase file beside it
+    const skillsDir = path.join(this.projectDir, ".claude", "skills");
+    const skillPath = resolveSkillFile(skillsDir, skillName);
 
-    if (fs.existsSync(skillPath)) {
+    if (skillPath) {
       return {
         exists: true,
         content: fs.readFileSync(skillPath, "utf8"),

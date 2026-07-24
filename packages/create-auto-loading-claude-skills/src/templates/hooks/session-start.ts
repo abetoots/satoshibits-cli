@@ -14,6 +14,7 @@ import {
   handleHookError,
   initHookContext,
   readStdin,
+  resolveHookDir,
   sessionState,
 } from "@satoshibits/claude-skill-runtime";
 import { execSync } from "child_process";
@@ -27,7 +28,8 @@ import type {
 
 interface HookInput {
   session_id: string;
-  working_directory: string;
+  cwd?: string;
+  working_directory?: string;
 }
 
 interface FileState {
@@ -157,7 +159,7 @@ async function main() {
     const input = await readStdin();
     const data: HookInput = JSON.parse(input) as HookInput;
 
-    const { session_id, working_directory } = data;
+    const { session_id } = data;
 
     // initialize hook context
     const {
@@ -165,7 +167,8 @@ async function main() {
       config,
       logger: contextLogger,
     } = initHookContext({
-      workingDirectory: working_directory,
+      cwd: resolveHookDir(data),
+      userScope: true,
     });
     logger = contextLogger;
     const cacheDir = path.join(projectDir, ".claude", "cache");

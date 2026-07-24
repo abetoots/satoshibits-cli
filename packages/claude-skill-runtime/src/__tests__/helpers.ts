@@ -197,6 +197,10 @@ function generateYaml(obj: unknown, indent = 0): string {
     if (entries.length === 0) return '{}';
     return entries.map(([key, value]) => {
       if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        // an empty object must stay inline (`key: {}`). Emitting `key:` and then `{}` on
+        // the next line at the parent indent is unparseable YAML, and the loader then
+        // silently degrades to defaults — mirrors the empty-array case just below.
+        if (Object.keys(value as object).length === 0) return `${spaces}${key}: {}`;
         return `${spaces}${key}:\n${generateYaml(value, indent + 1)}`;
       }
       if (Array.isArray(value)) {

@@ -1,6 +1,7 @@
 // Test helper utilities for hook testing
-import { execSync } from "child_process";
+import { execSync, spawnSync } from "child_process";
 import fs from "fs";
+import os from "os";
 import path from "path";
 
 /**
@@ -21,9 +22,62 @@ export interface HookResult {
 export interface HookEvent {
   prompt?: string;
   session_id: string;
-  working_directory: string;
+  /** Current Claude Code payloads send `cwd`; older ones sent `working_directory`. */
+  cwd?: string;
+  working_directory?: string;
+  transcript_path?: string;
+  hook_event_name?: string;
   tool_name?: string;
   tool_input?: Record<string, unknown>;
+}
+
+/** Created once per process — a fresh dir per call leaked hundreds per suite run. */
+let hermeticHomeDir: string | null = null;
+function sharedHermeticHome(): string {
+  if (!hermeticHomeDir) {
+    hermeticHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), "hook-home-"));
+    const dir = hermeticHomeDir;
+    process.once("exit", () => {
+      try {
+        fs.rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // best effort — a leftover temp dir is not worth failing a test run
+      }
+    });
+  }
+  return hermeticHomeDir;
+}
+
+/**
+ * Build a child env with HOME/USERPROFILE pinned to a throwaway dir.
+ *
+ * Every hook template merges user scope (~/.claude/skills), so without this a developer's
+ * real global rules leak into results and the suite behaves differently on CI.
+ * Pass `HOME`/`USERPROFILE` through `overrides` to seed user scope deliberately.
+ */
+function hermeticEnv(
+  overrides: Record<string, string | undefined> = {},
+): Record<string, string> {
+  const env: Record<string, string> = { ...process.env } as Record<string, string>;
+
+  env.HOME = sharedHermeticHome();
+  env.USERPROFILE = env.HOME;
+
+  // Keep tool caches pointing at the REAL home. Repointing HOME alone made
+  // `pnpm exec tsx` re-download corepack on every call (~4s each, and a hard failure on
+  // a network-isolated runner) because its cache lives under the home directory.
+  const realHome = process.env.HOME ?? process.env.USERPROFILE;
+  if (realHome) {
+    env.COREPACK_HOME ??= path.join(realHome, ".cache", "node", "corepack");
+    env.npm_config_cache ??= path.join(realHome, ".npm");
+    env.XDG_CACHE_HOME ??= path.join(realHome, ".cache");
+  }
+
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) delete env[key];
+    else env[key] = value;
+  }
+  return env;
 }
 
 /**
@@ -46,10 +100,7 @@ export function executeTemplateHook(
   try {
     const result = execSync(`pnpm exec tsx ${hookPath}`, {
       input,
-      env: {
-        ...process.env,
-        ...env,
-      },
+      env: hermeticEnv(env),
       encoding: "utf8",
     });
 
@@ -101,10 +152,7 @@ export function executeNodeScript(
   try {
     const result = execSync(`node "${scriptPath}"`, {
       input,
-      env: {
-        ...process.env,
-        ...env,
-      },
+      env: hermeticEnv(env),
       encoding: "utf8",
     });
 
@@ -126,7 +174,10 @@ export function executeNodeScript(
 export function executeCompiledHook(
   hookName: string,
   event: HookEvent,
-  env: Record<string, string> = {},
+  /** Pass a key with `undefined` to UNSET it (e.g. CLAUDE_PROJECT_DIR) for the child. */
+  env: Record<string, string | undefined> = {},
+  /** Pin the child's working directory — the last-resort fallback in initHookContext. */
+  cwd?: string,
 ): HookResult {
   // compiled hooks are in dist/src/templates/hooks/*.js
   const jsHookName = hookName.replace(/\.ts$/, ".js");
@@ -142,27 +193,24 @@ export function executeCompiledHook(
     );
   }
 
-  const input = JSON.stringify(event);
+  // explicit undefined removes the var from the child env (spawn would otherwise
+  // stringify it), which is how a test asserts behavior with CLAUDE_PROJECT_DIR absent
+  const childEnv = hermeticEnv(env);
 
-  try {
-    const result = execSync(`node ${hookPath}`, {
-      input,
-      env: {
-        ...process.env,
-        ...env,
-      },
-      encoding: "utf8",
-    });
+  // spawnSync, not execSync: execSync returns only stdout, so a helper that reported
+  // stderr as "" made every `expect(stderr).toBe("")` unfalsifiable
+  const result = spawnSync("node", [hookPath], {
+    input: JSON.stringify(event),
+    env: childEnv,
+    cwd,
+    encoding: "utf8",
+  });
 
-    return { stdout: result, stderr: "", exitCode: 0 };
-  } catch (error) {
-    const execError = error as ExecSyncError;
-    return {
-      stdout: execError.stdout ?? "",
-      stderr: execError.stderr ?? "",
-      exitCode: execError.status ?? 1,
-    };
-  }
+  return {
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+    exitCode: result.status ?? 1,
+  };
 }
 
 /**
@@ -188,11 +236,7 @@ export function executeGeneratedHook(
   try {
     const stdout = execSync(`node ${hookPath}`, {
       input,
-      env: {
-        ...process.env,
-        CLAUDE_PROJECT_DIR: projectDir,
-        ...env,
-      },
+      env: hermeticEnv({ CLAUDE_PROJECT_DIR: projectDir, ...env }),
       encoding: "utf8",
       stdio: ["pipe", "pipe", "pipe"],
     });
