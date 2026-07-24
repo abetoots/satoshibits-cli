@@ -3,6 +3,7 @@ import {
   handleHookError,
   initHookContext,
   readStdin,
+  resolveHookDir,
   RuleMatcher,
   sessionState,
 } from "@satoshibits/claude-skill-runtime";
@@ -11,7 +12,8 @@ import type { DebugLogger, StopMatch } from "@satoshibits/claude-skill-runtime";
 
 interface StopHookInput {
   session_id: string;
-  working_directory: string;
+  cwd?: string;
+  working_directory?: string;
   stop_hook_active?: boolean;
   transcript_summary?: string;
 }
@@ -27,7 +29,7 @@ async function main() {
     const input = await readStdin();
     const data: StopHookInput = JSON.parse(input) as StopHookInput;
 
-    const { session_id, working_directory, transcript_summary } = data;
+    const { session_id, transcript_summary } = data;
 
     // initialize hook context
     const {
@@ -36,7 +38,8 @@ async function main() {
       config,
       logger: contextLogger,
     } = initHookContext({
-      workingDirectory: working_directory,
+      cwd: resolveHookDir(data),
+      userScope: true,
     });
     logger = contextLogger;
 

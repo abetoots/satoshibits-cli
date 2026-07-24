@@ -4,6 +4,7 @@ import {
   initHookContext,
   normalizeFilePath,
   readStdin,
+  resolveHookDir,
   sessionState,
 } from "@satoshibits/claude-skill-runtime";
 
@@ -16,6 +17,8 @@ interface ToolInput {
     edits?: { file_path: string }[];
   };
   session_id: string;
+  cwd?: string;
+  working_directory?: string;
 }
 
 /**
@@ -30,9 +33,10 @@ async function main() {
 
     const { tool_name, tool_input, session_id } = data;
 
-    // initialize hook context
+    // initialize hook context (payload dir when present, else process.cwd())
     const { projectDir, logger: contextLogger } = initHookContext({
-      workingDirectory: process.cwd(),
+      cwd: resolveHookDir(data),
+      userScope: true,
     });
     logger = contextLogger;
 

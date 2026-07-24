@@ -4,6 +4,7 @@ import {
   handleHookError,
   initHookContext,
   readStdin,
+  resolveHookDir,
   RuleMatcher,
 } from "@satoshibits/claude-skill-runtime";
 
@@ -14,9 +15,11 @@ import type {
 
 interface PreToolUseHookInput {
   session_id: string;
-  working_directory: string;
+  cwd?: string;
+  working_directory?: string;
   tool_name: string;
-  tool_input: string;
+  /** Claude Code sends an object (e.g. { command: "…" }); older payloads sent a string. */
+  tool_input: unknown;
 }
 
 /**
@@ -30,7 +33,7 @@ async function main() {
     const input = await readStdin();
     const data: PreToolUseHookInput = JSON.parse(input) as PreToolUseHookInput;
 
-    const { session_id, working_directory, tool_name, tool_input } = data;
+    const { session_id, tool_name, tool_input } = data;
 
     // initialize hook context
     const {
@@ -39,14 +42,17 @@ async function main() {
       config,
       logger: contextLogger,
     } = initHookContext({
-      workingDirectory: working_directory,
+      cwd: resolveHookDir(data),
+      userScope: true,
     });
     logger = contextLogger;
 
     logger.log("activation", "hook started", {
       sessionId: session_id,
       toolName: tool_name,
-      inputLength: tool_input.length,
+      // cheap shape info only — serializing the payload here would cost a full
+      // stringify of every Write/Edit on every tool call, for a debug-only field
+      inputType: typeof tool_input,
     });
 
     // match pre-tool triggers
@@ -96,11 +102,11 @@ function outputPreToolSuggestions(
   // handle blocking guardrails
   if (blocking.length > 0) {
     console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    console.log("🛑 TOOL EXECUTION BLOCKED");
+    console.log("⚠️  GUARDRAIL TRIGGERED (advisory — the tool still runs)");
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
     for (const match of blocking) {
-      console.log(`❌ ${match.skillName} GUARDRAIL TRIGGERED`);
+      console.log(`❌ ${match.skillName} requirements not met`);
       console.log(`   ${match.rule.description}`);
       console.log(`   Tool: ${match.toolName}`);
       if (match.matchedPattern) {
@@ -126,10 +132,11 @@ function outputPreToolSuggestions(
     console.log(
       "⚠️  Please address the above requirements before proceeding.\n",
     );
+    console.log(
+      "   This hook is advisory: it prints and exits 0, so the tool is NOT blocked.\n" +
+        "   Use skill-activation-json / pre-tool-use-validator-json for a real deny.\n",
+    );
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
-
-    // exit with error to potentially block the tool (depending on hook config)
-    // process.exit(1); // uncomment to actually block
   }
 
   // handle warnings

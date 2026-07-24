@@ -100,6 +100,10 @@ program
   .command("validate")
   .description("Validate skill-rules configuration")
   .option("-f, --fix", "Auto-fix issues where possible")
+  // validateCommand has always read options.verbose and told users to "Run with
+  // --verbose", but the flag was never registered — passing it failed as unknown
+  .option("-v, --verbose", "Show a suggestion for each issue")
+  .option("-y, --yes", "Apply --fix repairs without prompting (for CI)")
   .action(async (options: ValidateOptions) => {
     const { validateCommand } = await import("../commands/validate.js");
     await validateCommand(options);

@@ -31,6 +31,7 @@ export type {
 
 // config loading
 export { ConfigLoader, getLogger, createDefaultConfig } from "./config-loader.mjs";
+export type { ConfigLoaderOptions } from "./config-loader.mjs";
 
 // rule matching
 export { RuleMatcher } from "./rule-matcher.mjs";
@@ -57,12 +58,14 @@ export type {
   HookContext,
   InitHookContextOptions,
   HandleHookErrorOptions,
+  HookDirInput,
 } from "./hook-utils.mjs";
 
 export {
   readStdin,
   initHookContext,
   handleHookError,
+  resolveHookDir,
 } from "./hook-utils.mjs";
 
 // pattern utilities (shared regex pattern handling)
@@ -102,6 +105,7 @@ export {
   buildBlockOutput,
   buildPreToolUseDenyOutput,
   buildPreToolUseAllowOutput,
+  buildPreToolUseContextOutput,
   buildPreToolUseAskOutput,
 } from "./hook-output.mjs";
 

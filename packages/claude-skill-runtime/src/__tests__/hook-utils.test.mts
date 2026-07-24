@@ -8,7 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import { Readable } from 'stream';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { readStdin, initHookContext, handleHookError } from '../hook-utils.mjs';
+import { readStdin, initHookContext, handleHookError, resolveHookDir } from '../hook-utils.mjs';
 import { createTempDir, cleanupTempDir, createSkillRulesYaml } from './helpers.js';
 
 describe('hook-utils', () => {
@@ -253,5 +253,51 @@ describe('hook-utils', () => {
         })
       ).not.toThrow();
     });
+  });
+});
+
+describe('resolveHookDir + directory precedence', () => {
+  let originalProjectDir: string | undefined;
+
+  beforeEach(() => {
+    originalProjectDir = process.env.CLAUDE_PROJECT_DIR;
+    delete process.env.CLAUDE_PROJECT_DIR;
+  });
+
+  afterEach(() => {
+    if (originalProjectDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = originalProjectDir;
+  });
+
+  it.each([
+    ['cwd only (current payload shape)', { cwd: '/a' }, '/a'],
+    ['working_directory only (legacy shape)', { working_directory: '/b' }, '/b'],
+    ['cwd wins when both present', { cwd: '/a', working_directory: '/b' }, '/a'],
+    ['neither field', {}, undefined],
+  ])('%s', (_label, payload, expected) => {
+    expect(resolveHookDir(payload)).toBe(expected);
+  });
+
+  it('returns undefined for a missing payload', () => {
+    expect(resolveHookDir(undefined)).toBeUndefined();
+  });
+
+  it('prefers CLAUDE_PROJECT_DIR over the payload, then payload, then process.cwd()', () => {
+    const tmp = createTempDir('precedence-');
+    try {
+      // env wins
+      process.env.CLAUDE_PROJECT_DIR = tmp;
+      expect(initHookContext({ cwd: '/ignored' }).projectDir).toBe(tmp);
+
+      // payload wins when env is absent
+      delete process.env.CLAUDE_PROJECT_DIR;
+      expect(initHookContext({ cwd: tmp }).projectDir).toBe(tmp);
+      expect(initHookContext({ workingDirectory: tmp }).projectDir).toBe(tmp);
+
+      // last resort: never undefined, so path.join can't throw
+      expect(initHookContext({}).projectDir).toBe(process.cwd());
+    } finally {
+      cleanupTempDir(tmp);
+    }
   });
 });

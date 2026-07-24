@@ -16,11 +16,12 @@
  * - Ask: { hookSpecificOutput: { permissionDecision: "ask", permissionDecisionReason: "..." } }
  */
 import {
-  buildPreToolUseAllowOutput,
+  buildPreToolUseContextOutput,
   buildPreToolUseDenyOutput,
   handleHookError,
   initHookContext,
   readStdin,
+  resolveHookDir,
   RuleMatcher,
 } from "@satoshibits/claude-skill-runtime";
 
@@ -32,9 +33,11 @@ import type {
 
 interface PreToolUseHookInput {
   session_id: string;
-  working_directory: string;
+  cwd?: string;
+  working_directory?: string;
   tool_name: string;
-  tool_input: string;
+  /** Claude Code sends an object (e.g. { command: "…" }); older payloads sent a string. */
+  tool_input: unknown;
 }
 
 /**
@@ -56,13 +59,18 @@ function buildDenyOutputForMatch(
 }
 
 /**
- * Build allow output with warnings (for "warn" enforcement)
+ * Build advisory output for "warn" enforcement.
+ *
+ * A warning must INFORM without changing the permission outcome, so this emits
+ * additionalContext with NO permissionDecision. It must never return `"allow"`: that
+ * would grant the tool call, and a `warn`-severity guardrail silently authorizing a tool
+ * (now that `inputPatterns` actually match object `tool_input`) is worse than not firing.
  */
-function buildAllowOutputWithWarnings(
+function buildWarningOutput(
   warnings: { skill: string; description: string; pattern?: string }[],
 ): PreToolUseOutput {
   if (warnings.length === 0) {
-    // no warnings - return empty (allows tool to proceed)
+    // no warnings - neutral, tool proceeds through the normal permission flow
     return {};
   }
 
@@ -73,7 +81,7 @@ function buildAllowOutputWithWarnings(
   );
   const additionalContext = `=== GUARDRAIL WARNINGS ===\nThe following guardrails matched but are not blocking:\n${warningLines.join("\n")}`;
 
-  return buildPreToolUseAllowOutput(additionalContext);
+  return buildPreToolUseContextOutput(additionalContext);
 }
 
 /**
@@ -86,7 +94,7 @@ async function main() {
     const input = await readStdin();
     const data: PreToolUseHookInput = JSON.parse(input) as PreToolUseHookInput;
 
-    const { session_id, working_directory, tool_name, tool_input } = data;
+    const { session_id, tool_name, tool_input } = data;
 
     // initialize hook context
     const {
@@ -95,14 +103,17 @@ async function main() {
       config,
       logger: contextLogger,
     } = initHookContext({
-      workingDirectory: working_directory,
+      cwd: resolveHookDir(data),
+      userScope: true,
     });
     logger = contextLogger;
 
     logger.log("activation", "PreToolUse JSON hook started (v2.1 corrected)", {
       sessionId: session_id,
       toolName: tool_name,
-      inputLength: tool_input.length,
+      // cheap shape info only — serializing the payload here would cost a full
+      // stringify of every Write/Edit on every tool call, for a debug-only field
+      inputType: typeof tool_input,
     });
 
     // match pre-tool triggers
@@ -150,12 +161,12 @@ async function main() {
     }));
 
     if (warnings.length > 0) {
-      logger.log("activation", "allowing with warnings", {
+      logger.log("activation", "surfacing warnings (no permission change)", {
         warningCount: warnings.length,
       });
     }
 
-    const output = buildAllowOutputWithWarnings(warnings);
+    const output = buildWarningOutput(warnings);
     console.log(JSON.stringify(output, null, 2));
     process.exit(0);
   } catch (error) {

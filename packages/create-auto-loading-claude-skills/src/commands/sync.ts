@@ -35,6 +35,7 @@ import {
   parseFrontmatter,
   smartTriggersToSkillRule,
 } from "../parsers/frontmatter-parser.js";
+import { skillExists } from "../utils/skill-paths.js";
 
 /**
  * Extended SkillConfig with sync metadata for tracking auto-synced vs manual skills
@@ -88,10 +89,16 @@ interface SkillFile {
 }
 
 /**
- * Find all SKILL.md files in ~/.claude/skills/ (personal) and .claude/commands/ (project)
- * Project skills take precedence over personal skills with the same name
+ * Find all SKILL.md files in ~/.claude/skills/ (personal) and <root>/.claude/skills/
+ * (project). Project skills take precedence over personal skills with the same name.
+ *
+ * Pure discovery: no console output, so read-only callers (sync-status) stay silent.
+ * `legacyCommandsCount` reports SKILL.md files left under the deprecated `.claude/commands/`
+ * location so the caller can advise the user; nothing there is synced.
  */
-async function findSkillFiles(rootDir: string): Promise<SkillFile[]> {
+async function findSkillFiles(
+  rootDir: string,
+): Promise<{ files: SkillFile[]; legacyCommandsCount: number }> {
   const results: SkillFile[] = [];
 
   // 1. personal scope: ~/.claude/skills/
@@ -107,31 +114,50 @@ async function findSkillFiles(rootDir: string): Promise<SkillFile[]> {
     }
   }
 
-  // 2. project scope: .claude/commands/ (takes precedence)
-  const commandsDir = path.join(rootDir, ".claude", "commands");
-  if (fs.existsSync(commandsDir)) {
-    const projectPatterns = [
-      path.join(commandsDir, "**/SKILL.md"),
-      path.join(commandsDir, "**/skill.md"),
-    ];
-    for (const pattern of projectPatterns) {
+  // 2. project scope (takes precedence). `.claude/skills/` ONLY — it is what `init`
+  // creates, what `validate` checks, and what the runtime's ConfigLoader reads. The
+  // deprecated `.claude/commands/` is NOT synced: no reader resolves content there, so a
+  // rule generated from it always reported as orphaned and never loaded. Files left there
+  // are counted and surfaced by the caller, not silently synced.
+  const projectSkillsDir = path.join(rootDir, ".claude", "skills");
+  if (fs.existsSync(projectSkillsDir)) {
+    for (const pattern of [
+      path.join(projectSkillsDir, "**/SKILL.md"),
+      path.join(projectSkillsDir, "**/skill.md"),
+    ]) {
       const matches = await glob(pattern, { nocase: true });
       results.push(...matches.map((p) => ({ path: p, scope: "project" as const })));
     }
   }
 
+  const legacyCommandsDir = path.join(rootDir, ".claude", "commands");
+  const legacyCommandsCount = fs.existsSync(legacyCommandsDir)
+    ? (await glob(path.join(legacyCommandsDir, "**/SKILL.md"), { nocase: true })).length
+    : 0;
+
   // dedupe by path and sort
   const seen = new Set<string>();
-  return results.filter((f) => {
-    if (seen.has(f.path)) return false;
-    seen.add(f.path);
-    return true;
-  }).sort((a, b) => a.path.localeCompare(b.path));
+  const files = results
+    .filter((f) => {
+      if (seen.has(f.path)) return false;
+      seen.add(f.path);
+      return true;
+    })
+    .sort((a, b) => a.path.localeCompare(b.path));
+
+  return { files, legacyCommandsCount };
 }
 
-/**
- * Load existing skill-rules.yaml
- */
+/** Advise about SKILL.md files left under the deprecated `.claude/commands/` location. */
+function reportLegacyCommands(count: number): void {
+  console.log(
+    chalk.yellow(
+      `\n⚠️  ${count} SKILL.md file(s) found under .claude/commands/ — not synced.\n` +
+        `   Move them to .claude/skills/<name>/SKILL.md to be resolvable.\n`,
+    ),
+  );
+}
+
 function loadExistingConfig(configPath: string): SkillRulesConfig | null {
   if (!fs.existsSync(configPath)) {
     return null;
@@ -157,16 +183,43 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   const skillsDir = path.join(cwd, ".claude", "skills");
   const configPath = path.join(skillsDir, "skill-rules.yaml");
 
+  // Writing personal (~/.claude) skills into a PROJECT config breaks them: the runtime
+  // resolves a skill's SKILL.md only from the scope that declared it, so a
+  // project-declared copy of a personal skill points at <project>/.claude/skills/<name>,
+  // which does not exist — and, because project wins collisions, it also shadows the
+  // working user-scope entry. That scope isolation is deliberate: a project config is
+  // untrusted data, so it must not be able to name a file under $HOME. When syncing a
+  // project, emit project skills only.
+  const userSkillsDir = path.join(os.homedir(), ".claude", "skills");
+  const syncingUserScope =
+    path.resolve(skillsDir) === path.resolve(userSkillsDir);
+  /** personal skills deliberately not written into a project config (see above) */
+  const skippedPersonal: string[] = [];
+
   // 1. find skill files from both personal and project scopes
   const spinner = ora("Scanning for SKILL.md files...").start();
-  const skillFiles = await findSkillFiles(cwd);
+  const { files: skillFiles, legacyCommandsCount } = await findSkillFiles(cwd);
 
   if (skillFiles.length === 0) {
-    spinner.warn("No SKILL.md files found in ~/.claude/skills/ or .claude/commands/");
-    console.log(
-      chalk.dim("Create skills using: cl-auto-skills add-skill <name>"),
+    spinner.warn(
+      "No SKILL.md files found in ~/.claude/skills/ or <project>/.claude/skills/",
     );
-    return;
+
+    // If a synced config already exists, keep going with an empty rule set so the stale
+    // entries are cleared. Returning here left `sync-status` permanently stale after the
+    // last SKILL.md was deleted, with `sync` refusing to repair it.
+    const priorConfig = loadExistingConfig(configPath);
+    if (!priorConfig?._sync) {
+      if (legacyCommandsCount > 0) reportLegacyCommands(legacyCommandsCount);
+      console.log(
+        chalk.dim("Create skills using: cl-auto-skills add-skill <name>"),
+      );
+      return;
+    }
+
+    console.log(
+      chalk.dim("Clearing previously synced entries from skill-rules.yaml"),
+    );
   }
 
   const personalCount = skillFiles.filter((f) => f.scope === "personal").length;
@@ -176,11 +229,12 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
       (personalCount > 0 ? chalk.dim(` (${personalCount} personal, ${projectCount} project)`) : ""),
   );
 
+  if (legacyCommandsCount > 0) reportLegacyCommands(legacyCommandsCount);
+
   // 2. load existing config
   const existingConfig = loadExistingConfig(configPath);
   const existingSkills = existingConfig?.skills ?? {};
   const syncMetadata = existingConfig?._sync;
-  const _previousSyncedSkills = new Set(syncMetadata?.syncedSkills ?? []);
   const manualSkills = new Set(syncMetadata?.manualSkills ?? []);
 
   // 3. parse each skill file
@@ -257,6 +311,18 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
       if (idx !== -1) result.synced.splice(idx, 1);
     }
 
+    if (scope === "personal" && !syncingUserScope) {
+      // belongs in ~/.claude/skills/skill-rules.yaml, not in this project's config.
+      // tracked separately so the summary does not claim the frontmatter is missing
+      skippedPersonal.push(skillName);
+      if (verbose) {
+        console.log(
+          chalk.dim(`    Skipped (personal scope — sync from your home dir instead)`),
+        );
+      }
+      continue;
+    }
+
     syncedRules[skillName] = rule;
     skillScopes[skillName] = scope;
     result.synced.push(skillName);
@@ -273,6 +339,16 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   // 4. merge with existing config
   const mergedSkills: Record<string, SkillRule> = {};
   const newManualSkills: string[] = [];
+  /** previously-synced personal entries removed from a project config (migration) */
+  const droppedPersonal: string[] = [];
+  /** previously-synced entries whose SKILL.md no longer exists */
+  const droppedStale: string[] = [];
+  /**
+   * Previously-synced entries whose SKILL.md is still present but produced no rule this
+   * run (parse error / triggers removed). Preserved AND kept sync-owned, so a later
+   * genuine deletion still triggers the stale-drop instead of the rule lingering forever.
+   */
+  const preservedSyncOwned: string[] = [];
 
   // first, add all synced skills
   for (const [name, rule] of Object.entries(syncedRules)) {
@@ -288,8 +364,34 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
         mergedSkills[name] = { ...mergedSkills[name], ...rule };
         result.preserved.push(name);
       }
+    } else if (
+      !syncingUserScope &&
+      syncMetadata?.skillScopes?.[name] === "personal"
+    ) {
+      // MIGRATION: a previous release copied personal skills into this project config.
+      // Their SKILL.md lives under $HOME, never under the project, so the runtime cannot
+      // resolve them and — because project rules win collisions — they shadow the working
+      // user-scope skill. Always drop them from a project config.
+      droppedPersonal.push(name);
+    } else if (
+      syncMetadata?.skillScopes?.[name] &&
+      !skillExists(skillsDir, name)
+    ) {
+      // Previously synced, and its SKILL.md is genuinely GONE (not merely unparseable or
+      // stripped of triggers — those still exist on disk). Drop it so a deleted skill's
+      // generated rule doesn't linger forever. Same existence predicate `validate` uses.
+      droppedStale.push(name);
+    } else if (syncMetadata?.skillScopes?.[name]) {
+      // Previously synced, file still present but produced no rule this run (parse error /
+      // triggers removed). Preserve the rule, but keep it SYNC-OWNED — carrying its prior
+      // scope forward (below) — so a later genuine deletion still drops it. Demoting it to
+      // "manual" here would permanently defeat the stale-drop for that skill.
+      mergedSkills[name] = rule;
+      preservedSyncOwned.push(name);
+      skillScopes[name] = syncMetadata.skillScopes[name];
+      result.preserved.push(name);
     } else {
-      // skill not in SKILL.md files, preserve it as manual
+      // Genuinely hand-written (no sync metadata): preserve as a manual entry.
       mergedSkills[name] = rule;
       newManualSkills.push(name);
       result.preserved.push(name);
@@ -310,7 +412,9 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     _sync: {
       lastSync: new Date().toISOString(),
       checksum,
-      syncedSkills: Object.keys(syncedRules),
+      // keep transiently-broken synced skills in the sync-owned set so their scope
+      // metadata survives and a later deletion still drops them
+      syncedSkills: [...Object.keys(syncedRules), ...preservedSyncOwned],
       manualSkills: newManualSkills,
       skillScopes,
     },
@@ -334,6 +438,43 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     );
     if (verbose) {
       result.skipped.forEach((s) => console.log(chalk.dim(`    ${s}`)));
+    }
+  }
+
+  if (droppedStale.length > 0) {
+    console.log(
+      chalk.yellow(
+        `⊘ ${dryRun ? "Would remove" : "Removed"} ${droppedStale.length} stale ` +
+          `entr(y/ies) — their SKILL.md no longer exists`,
+      ),
+    );
+    if (verbose) {
+      droppedStale.forEach((s) => console.log(chalk.dim(`    ${s}`)));
+    }
+  }
+
+  if (droppedPersonal.length > 0) {
+    console.log(
+      chalk.yellow(
+        `⊘ ${dryRun ? "Would remove" : "Removed"} ${droppedPersonal.length} personal ` +
+          `skill(s) previously copied into this project's config — they live in ` +
+          `~/.claude/skills and are resolved from there`,
+      ),
+    );
+    if (verbose) {
+      droppedPersonal.forEach((s) => console.log(chalk.dim(`    ${s}`)));
+    }
+  }
+
+  if (skippedPersonal.length > 0) {
+    console.log(
+      chalk.yellow(
+        `⊘ Skipped: ${skippedPersonal.length} personal skill(s) — run sync from your ` +
+          `home directory to write ~/.claude/skills/skill-rules.yaml`,
+      ),
+    );
+    if (verbose) {
+      skippedPersonal.forEach((s) => console.log(chalk.dim(`    ${s}`)));
     }
   }
 
@@ -449,13 +590,20 @@ export async function checkSyncStatus(
     };
   }
 
-  // find current skill files and compute checksum
-  const skillFiles = await findSkillFiles(rootDir);
+  // find current skill files and compute checksum (read-only: no legacy notice here)
+  const { files: skillFiles } = await findSkillFiles(rootDir);
   const currentRules: Record<string, Partial<SkillRule>> = {};
   const skillScopes: Record<string, "personal" | "project"> = {};
 
+  // must mirror syncCommand's scope rule exactly — including personal skills here while
+  // sync excludes them would report "stale" the instant after a clean sync
+  const statusUserSkillsDir = path.join(os.homedir(), ".claude", "skills");
+  const statusSyncingUserScope =
+    path.resolve(skillsDir) === path.resolve(statusUserSkillsDir);
+
   for (const skillFile of skillFiles) {
     const { path: filePath, scope } = skillFile;
+    if (scope === "personal" && !statusSyncingUserScope) continue;
     const content = fs.readFileSync(filePath, "utf8");
     const parsed = parseFrontmatter(content, filePath);
 

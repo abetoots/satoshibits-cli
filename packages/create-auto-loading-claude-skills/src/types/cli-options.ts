@@ -27,6 +27,8 @@ export interface WizardOptions {
 export interface ValidateOptions {
   fix?: boolean;
   verbose?: boolean;
+  /** Apply --fix repairs without prompting — required for non-interactive use. */
+  yes?: boolean;
 }
 
 export interface SyncOptions {

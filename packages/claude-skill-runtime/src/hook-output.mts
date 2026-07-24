@@ -285,7 +285,12 @@ export function buildPreToolUseDenyOutput(
 }
 
 /**
- * Build PreToolUse allow output
+ * Build PreToolUse allow output.
+ *
+ * WARNING: `permissionDecision: "allow"` actively GRANTS the tool call, bypassing the
+ * normal permission system. Use this only when the hook's intent is to authorize the
+ * tool — never merely to surface information. For advisory/warning output that must NOT
+ * change the permission outcome, use `buildPreToolUseContextOutput`.
  */
 export function buildPreToolUseAllowOutput(
   additionalContext?: string
@@ -298,6 +303,30 @@ export function buildPreToolUseAllowOutput(
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
       permissionDecision: "allow",
+      additionalContext,
+    },
+  };
+}
+
+/**
+ * Build neutral PreToolUse output that adds context WITHOUT making a permission decision.
+ *
+ * An omitted `permissionDecision` means "do nothing" per the PreToolUse contract — the
+ * normal permission flow and any other hooks still apply. This is the correct shape for a
+ * non-blocking guardrail warning: it must inform, not authorize. (A prior version routed
+ * warnings through `buildPreToolUseAllowOutput`, which silently granted permission the
+ * moment a `warn` rule actually matched.)
+ */
+export function buildPreToolUseContextOutput(
+  additionalContext?: string
+): PreToolUseOutput {
+  if (!additionalContext) {
+    return {};
+  }
+
+  return {
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
       additionalContext,
     },
   };

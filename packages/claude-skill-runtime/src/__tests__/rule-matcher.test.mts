@@ -324,6 +324,101 @@ describe('rule-matcher', () => {
       expect(matches[0]!.matchedPattern).toBe('git.*push.*--force');
     });
 
+    it('matches input patterns when tool_input is an OBJECT (real payload shape)', () => {
+      // Claude Code sends tool_input as an object. Passing it to RegExp.test coerced it to
+      // "[object Object]", so every inputPatterns guardrail silently failed to match.
+      const config = createMinimalConfig({
+        'git-push-guard': {
+          ...defaultSkillRule,
+          preToolTriggers: {
+            toolName: 'Bash',
+            inputPatterns: ['git.*push.*--force'],
+          },
+        },
+      });
+
+      const matcher = new RuleMatcher(config, tmpDir);
+      const matches = matcher.matchPreToolTriggers('Bash', {
+        command: 'git push --force origin main',
+        description: 'force push',
+      });
+
+      expect(matches).toHaveLength(1);
+      expect(matches[0]!.matchedPattern).toBe('git.*push.*--force');
+    });
+
+    it('preserves anchored patterns against object input', () => {
+      // a JSON dump of the object would start with `{"`, so `^ls` could never match
+      const config = createMinimalConfig({
+        'ls-guard': {
+          ...defaultSkillRule,
+          preToolTriggers: { toolName: 'Bash', inputPatterns: ['^ls'] },
+        },
+      });
+      const matcher = new RuleMatcher(config, tmpDir);
+
+      expect(
+        matcher.matchPreToolTriggers('Bash', { command: 'ls -la' }),
+      ).toHaveLength(1);
+      expect(
+        matcher.matchPreToolTriggers('Bash', { command: 'echo ls' }),
+      ).toHaveLength(0);
+    });
+
+    it('does not coerce non-string leaves into match subjects', () => {
+      // `^false$` must not fire on `{ sandbox: false }` — patterns are written against
+      // user-authored text, so only string leaves are subjects
+      const config = createMinimalConfig({
+        'bool-guard': {
+          ...defaultSkillRule,
+          preToolTriggers: { toolName: 'Bash', inputPatterns: ['^false$', '^42$'] },
+        },
+      });
+      const matcher = new RuleMatcher(config, tmpDir);
+
+      expect(
+        matcher.matchPreToolTriggers('Bash', { sandbox: false, timeout: 42 }),
+      ).toHaveLength(0);
+      // control: the same pattern DOES match when the value is genuinely a string
+      expect(
+        matcher.matchPreToolTriggers('Bash', { command: 'false' }),
+      ).toHaveLength(1);
+    });
+
+    it('does not match against object KEY names', () => {
+      // key names are not user content; matching them produces phantom guardrail hits
+      const config = createMinimalConfig({
+        'command-guard': {
+          ...defaultSkillRule,
+          preToolTriggers: { toolName: 'Bash', inputPatterns: ['command'] },
+        },
+      });
+      const matcher = new RuleMatcher(config, tmpDir);
+
+      expect(
+        matcher.matchPreToolTriggers('Bash', { command: 'ls -la' }),
+      ).toHaveLength(0);
+    });
+
+    it('does not throw on null/undefined/circular tool input', () => {
+      const config = createMinimalConfig({
+        'bash-guard': {
+          ...defaultSkillRule,
+          preToolTriggers: { toolName: 'Bash', inputPatterns: ['rm'] },
+        },
+      });
+      const matcher = new RuleMatcher(config, tmpDir);
+
+      const circular: Record<string, unknown> = { command: 'rm -rf /' };
+      circular.self = circular;
+
+      // only the circular case is falsifiable here — it pins the cycle guard in
+      // collectStrings, which would otherwise recurse until the stack blows
+      expect(() => matcher.matchPreToolTriggers('Bash', circular)).not.toThrow();
+      expect(matcher.matchPreToolTriggers('Bash', circular)).toHaveLength(1);
+      expect(matcher.matchPreToolTriggers('Bash', null)).toHaveLength(0);
+    });
+
     it('does not match when tool name differs', () => {
       const config = createMinimalConfig({
         'bash-only': {

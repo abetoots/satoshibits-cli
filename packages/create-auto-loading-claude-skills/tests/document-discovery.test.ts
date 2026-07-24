@@ -171,6 +171,23 @@ describe("DocumentDiscovery class", () => {
       expect(result.content).toBeUndefined();
     });
 
+    it("should detect a lowercase skill.md (case-insensitive, matches discovery)", () => {
+      // otherwise the AI add-skill flow would not see a lowercase skill and could create a
+      // duplicate uppercase SKILL.md beside it on a case-sensitive filesystem
+      const skillDir = path.join(tmpDir, ".claude/skills/lower-existing");
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, "skill.md"),
+        "---\nname: lower-existing\n---\n# Lowercase",
+        "utf8",
+      );
+
+      const result = discovery.checkExistingSkill("lower-existing");
+
+      expect(result.exists).toBe(true);
+      expect(result.content).toContain("Lowercase");
+    });
+
     it("should detect existing resources (including symlinks)", () => {
       const skillDir = path.join(tmpDir, ".claude/skills/skill-with-resources");
       const resourcesDir = path.join(skillDir, "resources");
