@@ -1,6 +1,6 @@
 {
   "name": "@satoshibits/claude-skill-runtime",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
   "exports": {
