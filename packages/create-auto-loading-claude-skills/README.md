@@ -525,6 +525,24 @@ Based on production deployment managing 300K+ lines of code over six months:
 
 ## Advanced Usage
 
+### Personal Skills (User Scope)
+
+Skills placed under `~/.claude/skills/<name>/SKILL.md` are **personal** — they follow you across every project without being checked into any repo. Every hook template `init` installs merges `~/.claude/skills/skill-rules.yaml` beneath the current project's own rules automatically:
+
+- **Project wins on collision** — a project-defined skill with the same name always takes precedence.
+- **Settings merge key by key** — a project that only sets `enableDebugLogging` won't wipe your personal `maxSuggestions` or `thresholds`.
+- **Content resolution is scope-isolated** — a skill's `SKILL.md` is only ever read from the scope that declared its rule. A project's `skill-rules.yaml` is untrusted data (it arrives with any cloned repo), so it can never be used to read a file out of `$HOME`.
+
+To keep `~/.claude/skills/skill-rules.yaml` in sync with `x-smart-triggers` in your personal `SKILL.md` files, run `sync` **from your home directory**, not from inside a project:
+
+```bash
+cd ~ && npx cl-auto-skills sync
+```
+
+Running `sync` inside a project does **not** copy personal skills into that project's config — a project-scope copy would point at `<project>/.claude/skills/<name>`, which doesn't exist, and would shadow the working personal entry.
+
+**Don't run `init` against `~/.claude/`.** `init` wires hooks via `$CLAUDE_PROJECT_DIR`-relative commands, which only resolve inside a project that has its own local `.claude/hooks/` — registering them globally breaks every other project's hooks. `init` stays per-project; personal skills only need `~/.claude/skills/` populated and `sync` run from `~`.
+
 ### Monorepo Support
 
 For multi-package projects:
@@ -731,7 +749,9 @@ Initialize the auto-loading skills framework:
 npx cl-auto-skills init
 ```
 
-Automatically discovers project documentation and sets up hooks. Use `--type`, `--config`, or `--yes` flags for customization (run `init --help` for details).
+Automatically discovers project documentation and sets up hooks. Use `--type` or `--yes` flags for customization (run `init --help` for details).
+
+**Scope:** `init` is per-project — it wires hooks via `$CLAUDE_PROJECT_DIR`-relative commands and writes directly into whatever directory's `settings.json` you run it in. Never run it against `~/.claude/`; see [Personal Skills (User Scope)](#personal-skills-user-scope) for the supported way to share skills across projects.
 
 ### `add-skill`
 
@@ -791,6 +811,8 @@ x-smart-triggers:
 
 Run `claude-skills sync` to generate the corresponding entry in `skill-rules.yaml`.
 
+**Scope-aware:** `sync` scans both `<project>/.claude/skills/` and `~/.claude/skills/` for `SKILL.md` files, but only writes synced/generated entries for project-scope skills into the project's `skill-rules.yaml` — personal skills are reported but skipped (existing manual entries in the project config are preserved either way). See [Personal Skills (User Scope)](#personal-skills-user-scope) for how to sync personal skills.
+
 ### `sync-status`
 
 Check if `skill-rules.yaml` is out of sync with SKILL.md frontmatter:
@@ -808,9 +830,12 @@ Validate configuration and auto-fix issues:
 ```bash
 npx cl-auto-skills validate
 npx cl-auto-skills validate --fix
+npx cl-auto-skills validate --fix --yes   # unattended, e.g. CI
 ```
 
-Detects orphaned skill references and unregistered skills.
+Fails with a non-zero exit code on real errors — missing required fields (`type`, `enforcement`, `priority`, `description`), an `activationStrategy` outside the enum, or a malformed `skills:` block — so it can gate a commit or CI job. Also detects orphaned skill references and unregistered skills.
+
+`--fix` prompts interactively by default; pass `-y, --yes` to apply repairs unattended (required in CI — a closed stdin otherwise aborts the prompt without fixing anything). It exits non-zero if errors remain after the attempted repair. Use `-v, --verbose` to show suggestions alongside errors/warnings and to include info-level issues in the output.
 
 ### `upgrade`
 
